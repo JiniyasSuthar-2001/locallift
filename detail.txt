@@ -1,0 +1,134 @@
+================================================================================
+LOCALSCOPE — LOCAL SEO MANAGEMENT & AUTOMATION OPERATING SYSTEM
+PROJECT OVERVIEW & SYSTEM ARCHITECTURE DOCUMENTATION
+================================================================================
+
+1. WHAT IS THIS PROJECT?
+--------------------------------------------------------------------------------
+LocalScope (internally LocalLift) is a complete, production-grade Local SEO
+Management and Automation Operating System. 
+
+It is designed for local businesses, multi-location companies, and digital marketing
+agencies to monitor, audit, optimize, and automate local search rankings, Google
+Business Profile visibility, customer reputation, and technical website health.
+
+Tagline: "Local SEO, Rankings & Reputation in One Place"
+
+
+2. CORE PROBLEM IT SOLVES
+--------------------------------------------------------------------------------
+Managing local SEO traditionally requires using 5 to 7 disconnected tools:
+  - Separate keyword rank trackers
+  - Separate website crawling & auditing software
+  - Google Business Profile dashboard
+  - Review management & reputation platforms
+  - Citation / NAP discrepancy scanners
+  - Task management boards (Trello, Jira)
+  - PDF reporting tools
+
+LocalScope unites all of these into ONE unified operating system with an automated
+problem-to-solution-to-task pipeline:
+  Detected Problem -> Severity -> Evidence -> Why It Matters -> AI Solution -> Actionable Task -> Remediation -> Automated Recheck.
+
+
+3. SYSTEM ARCHITECTURE
+--------------------------------------------------------------------------------
+The platform is built as a modern, decoupled full-stack application:
+
+A. BACKEND (Python 3.10+ / FastAPI / SQLAlchemy 2.0 Async / Uvicorn):
+   - Fast asynchronous REST API serving on port 8000.
+   - Database: Relational SQLite/PostgreSQL engine via SQLAlchemy 2.0 Async.
+   - Live Website Crawler (app/services/crawler.py): Crawls HTML, extracts title tags,
+     meta descriptions, H1/H2 headings, canonical URLs, image alt attributes,
+     broken links, and Schema.org JSON-LD scripts.
+   - Rules & Audit Engine (app/services/seo_auditor.py): Runs technical and local SEO
+     checks to identify critical blockers and growth opportunities.
+   - AI Diagnostic Engine (app/services/ai_assistant.py): Performs root-cause analysis
+     with structured confidence breakdowns (Confirmed, Likely, Possible, Unknown)
+     and drafts contextual review responses for human approval.
+   - Automated Seeder (app/services/seeder.py): Populates initial verified data for
+     instant zero-friction testing.
+
+B. FRONTEND (React 18 / TypeScript / Vite / TailwindCSS):
+   - High-performance Single Page Application (SPA) serving on port 5173.
+   - Design Direction: "Gradient Vibrant" (Clean light surfaces, high-contrast dark
+     typography, purple/magenta primary accents, and subtle gradient highlights).
+   - Real Data Only: 100% connected to live backend APIs with graceful empty states.
+   - Layout: Desktop 3-column architecture (Left Nav Sidebar + Fluid Central Canvas +
+     Right Insights Live Control Panel).
+
+C. CENTRALIZED DEV RUNNER:
+   - Run `npm run dev` at the project root to start BOTH Frontend (port 5173) and
+     Backend (port 8000) in ONE terminal with color-coded live streaming logs and
+     clean process tree termination (tree-kill) on Ctrl+C.
+
+
+4. IMPLEMENTED MODULES & FEATURES
+--------------------------------------------------------------------------------
+1. OVERVIEW DASHBOARD:
+   - Dynamic SEO Health score (0-100) and 8 pillar sub-scores.
+   - High-contrast KPI cards (SEO Health, Local Visibility, Rank Climbers, Tasks, Keywords).
+   - Real search impressions & clicks performance line chart (Recharts).
+   - Prioritized SEO tasks board and top tracked keywords preview.
+
+2. RANKINGS & LOCAL PACK:
+   - Keyword Rank Tracker: Track daily Google search rankings, movements (up/down),
+     previous rank, best rank, and search volume with search & filter.
+   - 5x5 Geo-Grid Map: Interactive 25-node GPS matrix visualizer simulating localized
+     Google Maps Local Pack positions across a defined radius (e.g. 7.5km).
+     Click any pin to inspect latitude, longitude, rank, and top competitor.
+
+3. AUDITING & TECHNICAL SEO:
+   - Technical Website Audit: Live async crawler scanning pages, HTTP status codes,
+     missing tags, broken links, load times, and structured data.
+   - Local SEO Signals: Analyzes localized suburban content, NAP structured data,
+     and geographic proximity signals.
+   - Schema.org JSON-LD Generator: Produces validated, copy-pasteable LocalBusiness
+     structured data conforming to official Google Rich Results standards.
+   - Content Opportunities: AI-driven landing page topic and keyword gap recommendations.
+
+4. REPUTATION & OFF-PAGE:
+   - Customer Reviews Hub: Verified reviews list, star ratings, sentiment analysis
+     (Positive, Neutral, Negative), and AI response drafting with a mandatory
+     human review & approval workflow before publishing.
+   - Citations & NAP Consistency: Scans directory listings (Yelp, YellowPages, Apple
+     Maps, TrueLocal) and flags Name, Address, Phone discrepancies against master records.
+   - Competitor Benchmarking: Head-to-head tracking of nearby competitors' Google Maps
+     share, review counts, and average star ratings.
+
+5. OPERATIONS & AI INTELLIGENCE:
+   - SEO Task Board: Kanban and List board views for managing open backlog, in-progress,
+     review, and completed optimization tasks.
+   - Executive Performance Reports: White-label monthly performance summary with
+     one-click Print / Save as PDF capability.
+   - AI Diagnostic Studio: Interactive diagnostic drawer and page analyzing root causes
+     behind ranking drops and algorithmic shifts.
+   - Multi-Client Agency Roster: Client portfolio overview for managing multiple locations.
+   - Guided Onboarding Wizard: 4-step wizard for bootstrapping new local business projects.
+
+
+5. HOW TO RUN & ACCESS THE PLATFORM
+--------------------------------------------------------------------------------
+To start the entire platform:
+  1. Open terminal at the project root:
+     cd LocalScope
+  2. Run:
+     npm run dev
+
+Access Endpoints:
+  - Frontend SaaS Dashboard: http://localhost:5173
+  - Backend REST API:        http://localhost:8000
+  - Interactive API Docs:    http://localhost:8000/docs
+  - API Health Check:        http://localhost:8000/health
+
+Default Demo Credentials:
+  - Email:    demo@locallift.io
+  - Password: password123
+
+
+6. CURRENT STATUS & SUMMARY
+--------------------------------------------------------------------------------
+- The entire system is fully implemented, verified, and running.
+- All TypeScript compilation (`tsc && vite build`) passed with 0 errors.
+- Both Frontend and Backend servers are active and communicating smoothly.
+================================================================================

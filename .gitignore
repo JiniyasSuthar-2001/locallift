@@ -1,0 +1,25 @@
+# Node & Frontend
+node_modules/
+dist/
+.vite/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Python & Backend
+__pycache__/
+*.py[cod]
+*$py.class
+venv/
+.venv/
+env/
+*.db
+*.sqlite3
+locallift.db
+localscope.db
+
+# Secrets & Local Environment
+.env
+.env.local
+.DS_Store
+Thumbs.db

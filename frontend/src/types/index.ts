@@ -1,0 +1,372 @@
+export interface User {
+  id: number;
+  email: string;
+  full_name: string | null;
+  is_active: boolean;
+  is_superuser: boolean;
+  created_at: string;
+  organization_id: number | null;
+  role: string | null;
+}
+
+export interface AuthState {
+  user: User | null;
+  token: string | null;
+  isAuthenticated: boolean;
+}
+
+export interface Location {
+  id: number;
+  project_id: number;
+  name: string;
+  address?: string;
+  city?: string;
+  state?: string;
+  postal_code?: string;
+  country?: string;
+  phone?: string;
+  latitude?: number;
+  longitude?: number;
+  place_id?: string;
+}
+
+export interface Project {
+  id: number;
+  organization_id: number;
+  client_id?: number;
+  name: string;
+  domain: string;
+  primary_category: string;
+  country: string;
+  health_score: number;
+  technical_score: number;
+  onpage_score: number;
+  local_score: number;
+  gbp_score: number;
+  reviews_score: number;
+  citations_score: number;
+  keywords_score: number;
+  maps_score: number;
+  created_at: string;
+  updated_at: string;
+  locations: Location[];
+}
+
+export interface DashboardSummary {
+  health_score: number;
+  scores: {
+    technical: number;
+    onpage: number;
+    local: number;
+    gbp: number;
+    reviews: number;
+    citations: number;
+    keywords: number;
+    maps: number;
+  };
+  counts: {
+    open_issues: number;
+    active_tasks: number;
+    tracked_keywords: number;
+    reviews_total: number;
+  };
+  recent_issues: SEOIssue[];
+  recent_tasks: SEOTask[];
+  recent_reviews: Review[];
+  top_keywords: Keyword[];
+  gbp_summary?: {
+    connected: boolean;
+    business_name?: string;
+    completeness_score?: number;
+    search_impressions?: number;
+    maps_impressions?: number;
+    calls?: number;
+    website_clicks?: number;
+  };
+  gsc_summary?: {
+    clicks: number;
+    impressions: number;
+    ctr: number;
+    avg_position: number;
+  };
+}
+
+export interface SEOIssue {
+  id: number;
+  project_id: number;
+  audit_id?: number;
+  category: string;
+  severity: 'critical' | 'warning' | 'opportunity' | 'info' | string;
+  title: string;
+  evidence?: string;
+  why_it_matters?: string;
+  recommended_solution?: string;
+  action_type?: string;
+  affected_url?: string;
+  status: 'open' | 'in_task' | 'resolved' | 'ignored' | string;
+  created_at: string;
+}
+
+export interface SEOTask {
+  id: number;
+  project_id: number;
+  issue_id?: number;
+  assigned_to_id?: number;
+  title: string;
+  description?: string;
+  priority: 'high' | 'medium' | 'low' | string;
+  category: string;
+  status: 'open' | 'in_progress' | 'waiting' | 'completed' | 'ignored' | 'recheck_required' | string;
+  evidence?: string;
+  notes?: string;
+  due_date?: string;
+  created_at: string;
+  completed_at?: string;
+}
+
+export interface WebsitePage {
+  id: number;
+  website_id: number;
+  url: string;
+  status_code: number;
+  title?: string;
+  meta_description?: string;
+  h1?: string;
+  h2_list: string[];
+  word_count: number;
+  canonical_url?: string;
+  is_indexable: boolean;
+  load_time_ms: number;
+  schema_types: string[];
+  images_count: number;
+  missing_alt_count: number;
+  internal_links_count: number;
+  external_links_count: number;
+  broken_links: string[];
+  issues_detected: string[];
+}
+
+export interface Keyword {
+  id: number;
+  project_id: number;
+  keyword: string;
+  search_intent: string;
+  search_volume: number;
+  difficulty?: number;
+  target_location?: string;
+  current_rank?: number | null;
+  previous_rank?: number | null;
+  target_rank?: number;
+  ranking_url?: string;
+  serp_type?: string;
+  opportunity_score?: string;
+  business_relevance?: string;
+  last_checked_at?: string;
+}
+
+export interface GridPoint {
+  row: number;
+  col: number;
+  lat: number;
+  lng: number;
+  rank: number;
+  status: 'green' | 'yellow' | 'red' | string;
+  competitor_ahead?: string;
+}
+
+export interface GeoGridScan {
+  id: number;
+  project_id: number;
+  keyword_id: number;
+  center_name: string;
+  center_lat: number;
+  center_lng: number;
+  radius_km: number;
+  grid_size: number;
+  average_rank: number;
+  local_visibility_pct: number;
+  grid_points: GridPoint[];
+  scanned_at: string;
+}
+
+export interface Review {
+  id: number;
+  project_id: number;
+  source?: string;
+  author_name: string;
+  author_photo_url?: string;
+  rating: number;
+  review_text?: string;
+  review_date?: string;
+  published_at?: string;
+  response_text?: string;
+  final_response_text?: string;
+  ai_draft_response?: string;
+  response_status?: 'unanswered' | 'drafted' | 'approved' | 'published' | string;
+  sentiment?: 'positive' | 'neutral' | 'negative' | string;
+  sentiment_score?: number;
+  topics?: string[];
+}
+
+export interface Citation {
+  id: number;
+  project_id: number;
+  source_name?: string;
+  directory_name?: string;
+  domain?: string;
+  listing_url?: string;
+  domain_authority?: number;
+  category?: string;
+  status?: 'listed' | 'missing' | 'incorrect' | 'pending' | string;
+  nap_status?: 'consistent' | 'mismatch' | 'missing' | 'match' | string;
+  found_name?: string;
+  found_address?: string;
+  found_phone?: string;
+  found_website?: string;
+  last_checked_at: string;
+}
+
+export interface NAPRecord {
+  id: number;
+  project_id: number;
+  source_name?: string;
+  listed_name?: string;
+  listed_address?: string;
+  listed_phone?: string;
+  has_discrepancy?: boolean;
+  canonical_name?: string;
+  canonical_address?: string;
+  canonical_phone?: string;
+  canonical_website?: string;
+  nap_score?: number;
+  total_checked?: number;
+  consistent_count?: number;
+  mismatches_count?: number;
+  mismatches_data?: Array<{
+    directory: string;
+    field: string;
+    expected: string;
+    found: string;
+    severity: string;
+    action: string;
+  }>;
+  last_audit_date?: string;
+}
+
+export interface Competitor {
+  id: number;
+  project_id: number;
+  name: string;
+  domain?: string;
+  gbp_name?: string;
+  rating?: number;
+  reviews_count?: number;
+  total_reviews?: number;
+  avg_maps_rank?: number;
+  local_visibility_score?: number;
+  top_keywords_count?: number;
+  comparison_data?: Record<string, any>;
+  opportunities_found?: string[];
+}
+
+export interface GBPProfile {
+  id: number;
+  business_name: string;
+  primary_category: string;
+  additional_categories?: string[];
+  address?: string;
+  phone?: string;
+  website_url?: string;
+  description?: string;
+  completeness_score: number;
+  is_verified?: boolean;
+  search_impressions: number;
+  maps_impressions: number;
+  website_clicks: number;
+  call_clicks: number;
+  direction_requests?: number;
+  photos_count?: number;
+  posts_count?: number;
+  last_synced_at?: string;
+}
+
+export type GoogleBusinessProfile = GBPProfile;
+
+export interface GBPChange {
+  id: number;
+  field_name: string;
+  old_value?: string;
+  new_value?: string;
+  detected_at: string;
+}
+
+export interface AICauseEvidence {
+  category: string;
+  description: string;
+  confidence: 'Confirmed' | 'Likely' | 'Possible' | 'Unknown';
+}
+
+export interface AIAnalysisResponse {
+  summary: string;
+  likely_causes: AICauseEvidence[];
+  evidence_points?: string[];
+  recommended_actions: string[];
+  actionable_tasks?: string[];
+}
+
+export interface ContentOpportunity {
+  topic: string;
+  page_type: string;
+  primary_keyword: string;
+  secondary_keywords: string[];
+  search_intent: string;
+  search_volume: number;
+  business_value: string;
+  competition_level?: string;
+  target_slug: string;
+}
+
+export interface TemplateVariable {
+  name: string;
+  label?: string;
+  required?: boolean;
+  source?: string;
+  default?: string;
+}
+
+export interface Template {
+  id: number;
+  project_id?: number;
+  organization_id?: number;
+  name: string;
+  slug: string;
+  category: 'gbp' | 'local_seo' | 'schema' | 'review_response' | 'local_content' | 'location_page' | 'service_location' | 'task' | 'reporting' | string;
+  template_type: 'schema_jsonld' | 'content_markdown' | 'review_reply' | 'gbp_post' | 'task_blueprint' | 'report_summary' | string;
+  description?: string;
+  content: string;
+  variables: TemplateVariable[];
+  required_fields: string[];
+  is_system: boolean;
+  standard_type: string;
+  version: number;
+  usage_count: number;
+  created_by: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface TemplateApplyResponse {
+  template_id: number;
+  template_name: string;
+  rendered_content: string;
+  variables_used: Record<string, any>;
+  missing_variables: string[];
+}
+
+export interface TemplateValidateResponse {
+  is_valid: boolean;
+  errors: string[];
+  warnings: string[];
+  detected_variables: string[];
+}
+

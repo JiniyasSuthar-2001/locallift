@@ -1,0 +1,179 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    /* Backgrounds & Surfaces */
+    --bg-page: #F8FAFC;
+    --surface-card: #FFFFFF;
+    --surface-subtle: #F1F5F9;
+    --surface-hover: #F8FAFC;
+    --border-main: #E2E8F0;
+    --border-focus: #8B5CF6;
+
+    /* Primary Gradient Brand Tokens (Gradient Vibrant) */
+    --primary-gradient-start: #7C3AED;
+    --primary-gradient-end: #EC4899;
+    --primary-purple: #7C3AED;
+    --primary-purple-hover: #6D28D9;
+    --primary-purple-light: #F5F3FF;
+    --primary-purple-border: #DDD6FE;
+
+    /* Secondary Gradient Tokens */
+    --accent-pink: #EC4899;
+    --accent-orange: #F97316;
+    --accent-blue: #2563EB;
+    --accent-cyan: #06B6D4;
+    --accent-emerald: #059669;
+
+    /* Typography / High Contrast Text Hierarchy */
+    --text-primary: #0F172A;
+    --text-secondary: #334155;
+    --text-muted: #64748B;
+    --text-disabled: #94A3B8;
+    --text-inverse: #FFFFFF;
+    
+    /* Semantic Status Tokens */
+    --status-success-bg: #ECFDF5;
+    --status-success-text: #047857;
+    --status-success-border: #A7F3D0;
+
+    --status-warning-bg: #FFFBEB;
+    --status-warning-text: #B45309;
+    --status-warning-border: #FDE68A;
+
+    --status-error-bg: #FFF1F2;
+    --status-error-text: #BE123C;
+    --status-error-border: #FECDD3;
+
+    --status-info-bg: #EFF6FF;
+    --status-info-text: #1D4ED8;
+    --status-info-border: #BFDBFE;
+  }
+
+  body {
+    background-color: var(--bg-page);
+    color: var(--text-primary);
+    font-family: 'Outfit', 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    overflow-x: hidden;
+  }
+
+  h1, h2, h3, h4, h5, h6 {
+    color: var(--text-primary);
+    font-weight: 700;
+    letter-spacing: -0.02em;
+  }
+}
+
+/* Gradient Vibrant Interactive Utilities */
+.gradient-brand {
+  background: linear-gradient(135deg, #7C3AED 0%, #EC4899 100%);
+}
+
+.gradient-brand-subtle {
+  background: linear-gradient(135deg, rgba(124, 58, 237, 0.08) 0%, rgba(236, 72, 153, 0.08) 100%);
+}
+
+.gradient-orange-pink {
+  background: linear-gradient(135deg, #F97316 0%, #EC4899 100%);
+}
+
+.gradient-blue-cyan {
+  background: linear-gradient(135deg, #2563EB 0%, #06B6D4 100%);
+}
+
+.gradient-purple-indigo {
+  background: linear-gradient(135deg, #7C3AED 0%, #6366F1 100%);
+}
+
+.gradient-emerald-cyan {
+  background: linear-gradient(135deg, #059669 0%, #0D9488 100%);
+}
+
+/* Vibrant Button Styling */
+.btn-vibrant-primary {
+  background: linear-gradient(135deg, #7C3AED 0%, #EC4899 100%);
+  color: #FFFFFF;
+  font-weight: 700;
+  box-shadow: 0 4px 14px 0 rgba(124, 58, 237, 0.25);
+  transition: all 0.2s ease-in-out;
+}
+
+.btn-vibrant-primary:hover {
+  background: linear-gradient(135deg, #6D28D9 0%, #DB2777 100%);
+  box-shadow: 0 6px 20px 0 rgba(124, 58, 237, 0.35);
+  transform: translateY(-1px);
+}
+
+.btn-vibrant-secondary {
+  background: #FFFFFF;
+  border: 1px solid #E2E8F0;
+  color: #334155;
+  font-weight: 600;
+  transition: all 0.2s ease-in-out;
+}
+
+.btn-vibrant-secondary:hover {
+  background: #F8FAFC;
+  border-color: #CBD5E1;
+  color: #0F172A;
+}
+
+/* Production-Ready Cards with Vibrant Touches */
+.card-vibrant {
+  background: #FFFFFF;
+  border: 1px solid #E2E8F0;
+  border-radius: 1rem;
+  box-shadow: 0 1px 3px 0 rgba(15, 23, 42, 0.04), 0 1px 2px -1px rgba(15, 23, 42, 0.02);
+  transition: all 0.2s ease-in-out;
+}
+
+.card-vibrant:hover {
+  border-color: #CBD5E1;
+  box-shadow: 0 6px 20px -4px rgba(124, 58, 237, 0.06), 0 2px 6px -2px rgba(15, 23, 42, 0.04);
+}
+
+/* KPI Highlights */
+.kpi-vibrant-purple {
+  background: linear-gradient(135deg, #FAF5FF 0%, #F3E8FF 100%);
+  border: 1px solid #DDD6FE;
+}
+
+.kpi-vibrant-pink {
+  background: linear-gradient(135deg, #FDF2F8 0%, #FCE7F3 100%);
+  border: 1px solid #FBCFE8;
+}
+
+.kpi-vibrant-orange {
+  background: linear-gradient(135deg, #FFF7ED 0%, #FFEDD5 100%);
+  border: 1px solid #FED7AA;
+}
+
+.kpi-vibrant-blue {
+  background: linear-gradient(135deg, #EFF6FF 0%, #DBEAFE 100%);
+  border: 1px solid #BFDBFE;
+}
+
+.kpi-vibrant-emerald {
+  background: linear-gradient(135deg, #F0FDF4 0%, #DCFCE7 100%);
+  border: 1px solid #BBF7D0;
+}
+
+/* Custom Scrollbars */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: #F1F5F9;
+}
+::-webkit-scrollbar-thumb {
+  background: #CBD5E1;
+  border-radius: 9999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #94A3B8;
+}
