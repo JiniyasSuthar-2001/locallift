@@ -106,10 +106,24 @@ class SchemaRecord(Base):
     
     page_url = Column(String(1000), nullable=False)
     schema_type = Column(String(100), default="LocalBusiness")  # LocalBusiness, Organization, Service, FAQPage
+    page_type = Column(String(100), default="Homepage")
+    business_type = Column(String(100), default="LocalBusiness")
     is_valid = Column(Boolean, default=True)
+    quality_score = Column(Integer, default=85)
+    score_breakdown = Column(JSON, default=dict)
+    
     detected_types = Column(JSON, default=list)
+    applicable_schemas = Column(JSON, default=dict)
     errors = Column(JSON, default=list)
     warnings = Column(JSON, default=list)
+    missing_properties = Column(JSON, default=list)
+    property_results = Column(JSON, default=list)
+    recommendations = Column(JSON, default=list)
+    
+    schema_source = Column(String(50), default="JSON-LD")  # JSON-LD, Microdata, RDFa, Generated
+    schema_entities = Column(JSON, default=list)
+    nap_status = Column(String(50), default="Consistent")  # Consistent, Mismatch, Not Applicable
+    
     raw_json_ld = Column(Text, nullable=True)
     generated_json_ld = Column(Text, nullable=True)
     last_validated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))

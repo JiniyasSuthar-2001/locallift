@@ -1,8 +1,11 @@
 import asyncio
 import httpx
-from app.main import app
+from app.main import app, startup_event
 
 async def test_all_apis():
+    # Initialize DB tables and seed demo data matching real server startup
+    await startup_event()
+
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
         # 1. Health / Root
         r = await client.get("/")

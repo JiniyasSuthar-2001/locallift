@@ -8,7 +8,8 @@
     "dev:all": "concurrently --kill-others --names \"FRONTEND,BACKEND\" --prefix-colors \"cyan,green\" \"npm run dev:frontend\" \"npm run dev:backend\"",
     "dev:frontend": "npm run dev --prefix frontend",
     "dev:backend": "node scripts/start-backend.js",
-    "install:all": "npm install && npm install --prefix frontend --legacy-peer-deps && pip install -r backend/requirements.txt",
+    "install:backend": "node scripts/install-backend.js",
+    "install:all": "npm install && npm install --prefix frontend --legacy-peer-deps && node scripts/install-backend.js",
     "build:frontend": "npm run build --prefix frontend"
   },
   "devDependencies": {

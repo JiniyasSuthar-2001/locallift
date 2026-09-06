@@ -133,27 +133,17 @@ class WebsiteCrawler:
         if missing_alt:
             issues.append(f"{len(missing_alt)} images missing descriptive alt tags")
 
-        # Schemas & Structured Data
-        schema_types = []
-        json_ld_schemas = []
-        for script in soup.find_all("script", type="application/ld+json"):
-            try:
-                import json
-                raw_text = script.string or "{}"
-                data = json.loads(raw_text)
-                if isinstance(data, dict):
-                    json_ld_schemas.append(data)
-                    st = data.get("@type")
-                    if st:
-                        schema_types.append(st if isinstance(st, str) else str(st))
-                elif isinstance(data, list):
-                    for item in data:
-                        if isinstance(item, dict):
-                            json_ld_schemas.append(item)
-                            if "@type" in item:
-                                schema_types.append(str(item["@type"]))
-            except Exception:
-                issues.append("Malformed JSON-LD structured data script found on page")
+        # Schemas & Structured Data (JSON-LD, Microdata, RDFa)
+        from app.services.schema_intelligence import SchemaIntelligenceEngine
+        struct_data = SchemaIntelligenceEngine.extract_structured_data(soup, url)
+        schema_types = struct_data["schema_types"]
+        json_ld_schemas = struct_data["json_ld_schemas"]
+        schema_entities = struct_data["schema_entities"]
+        schema_formats = struct_data["schema_formats"]
+        schema_parse_errors = struct_data["schema_parse_errors"]
+
+        for pe in schema_parse_errors:
+            issues.append(f"Structured Data Syntax Error: {pe}")
 
         if not schema_types:
             issues.append("No structured data (JSON-LD schema) found")
@@ -182,6 +172,17 @@ class WebsiteCrawler:
         # Local Signals: Google Maps Embed
         has_map_embed = bool(soup.find("iframe", src=re.compile(r"google\.com/maps|maps\.google\.com", re.I)))
 
+        # Page Type Intelligence
+        page_type_res = SchemaIntelligenceEngine.detect_page_type(
+            url=url,
+            title=title,
+            h1=h1,
+            h2_list=h2_list,
+            body_text=body_text,
+            existing_schemas=schema_types,
+            has_map=has_map_embed
+        )
+
         # Links (Internal vs External)
         internal_links = 0
         external_links = 0
@@ -208,6 +209,13 @@ class WebsiteCrawler:
             "load_time_ms": load_time_ms,
             "schema_types": list(set(schema_types)),
             "json_ld_schemas": json_ld_schemas,
+            "schema_entities": schema_entities,
+            "schema_formats": schema_formats,
+            "schema_count": len(schema_entities),
+            "schema_parse_errors": schema_parse_errors,
+            "page_type": page_type_res["page_type"],
+            "page_type_confidence": page_type_res["confidence"],
+            "page_type_reasons": page_type_res["classification_reasons"],
             "phones_found": list(phones_found)[:5],
             "emails_found": list(emails_found)[:5],
             "has_map_embed": has_map_embed,

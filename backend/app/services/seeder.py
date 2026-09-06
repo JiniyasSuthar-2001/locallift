@@ -1,3 +1,4 @@
+import json
 from datetime import datetime, timezone, timedelta
 from sqlalchemy.future import select
 from app.database import AsyncSessionLocal
@@ -446,6 +447,138 @@ async def seed_initial_demo_data():
                     f"Competitor {c_name} ranks for 4 keywords in Logan suburb that you do not target yet.",
                     f"Your review rating ({4.8}★) beats {c_name} ({c_rat}★)."
                 ]
+            ))
+
+        # 15. Schema Records Intelligence
+        schema_records_data = [
+            (
+                "https://queenshineelectricals.com.au",
+                "Electrician",
+                "Homepage",
+                "Electrician",
+                True,
+                92,
+                ["Organization", "Electrician", "LocalBusiness", "WebSite", "WebPage", "BreadcrumbList"],
+                [],
+                ["Missing explicit openingHoursSpecification on root LocalBusiness node"],
+                ["openingHoursSpecification (Recommended)"],
+                "JSON-LD",
+                "Consistent",
+                json.dumps({
+                    "@context": "https://schema.org",
+                    "@graph": [
+                        {"@type": "Organization", "@id": "https://queenshineelectricals.com.au/#organization", "name": "Queenshine Electricals", "url": "https://queenshineelectricals.com.au"},
+                        {"@type": "Electrician", "@id": "https://queenshineelectricals.com.au/#localbusiness", "name": "Queenshine Electricals", "telephone": "+61 7 3100 4500", "url": "https://queenshineelectricals.com.au", "address": {"@type": "PostalAddress", "streetAddress": "142 Queen Street", "addressLocality": "Brisbane", "addressRegion": "QLD", "postalCode": "4000", "addressCountry": "AU"}, "geo": {"@type": "GeoCoordinates", "latitude": -27.4698, "longitude": 153.0251}},
+                        {"@type": "WebSite", "@id": "https://queenshineelectricals.com.au/#website", "name": "Queenshine Electricals", "url": "https://queenshineelectricals.com.au", "publisher": {"@id": "https://queenshineelectricals.com.au/#organization"}},
+                        {"@type": "WebPage", "@id": "https://queenshineelectricals.com.au/#webpage", "name": "Queenshine Electricals - Brisbane 24/7 Electrician", "url": "https://queenshineelectricals.com.au", "isPartOf": {"@id": "https://queenshineelectricals.com.au/#website"}}
+                    ]
+                }, indent=2)
+            ),
+            (
+                "https://queenshineelectricals.com.au/services/emergency-electrician",
+                "Service",
+                "Service",
+                "Electrician",
+                True,
+                88,
+                ["Service", "WebPage", "BreadcrumbList"],
+                [],
+                ["Service entity missing explicit priceRange/offers specification"],
+                ["offers (Optional)"],
+                "JSON-LD",
+                "Consistent",
+                json.dumps({
+                    "@context": "https://schema.org",
+                    "@graph": [
+                        {"@type": "Service", "@id": "https://queenshineelectricals.com.au/services/emergency-electrician/#service", "name": "24/7 Emergency Electrician", "description": "Rapid response emergency electrical repairs in Brisbane CBD.", "provider": {"@id": "https://queenshineelectricals.com.au/#localbusiness"}},
+                        {"@type": "WebPage", "@id": "https://queenshineelectricals.com.au/services/emergency-electrician/#webpage", "name": "Emergency Electrician Brisbane", "url": "https://queenshineelectricals.com.au/services/emergency-electrician", "mainEntity": {"@id": "https://queenshineelectricals.com.au/services/emergency-electrician/#service"}}
+                    ]
+                }, indent=2)
+            ),
+            (
+                "https://queenshineelectricals.com.au/services/switchboard-upgrade",
+                "Service",
+                "Service",
+                "Electrician",
+                True,
+                85,
+                ["Service", "WebPage", "BreadcrumbList"],
+                [],
+                ["Missing customer reviews markup on switchboard upgrade service page"],
+                ["aggregateRating (Optional)"],
+                "JSON-LD",
+                "Consistent",
+                json.dumps({
+                    "@context": "https://schema.org",
+                    "@type": "Service",
+                    "name": "Switchboard Upgrades & Safety Switches",
+                    "description": "Commercial and residential switchboard replacements and safety compliance.",
+                    "provider": {"@id": "https://queenshineelectricals.com.au/#localbusiness"}
+                }, indent=2)
+            ),
+            (
+                "https://queenshineelectricals.com.au/locations/south-brisbane",
+                "LocalBusiness",
+                "Service Location",
+                "Electrician",
+                True,
+                74,
+                ["LocalBusiness", "Service", "WebPage"],
+                [],
+                ["LocalBusiness entity missing precise GeoCoordinates (latitude, longitude)", "Missing openingHoursSpecification"],
+                ["geo (Recommended)", "openingHoursSpecification (Recommended)"],
+                "JSON-LD",
+                "Consistent",
+                json.dumps({
+                    "@context": "https://schema.org",
+                    "@type": "Electrician",
+                    "name": "Queenshine Electricals - South Brisbane",
+                    "telephone": "+61 7 3100 4500",
+                    "address": {"@type": "PostalAddress", "addressLocality": "South Brisbane", "addressRegion": "QLD", "addressCountry": "AU"}
+                }, indent=2)
+            ),
+            (
+                "https://queenshineelectricals.com.au/about",
+                "Organization",
+                "About",
+                "Electrician",
+                True,
+                90,
+                ["Organization", "Person", "WebPage"],
+                [],
+                ["Person founder missing official LinkedIn sameAs profile"],
+                ["sameAs (Optional)"],
+                "JSON-LD",
+                "Consistent",
+                json.dumps({
+                    "@context": "https://schema.org",
+                    "@graph": [
+                        {"@type": "Organization", "name": "Queenshine Electricals Pty Ltd", "url": "https://queenshineelectricals.com.au"},
+                        {"@type": "Person", "name": "David Queenshine", "jobTitle": "Master Electrician & Founder", "worksFor": {"@id": "https://queenshineelectricals.com.au/#organization"}}
+                    ]
+                }, indent=2)
+            )
+        ]
+
+        for p_url, s_type, pg_type, b_type, is_val, q_sc, det_t, errs, warns, miss_p, s_src, nap_st, raw_j in schema_records_data:
+            session.add(SchemaRecord(
+                project_id=project.id,
+                page_url=p_url,
+                schema_type=s_type,
+                page_type=pg_type,
+                business_type=b_type,
+                is_valid=is_val,
+                quality_score=q_sc,
+                detected_types=det_t,
+                errors=errs,
+                warnings=warns,
+                missing_properties=miss_p,
+                property_results=[{"property": "name", "value": "Queenshine Electricals", "status": "Verified", "confidence": 98}],
+                recommendations=[{"priority": "MEDIUM", "title": "Add opening hours to LocalBusiness", "why": "Display operating schedule in SERP cards"}],
+                schema_source=s_src,
+                nap_status=nap_st,
+                raw_json_ld=raw_j,
+                generated_json_ld=raw_j
             ))
 
         await session.commit()

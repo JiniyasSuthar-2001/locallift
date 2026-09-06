@@ -370,3 +370,88 @@ export interface TemplateValidateResponse {
   detected_variables: string[];
 }
 
+export interface SchemaPropertyResult {
+  property: string;
+  value: string;
+  source?: string;
+  confidence?: number;
+  status: 'Verified' | 'User Provided' | 'Detected' | 'Missing' | string;
+}
+
+export interface SchemaRecommendation {
+  priority: 'HIGH' | 'MEDIUM' | 'LOW';
+  title: string;
+  affected_url?: string;
+  why: string;
+  evidence: string;
+  expected_improvement: string;
+  action_type: string;
+  action_label?: string;
+}
+
+export interface Tier1SchemaInfo {
+  status: 'Detected' | 'Missing' | 'Invalid' | 'Not Applicable';
+  applicability: 'Highly Applicable' | 'Applicable' | 'Potentially Applicable' | 'Not Applicable';
+  reason: string;
+}
+
+export interface SchemaRecord {
+  id: number;
+  project_id: number;
+  page_url: string;
+  schema_type: string;
+  page_type?: string;
+  business_type?: string;
+  is_valid: boolean;
+  quality_score: number;
+  score_breakdown?: Record<string, number>;
+  detected_types: string[];
+  applicable_schemas?: Record<string, any>;
+  errors: string[];
+  warnings: string[];
+  missing_properties?: string[];
+  property_results?: SchemaPropertyResult[];
+  recommendations?: SchemaRecommendation[];
+  schema_source?: string;
+  schema_entities?: any[];
+  nap_status?: 'Consistent' | 'Mismatch' | 'Not Applicable' | string;
+  raw_json_ld?: string | null;
+  generated_json_ld?: string | null;
+  last_validated_at: string;
+}
+
+export interface SchemaIntelligenceSummary {
+  project_id: number;
+  domain: string;
+  health_score: number;
+  score_breakdown: {
+    detection: number;
+    validity: number;
+    completeness: number;
+    data_accuracy: number;
+    relationships: number;
+    applicability: number;
+  };
+  deductions: string[];
+  stats: {
+    pages_crawled: number;
+    schemas_detected: number;
+    valid_count: number;
+    warnings_count: number;
+    errors_count: number;
+    missing_opportunities: number;
+  };
+  tier_1_status: Record<string, Tier1SchemaInfo>;
+  industry_type: string;
+  records: SchemaRecord[];
+  recommendations: SchemaRecommendation[];
+}
+
+export interface SchemaValidationResult {
+  is_valid: boolean;
+  errors: string[];
+  warnings: string[];
+  entities: string[];
+}
+
+

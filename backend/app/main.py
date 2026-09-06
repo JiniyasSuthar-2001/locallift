@@ -45,11 +45,29 @@ app.include_router(reports_router, prefix=settings.API_V1_STR)
 app.include_router(organizations_router, prefix=settings.API_V1_STR)
 app.include_router(templates_router, prefix=settings.API_V1_STR)
 
+def _sync_sqlite_schema(sync_conn):
+    """Auto-migrate SQLite database by adding any missing table columns."""
+    from sqlalchemy import inspect, text
+    inspector = inspect(sync_conn)
+    tables = inspector.get_table_names()
+    for table_name, table in Base.metadata.tables.items():
+        if table_name in tables:
+            existing_cols = {c["name"] for c in inspector.get_columns(table_name)}
+            for col in table.columns:
+                if col.name not in existing_cols:
+                    col_type = col.type.compile(sync_conn.dialect)
+                    try:
+                        sync_conn.execute(text(f"ALTER TABLE {table_name} ADD COLUMN {col.name} {col_type}"))
+                    except Exception as e:
+                        print(f"Warning: Failed to auto-add column {col.name} to {table_name}: {e}")
+
 @app.on_event("startup")
 async def startup_event():
+    import app.models  # noqa: F401
     # Create DB tables
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+        await conn.run_sync(_sync_sqlite_schema)
 
     # Seed initial demo data if empty
     from app.services.seeder import seed_initial_demo_data

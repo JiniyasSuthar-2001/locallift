@@ -1,6 +1,10 @@
 import os
+from pathlib import Path
 from pydantic_settings import BaseSettings
 from typing import List
+
+ROOT_DIR = Path(__file__).resolve().parent.parent.parent
+BACKEND_DIR = Path(__file__).resolve().parent.parent
 
 class Settings(BaseSettings):
     PROJECT_NAME: str = "LocalLift"
@@ -34,7 +38,11 @@ class Settings(BaseSettings):
     
     class Config:
         case_sensitive = True
-        env_file = ".env"
+        env_file = (
+            str(ROOT_DIR / ".env"),
+            str(BACKEND_DIR / ".env"),
+            ".env",
+        )
         extra = "ignore"
 
 settings = Settings()

@@ -87,10 +87,21 @@ class SchemaRecordOut(BaseModel):
     project_id: int
     page_url: str
     schema_type: str
+    page_type: Optional[str] = "Homepage"
+    business_type: Optional[str] = "LocalBusiness"
     is_valid: bool
+    quality_score: Optional[int] = 85
+    score_breakdown: Optional[Dict[str, Any]] = {}
     detected_types: List[str] = []
+    applicable_schemas: Optional[Dict[str, Any]] = {}
     errors: List[str] = []
     warnings: List[str] = []
+    missing_properties: Optional[List[str]] = []
+    property_results: Optional[List[Dict[str, Any]]] = []
+    recommendations: Optional[List[Dict[str, Any]]] = []
+    schema_source: Optional[str] = "JSON-LD"
+    schema_entities: Optional[List[Dict[str, Any]]] = []
+    nap_status: Optional[str] = "Consistent"
     raw_json_ld: Optional[str] = None
     generated_json_ld: Optional[str] = None
     last_validated_at: datetime
@@ -102,13 +113,39 @@ class SchemaGenerateRequest(BaseModel):
     business_name: str
     business_type: str = "LocalBusiness"
     url: str
-    phone: str
-    street_address: str
-    city: str
-    state: str
-    postal_code: str
-    country: str = "US"
+    phone: Optional[str] = None
+    street_address: Optional[str] = None
+    city: Optional[str] = None
+    state: Optional[str] = None
+    postal_code: Optional[str] = None
+    country: Optional[str] = None
     latitude: Optional[float] = None
     longitude: Optional[float] = None
-    opening_hours: Optional[List[str]] = ["Mo-Fr 08:00-18:00"]
-    price_range: Optional[str] = "$$"
+    opening_hours: Optional[List[Dict[str, Any]]] = None
+    price_range: Optional[str] = None
+    social_profiles: Optional[List[str]] = None
+    service_name: Optional[str] = None
+    service_description: Optional[str] = None
+    breadcrumbs: Optional[List[Dict[str, str]]] = None
+    include_graph: Optional[bool] = True
+
+class SchemaValidateRequest(BaseModel):
+    json_ld: str
+
+class SchemaValidateResponse(BaseModel):
+    is_valid: bool
+    errors: List[str] = []
+    warnings: List[str] = []
+    entities: List[str] = []
+
+class SchemaIntelligenceSummaryOut(BaseModel):
+    project_id: int
+    domain: str
+    health_score: int
+    score_breakdown: Dict[str, int]
+    deductions: List[str] = []
+    stats: Dict[str, int]
+    tier_1_status: Dict[str, Dict[str, Any]]
+    industry_type: str
+    records: List[SchemaRecordOut]
+    recommendations: List[Dict[str, Any]]
