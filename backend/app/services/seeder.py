@@ -1,6 +1,7 @@
 import json
 from datetime import datetime, timezone, timedelta
 from sqlalchemy.future import select
+from app.config import settings
 from app.database import AsyncSessionLocal
 from app.core.security import get_password_hash
 from app.models.user import User, Organization, OrganizationMember, Client, OrgRole
@@ -10,7 +11,17 @@ from app.models.gbp import GoogleAccount, GoogleBusinessProfile, GBPChange
 from app.models.ranking import Keyword, KeywordRanking, GeoGridScan
 from app.models.local_seo import Review, Citation, NAPRecord, Competitor, SchemaRecord
 
-async def seed_initial_demo_data():
+async def seed_initial_demo_data(force: bool = False):
+    """
+    Seeds local development demo data.
+    Strictly prohibited in production environments.
+    """
+    if getattr(settings, "ENVIRONMENT", "production").lower() == "production" and not force:
+        raise RuntimeError("CRITICAL: Demo data seeding is strictly prohibited in production environments.")
+
+    if not getattr(settings, "ALLOW_DEV_SEEDING", False) and not force:
+        raise RuntimeError("Seeding is disabled. Set ALLOW_DEV_SEEDING=True in settings or development .env to enable.")
+
     async with AsyncSessionLocal() as session:
         # Check if user exists
         user_res = await session.execute(select(User).where(User.email == "demo@locallift.io"))
@@ -583,3 +594,10 @@ async def seed_initial_demo_data():
 
         await session.commit()
         print("LocalLift demo data seeded successfully.")
+
+if __name__ == "__main__":
+    import asyncio
+    import sys
+    force_flag = "--force-dev" in sys.argv
+    asyncio.run(seed_initial_demo_data(force=force_flag))
+

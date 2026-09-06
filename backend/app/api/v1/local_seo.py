@@ -14,7 +14,7 @@ from app.models.audit import WebsitePage
 from app.models.project import Location
 from app.schemas.local_seo import (
     ReviewOut, ReviewDraftResponse, ReviewApprovePublish,
-    CitationOut, NAPRecordOut, CompetitorOut, SchemaRecordOut, SchemaGenerateRequest,
+    CitationCreate, CitationOut, NAPRecordOut, CompetitorCreate, CompetitorOut, SchemaRecordOut, SchemaGenerateRequest,
     SchemaValidateRequest, SchemaValidateResponse, SchemaIntelligenceSummaryOut
 )
 from app.services.ai_assistant import AIAssistantService
@@ -101,6 +101,36 @@ async def list_citations(
     result = await db.execute(query.order_by(Citation.domain_authority.desc()))
     return result.scalars().all()
 
+@router.post("/citations", response_model=CitationOut)
+async def add_citation(
+    cit_in: CitationCreate,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    src_name = cit_in.source_name or cit_in.directory_name or "Directory Listing"
+    dom = cit_in.domain
+    if not dom and cit_in.listing_url:
+        import urllib.parse
+        parsed = urllib.parse.urlparse(cit_in.listing_url)
+        dom = parsed.netloc or cit_in.listing_url
+    dom = dom or f"{src_name.lower().replace(' ', '')}.com"
+
+    cit = Citation(
+        project_id=cit_in.project_id,
+        source_name=src_name,
+        domain=dom,
+        listing_url=cit_in.listing_url,
+        domain_authority=cit_in.domain_authority or 50,
+        category=cit_in.category or "General Directory",
+        status="active",
+        nap_status=cit_in.nap_status or "match",
+        last_checked_at=datetime.now(timezone.utc)
+    )
+    db.add(cit)
+    await db.commit()
+    await db.refresh(cit)
+    return cit
+
 # NAP Consistency
 @router.get("/nap/{project_id}", response_model=Optional[NAPRecordOut])
 async def get_nap_record(
@@ -122,6 +152,27 @@ async def list_competitors(
 ):
     result = await db.execute(select(Competitor).where(Competitor.project_id == project_id))
     return result.scalars().all()
+
+@router.post("/competitors", response_model=CompetitorOut)
+async def add_competitor(
+    comp_in: CompetitorCreate,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    comp = Competitor(
+        project_id=comp_in.project_id,
+        name=comp_in.name,
+        domain=comp_in.domain.replace("https://", "").replace("http://", "").rstrip("/"),
+        gbp_name=comp_in.gbp_name,
+        rating=comp_in.rating or 0.0,
+        reviews_count=comp_in.reviews_count or 0,
+        local_visibility_score=0,
+        top_keywords_count=0
+    )
+    db.add(comp)
+    await db.commit()
+    await db.refresh(comp)
+    return comp
 
 # -----------------------------------------------------------------------------
 # Schema Intelligence, Generator & Validator Endpoints

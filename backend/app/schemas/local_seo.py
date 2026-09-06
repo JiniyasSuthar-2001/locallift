@@ -29,6 +29,16 @@ class ReviewDraftResponse(BaseModel):
 class ReviewApprovePublish(BaseModel):
     response_text: str
 
+class CitationCreate(BaseModel):
+    project_id: int
+    directory_name: Optional[str] = None
+    source_name: Optional[str] = None
+    domain: Optional[str] = None
+    listing_url: Optional[str] = None
+    category: Optional[str] = "General Directory"
+    domain_authority: Optional[int] = 50
+    nap_status: Optional[str] = "match"
+
 class CitationOut(BaseModel):
     id: int
     project_id: int
@@ -47,6 +57,15 @@ class CitationOut(BaseModel):
 
     class Config:
         from_attributes = True
+
+class CompetitorCreate(BaseModel):
+    project_id: int
+    name: str
+    domain: str
+    gbp_name: Optional[str] = None
+    rating: Optional[float] = 0.0
+    reviews_count: Optional[int] = 0
+
 
 class NAPRecordOut(BaseModel):
     id: int

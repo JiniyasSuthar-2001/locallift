@@ -267,3 +267,96 @@ async def disconnect_gbp(
         await db.commit()
 
     return {"message": "Google Business Profile disconnected successfully.", "status": "disconnected"}
+
+@router.get("/gsc/{project_id}")
+async def get_gsc_data(
+    project_id: int,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Returns real Google Search Console metrics stored for the project, or a connected=False state.
+    """
+    from app.models.analytics import GSCMetric
+    res = await db.execute(
+        select(GSCMetric).where(GSCMetric.project_id == project_id).order_by(GSCMetric.date.desc())
+    )
+    metrics = res.scalars().all()
+
+    if not metrics:
+        return {
+            "connected": False,
+            "total_clicks": 0,
+            "total_impressions": 0,
+            "average_ctr": 0.0,
+            "average_position": None,
+            "top_queries": [],
+            "daily_history": []
+        }
+
+    latest = metrics[0]
+    total_clicks = sum(m.clicks for m in metrics)
+    total_imp = sum(m.impressions for m in metrics)
+    avg_ctr = round(sum(m.ctr for m in metrics) / len(metrics), 2)
+    avg_pos = round(sum(m.average_position for m in metrics) / len(metrics), 1)
+
+    return {
+        "connected": True,
+        "total_clicks": total_clicks,
+        "total_impressions": total_imp,
+        "average_ctr": avg_ctr,
+        "average_position": avg_pos,
+        "top_queries": latest.top_queries or [],
+        "daily_history": [
+            {
+                "date": m.date.strftime("%b %d"),
+                "clicks": m.clicks,
+                "impressions": m.impressions
+            }
+            for m in reversed(metrics[:14])
+        ]
+    }
+
+@router.get("/ga4/{project_id}")
+async def get_ga4_data(
+    project_id: int,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Returns real Google Analytics 4 metrics stored for the project, or a connected=False state.
+    """
+    from app.models.analytics import GA4Metric
+    res = await db.execute(
+        select(GA4Metric).where(GA4Metric.project_id == project_id).order_by(GA4Metric.date.desc())
+    )
+    metrics = res.scalars().all()
+
+    if not metrics:
+        return {
+            "connected": False,
+            "total_users": 0,
+            "total_sessions": 0,
+            "engagement_rate": 0.0,
+            "total_conversions": 0,
+            "landing_pages": [],
+            "traffic_sources": []
+        }
+
+    latest = metrics[0]
+    return {
+        "connected": True,
+        "total_users": sum(m.organic_users for m in metrics),
+        "total_sessions": sum(m.sessions for m in metrics),
+        "engagement_rate": round(sum(m.engagement_rate for m in metrics) / len(metrics), 1),
+        "total_conversions": sum(m.conversions for m in metrics),
+        "landing_pages": latest.landing_pages or [],
+        "traffic_sources": latest.traffic_sources or []
+    }
+
+google_router = APIRouter(prefix="/google", tags=["Google Integrations"])
+google_router.add_api_route("/gsc/{project_id}", get_gsc_data, methods=["GET"])
+google_router.add_api_route("/ga4/{project_id}", get_ga4_data, methods=["GET"])
+google_router.add_api_route("/gbp/{project_id}", get_gbp_profile, methods=["GET"])
+
+

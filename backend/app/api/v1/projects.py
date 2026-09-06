@@ -8,9 +8,10 @@ from app.core.deps import get_current_user
 from app.models.user import User, OrganizationMember
 from app.models.project import Project, Location, Website
 from app.models.audit import SEOAudit, SEOIssue, SEOTask, IssueSeverity, IssueStatus
-from app.models.gbp import GoogleBusinessProfile
+from app.models.gbp import GoogleBusinessProfile, GoogleAccount
 from app.models.ranking import Keyword
 from app.models.local_seo import Review
+from app.models.analytics import GSCMetric
 from app.schemas.project import ProjectCreate, ProjectUpdate, ProjectOut, DashboardSummaryOut, LocationCreate, LocationOut
 
 router = APIRouter(prefix="/projects", tags=["Projects"])
@@ -50,15 +51,15 @@ async def create_project(
         domain=project_in.domain.replace("https://", "").replace("http://", "").rstrip("/"),
         primary_category=project_in.primary_category,
         country=project_in.country,
-        health_score=82,
-        technical_score=85,
-        onpage_score=80,
-        local_score=75,
-        gbp_score=70,
-        reviews_score=88,
-        citations_score=72,
-        keywords_score=80,
-        maps_score=74
+        health_score=0,
+        technical_score=0,
+        onpage_score=0,
+        local_score=0,
+        gbp_score=0,
+        reviews_score=0,
+        citations_score=0,
+        keywords_score=0,
+        maps_score=0
     )
     db.add(project)
     await db.flush()
@@ -190,11 +191,16 @@ async def get_dashboard_summary(
         for r in rev_res.scalars().all()
     ]
 
-    # Fetch GBP summary
-    gbp_res = await db.execute(
-        select(GoogleBusinessProfile).where(GoogleBusinessProfile.id > 0).limit(1)
-    )
-    gbp = gbp_res.scalars().first()
+    # Fetch GBP summary scoped to project
+    acc_res = await db.execute(select(GoogleAccount).where(GoogleAccount.project_id == project_id))
+    google_acc = acc_res.scalars().first()
+    gbp = None
+    if google_acc:
+        gbp_res = await db.execute(
+            select(GoogleBusinessProfile).where(GoogleBusinessProfile.google_account_id == google_acc.id)
+        )
+        gbp = gbp_res.scalars().first()
+
     gbp_summary = {
         "connected": gbp is not None,
         "business_name": gbp.business_name if gbp else None,
@@ -205,17 +211,29 @@ async def get_dashboard_summary(
         "website_clicks": gbp.website_clicks if gbp else 0
     } if gbp else {"connected": False}
 
+    # Fetch latest real GSC metrics if available
+    gsc_res = await db.execute(
+        select(GSCMetric).where(GSCMetric.project_id == project_id).order_by(GSCMetric.date.desc())
+    )
+    latest_gsc = gsc_res.scalars().first()
+    gsc_summary = {
+        "clicks": latest_gsc.clicks if latest_gsc else 0,
+        "impressions": latest_gsc.impressions if latest_gsc else 0,
+        "ctr": latest_gsc.ctr if latest_gsc else 0.0,
+        "avg_position": latest_gsc.average_position if latest_gsc else 0.0
+    }
+
     return DashboardSummaryOut(
-        health_score=project.health_score,
+        health_score=project.health_score or 0,
         scores={
-            "technical": project.technical_score,
-            "onpage": project.onpage_score,
-            "local": project.local_score,
-            "gbp": project.gbp_score,
-            "reviews": project.reviews_score,
-            "citations": project.citations_score,
-            "keywords": project.keywords_score,
-            "maps": project.maps_score,
+            "technical": project.technical_score or 0,
+            "onpage": project.onpage_score or 0,
+            "local": project.local_score or 0,
+            "gbp": project.gbp_score or 0,
+            "reviews": project.reviews_score or 0,
+            "citations": project.citations_score or 0,
+            "keywords": project.keywords_score or 0,
+            "maps": project.maps_score or 0,
         },
         counts={
             "open_issues": len([i for i in recent_issues if i["status"] == "open"]),
@@ -228,10 +246,5 @@ async def get_dashboard_summary(
         recent_reviews=recent_reviews,
         top_keywords=top_keywords,
         gbp_summary=gbp_summary,
-        gsc_summary={
-            "clicks": 1420,
-            "impressions": 38400,
-            "ctr": 3.7,
-            "avg_position": 8.4
-        }
+        gsc_summary=gsc_summary
     )

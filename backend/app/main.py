@@ -9,7 +9,7 @@ from app.api.v1.auth import router as auth_router
 from app.api.v1.projects import router as projects_router
 from app.api.v1.audits import router as audits_router
 from app.api.v1.tasks import router as tasks_router
-from app.api.v1.gbp import router as gbp_router
+from app.api.v1.gbp import router as gbp_router, google_router
 from app.api.v1.keywords import router as keywords_router
 from app.api.v1.local_seo import router as local_seo_router
 from app.api.v1.ai import router as ai_router
@@ -38,6 +38,7 @@ app.include_router(projects_router, prefix=settings.API_V1_STR)
 app.include_router(audits_router, prefix=settings.API_V1_STR)
 app.include_router(tasks_router, prefix=settings.API_V1_STR)
 app.include_router(gbp_router, prefix=settings.API_V1_STR)
+app.include_router(google_router, prefix=settings.API_V1_STR)
 app.include_router(keywords_router, prefix=settings.API_V1_STR)
 app.include_router(local_seo_router, prefix=settings.API_V1_STR)
 app.include_router(ai_router, prefix=settings.API_V1_STR)
@@ -68,10 +69,6 @@ async def startup_event():
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
         await conn.run_sync(_sync_sqlite_schema)
-
-    # Seed initial demo data if empty
-    from app.services.seeder import seed_initial_demo_data
-    await seed_initial_demo_data()
 
 @app.get("/")
 async def root():

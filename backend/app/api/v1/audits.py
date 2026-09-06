@@ -375,12 +375,12 @@ async def get_diagnostic_summary(
 
     # Pillar Scores
     pillar_scores = {
-        "crawl_health": project.technical_score or (latest_audit.overall_score if latest_audit else 75),
-        "onpage_content": project.onpage_score or 72,
-        "schema_structured_data": project.local_score or 65,
-        "gbp_alignment": project.gbp_score or (85 if (gbp and name_aligned and phone_aligned) else 50),
-        "citations_nap": project.citations_score or (80 if not cit_mismatches else 60),
-        "reviews_reputation": project.reviews_score or (85 if not unanswered_reviews else 65)
+        "crawl_health": latest_audit.overall_score if latest_audit else (project.technical_score or 0),
+        "onpage_content": project.onpage_score or 0,
+        "schema_structured_data": project.local_score or 0,
+        "gbp_alignment": project.gbp_score or ((100 if (name_aligned and phone_aligned) else 50) if gbp else 0),
+        "citations_nap": project.citations_score or (100 if (citations and not cit_mismatches) else (50 if cit_mismatches else 0)),
+        "reviews_reputation": project.reviews_score or (round(avg_rating * 20) if reviews else 0)
     }
 
     issues_out = []
@@ -401,7 +401,7 @@ async def get_diagnostic_summary(
 
     return {
         "project_id": project_id,
-        "overall_score": latest_audit.overall_score if latest_audit else (project.health_score or 72),
+        "overall_score": latest_audit.overall_score if latest_audit else (project.health_score or 0),
         "pages_analyzed": latest_audit.pages_analyzed if latest_audit else 0,
         "critical_issues": latest_audit.critical_issues if latest_audit else 0,
         "warnings": latest_audit.warnings if latest_audit else 0,

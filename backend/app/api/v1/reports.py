@@ -70,8 +70,8 @@ async def generate_executive_report(
             "top_3_keywords": len([k for k in keywords if k.current_rank and k.current_rank <= 3]),
             "top_10_keywords": len([k for k in keywords if k.current_rank and k.current_rank <= 10]),
             "total_reviews": len(reviews),
-            "avg_rating": round(sum(r.rating for r in reviews) / max(1, len(reviews)), 1) if reviews else 5.0,
-            "nap_consistency_score": nap.nap_score if nap else 85,
+            "avg_rating": round(sum(r.rating for r in reviews) / len(reviews), 1) if reviews else 0.0,
+            "nap_consistency_score": nap.nap_score if nap else (100 if (nap and nap.is_consistent) else 0),
             "open_issues_count": len([i for i in issues if i.status == 'open']),
             "completed_tasks_count": len([t for t in tasks if t.status == 'completed'])
         },

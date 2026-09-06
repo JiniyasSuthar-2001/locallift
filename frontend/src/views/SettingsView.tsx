@@ -35,7 +35,8 @@ export const SettingsView: React.FC = () => {
                 <label className="text-slate-700 font-bold block mb-1">Active Project Name</label>
                 <input
                   type="text"
-                  defaultValue={activeProject?.name || 'Local Business Project'}
+                  defaultValue={activeProject?.name || ''}
+                  placeholder="e.g. My Business"
                   className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-slate-900 focus:outline-none focus:border-purple-500 font-medium"
                 />
               </div>
@@ -44,7 +45,8 @@ export const SettingsView: React.FC = () => {
                 <input
                   type="email"
                   disabled
-                  defaultValue={user?.email || 'admin@locallift.io'}
+                  defaultValue={user?.email || ''}
+                  placeholder="user@example.com"
                   className="w-full bg-slate-100 border border-slate-200 rounded-xl p-2.5 text-slate-500 font-medium"
                 />
               </div>

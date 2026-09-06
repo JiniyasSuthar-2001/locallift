@@ -4,6 +4,7 @@ import api from '../api/client';
 
 interface AuthContextType extends AuthState {
   login: (email: string, password: string) => Promise<boolean>;
+  register: (email: string, password: string, fullName: string, orgName?: string) => Promise<boolean>;
   logout: () => void;
   loading: boolean;
 }
@@ -18,23 +19,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   useEffect(() => {
     const fetchMe = async () => {
       if (!token) {
-        // Auto-login to demo account for instantaneous review if no token
-        try {
-          const formData = new URLSearchParams();
-          formData.append('username', 'demo@locallift.io');
-          formData.append('password', 'password123');
-          const resp = await api.post('/auth/login', formData, {
-            headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
-          });
-          const newToken = resp.data.access_token;
-          localStorage.setItem('locallift_token', newToken);
-          setToken(newToken);
-          setUser(resp.data.user);
-        } catch (e) {
-          console.error('Demo auto-login failed:', e);
-        } finally {
-          setLoading(false);
-        }
+        setUser(null);
+        setLoading(false);
         return;
       }
 
@@ -73,6 +59,30 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
+  const register = async (
+    email: string,
+    password: string,
+    fullName: string,
+    orgName?: string
+  ): Promise<boolean> => {
+    try {
+      const resp = await api.post('/auth/register', {
+        email,
+        password,
+        full_name: fullName,
+        organization_name: orgName || undefined
+      });
+      const newToken = resp.data.access_token;
+      localStorage.setItem('locallift_token', newToken);
+      setToken(newToken);
+      setUser(resp.data.user);
+      return true;
+    } catch (e) {
+      console.error('Registration error:', e);
+      return false;
+    }
+  };
+
   const logout = () => {
     localStorage.removeItem('locallift_token');
     setToken(null);
@@ -80,7 +90,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   return (
-    <AuthContext.Provider value={{ user, token, isAuthenticated: !!user, login, logout, loading }}>
+    <AuthContext.Provider value={{ user, token, isAuthenticated: !!user, login, register, logout, loading }}>
       {children}
     </AuthContext.Provider>
   );
