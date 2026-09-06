@@ -169,9 +169,12 @@ export interface GridPoint {
   col: number;
   lat: number;
   lng: number;
-  rank: number;
+  rank: number | null;
   status: 'green' | 'yellow' | 'red' | string;
+  pin_status?: 'found' | 'not_found' | 'failed' | string;
+  ranking_url?: string;
   competitor_ahead?: string;
+  error?: string;
 }
 
 export interface GeoGridScan {
@@ -185,6 +188,10 @@ export interface GeoGridScan {
   grid_size: number;
   average_rank: number;
   local_visibility_pct: number;
+  scan_status?: 'completed' | 'partial' | 'failed' | string;
+  total_points?: number;
+  successful_points?: number;
+  failed_points?: number;
   grid_points: GridPoint[];
   scanned_at: string;
 }

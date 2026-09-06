@@ -27,10 +27,14 @@ class Settings(BaseSettings):
         "http://127.0.0.1:3000"
     ]
     
-    # Integrations
+    # Integrations - Google Platform
     GOOGLE_CLIENT_ID: str = ""
     GOOGLE_CLIENT_SECRET: str = ""
     GOOGLE_REDIRECT_URI: str = "http://localhost:5173/integrations/google/callback"
+    
+    # Integrations - SERP / Rank Tracking
+    SERP_PROVIDER: str = "serpapi"  # serpapi, mock
+    SERPAPI_KEY: str = ""
     
     # AI Engine
     AI_API_KEY: str = ""

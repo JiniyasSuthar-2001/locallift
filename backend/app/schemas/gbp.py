@@ -45,3 +45,28 @@ class GBPChangeOut(BaseModel):
 
     class Config:
         from_attributes = True
+
+class GBPOAuthURLResponse(BaseModel):
+    auth_url: str
+    is_configured: bool
+    redirect_uri: str
+
+class GBPOAuthCallbackRequest(BaseModel):
+    code: str
+    state: Optional[str] = None
+    project_id: Optional[int] = None
+
+class GBPStatusResponse(BaseModel):
+    is_connected: bool
+    is_configured: bool
+    account_email: Optional[str] = None
+    last_synced_at: Optional[datetime] = None
+    profiles_count: int = 0
+    message: Optional[str] = None
+
+class GBPSyncResponse(BaseModel):
+    message: str
+    status: str
+    profiles_synced: int
+    changes_detected: int
+    last_synced_at: datetime

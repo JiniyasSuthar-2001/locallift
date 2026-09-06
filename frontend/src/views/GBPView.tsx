@@ -10,7 +10,10 @@ import {
   MapPin,
   ExternalLink,
   ShieldCheck,
-  Sparkles
+  Sparkles,
+  Link,
+  Unlink,
+  AlertCircle
 } from 'lucide-react';
 import { useProject } from '../context/ProjectContext';
 import { GoogleBusinessProfile, GBPChange } from '../types';
@@ -23,18 +26,27 @@ export const GBPView: React.FC = () => {
   const [changes, setChanges] = useState<GBPChange[]>([]);
   const [loading, setLoading] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
+  const [authUrl, setAuthUrl] = useState<string | null>(null);
+  const [isConfigured, setIsConfigured] = useState<boolean>(true);
+  const [syncFeedback, setSyncFeedback] = useState<string | null>(null);
 
   const fetchGBPData = async () => {
     if (!activeProject) return;
     try {
       setLoading(true);
-      const [gbpResp, changesResp] = await Promise.allSettled([
+      const [gbpResp, changesResp, statusResp, authResp] = await Promise.allSettled([
         api.get(`/gbp/${activeProject.id}`),
-        api.get(`/gbp/${activeProject.id}/changes`)
+        api.get(`/gbp/${activeProject.id}/changes`),
+        api.get(`/gbp/${activeProject.id}/status`),
+        api.get(`/gbp/${activeProject.id}/auth-url`)
       ]);
 
       if (gbpResp.status === 'fulfilled') setGbp(gbpResp.value.data);
       if (changesResp.status === 'fulfilled') setChanges(changesResp.value.data || []);
+      if (authResp.status === 'fulfilled') {
+        setAuthUrl(authResp.value.data?.auth_url);
+        setIsConfigured(authResp.value.data?.is_configured);
+      }
     } catch (e) {
       console.error('Failed to load GBP data:', e);
     } finally {
@@ -50,13 +62,39 @@ export const GBPView: React.FC = () => {
     if (!activeProject) return;
     try {
       setIsSyncing(true);
-      await api.post(`/gbp/${activeProject.id}/sync`);
+      setSyncFeedback(null);
+      const res = await api.post(`/gbp/${activeProject.id}/sync`);
+      setSyncFeedback(`Sync complete: ${res.data.profiles_synced} profile(s) synced, ${res.data.changes_detected} change(s) detected.`);
+      await fetchGBPData();
+      await refreshDashboard();
+    } catch (e: any) {
+      console.error('GBP Sync failed:', e);
+      setSyncFeedback(e.response?.data?.detail || 'Sync failed. Please ensure Google Account is connected.');
+    } finally {
+      setIsSyncing(false);
+      setTimeout(() => setSyncFeedback(null), 6000);
+    }
+  };
+
+  const handleConnectGoogle = () => {
+    if (authUrl) {
+      window.location.href = authUrl;
+    } else {
+      alert('Google OAuth credentials not configured in settings. Set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET in .env.');
+    }
+  };
+
+  const handleDisconnect = async () => {
+    if (!activeProject) return;
+    if (!confirm('Are you sure you want to disconnect Google Business Profile?')) return;
+    try {
+      await api.post(`/gbp/${activeProject.id}/disconnect`);
+      setGbp(null);
+      setChanges([]);
       await fetchGBPData();
       await refreshDashboard();
     } catch (e) {
-      console.error('GBP Sync failed:', e);
-    } finally {
-      setIsSyncing(false);
+      console.error('Disconnect failed:', e);
     }
   };
 
@@ -85,15 +123,44 @@ export const GBPView: React.FC = () => {
           </p>
         </div>
 
-        <button
-          onClick={handleSync}
-          disabled={isSyncing}
-          className="flex items-center space-x-2 px-5 py-2.5 btn-vibrant-primary rounded-xl text-xs font-bold shadow-md self-start transition-all"
-        >
-          <RotateCw className={`w-4 h-4 ${isSyncing ? 'animate-spin' : ''}`} />
-          <span>{isSyncing ? 'Syncing Google Data...' : 'Sync Live Profile'}</span>
-        </button>
+        <div className="flex items-center space-x-3">
+          {gbp ? (
+            <>
+              <button
+                onClick={handleDisconnect}
+                className="flex items-center space-x-1.5 px-3 py-2 rounded-xl border border-slate-200 bg-white hover:bg-rose-50 hover:text-rose-700 text-slate-600 text-xs font-bold transition-all"
+              >
+                <Unlink className="w-3.5 h-3.5" />
+                <span>Disconnect</span>
+              </button>
+
+              <button
+                onClick={handleSync}
+                disabled={isSyncing}
+                className="flex items-center space-x-2 px-5 py-2.5 btn-vibrant-primary rounded-xl text-xs font-bold shadow-md transition-all disabled:opacity-50"
+              >
+                <RotateCw className={`w-4 h-4 ${isSyncing ? 'animate-spin' : ''}`} />
+                <span>{isSyncing ? 'Syncing Live GBP...' : 'Sync Live Profile'}</span>
+              </button>
+            </>
+          ) : (
+            <button
+              onClick={handleConnectGoogle}
+              className="flex items-center space-x-2 px-5 py-2.5 btn-vibrant-primary rounded-xl text-xs font-bold shadow-md transition-all"
+            >
+              <Link className="w-4 h-4" />
+              <span>Connect Google Account</span>
+            </button>
+          )}
+        </div>
       </div>
+
+      {syncFeedback && (
+        <div className="p-3 bg-purple-50 border border-purple-200 rounded-xl flex items-center space-x-2 text-xs text-purple-900 font-semibold">
+          <CheckCircle2 className="w-4 h-4 text-purple-600 shrink-0" />
+          <span>{syncFeedback}</span>
+        </div>
+      )}
 
       {gbp ? (
         <div className="space-y-6">
@@ -109,6 +176,11 @@ export const GBPView: React.FC = () => {
                     <CheckCircle2 className="w-3.5 h-3.5" />
                     <span>Verified Profile</span>
                   </span>
+                  {gbp.last_synced_at && (
+                    <span className="text-[10px] text-slate-400 font-mono">
+                      Last Synced: {new Date(gbp.last_synced_at).toLocaleDateString()} {new Date(gbp.last_synced_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                    </span>
+                  )}
                 </div>
                 <h2 className="text-xl font-black text-slate-900">{gbp.business_name}</h2>
                 <div className="text-xs text-slate-600 flex items-center space-x-4">
@@ -197,11 +269,15 @@ export const GBPView: React.FC = () => {
       ) : (
         <EmptyState
           icon={Store}
-          badge="Not Connected"
+          badge={isConfigured ? 'OAuth Ready' : 'Setup Required'}
           title="Google Business Profile Not Connected"
-          description="Connect your Google Business Profile via OAuth to automatically sync customer impressions, reviews, and track category changes."
-          actionText="Sync Google Business Profile"
-          onAction={handleSync}
+          description={
+            isConfigured
+              ? 'Connect your Google Business Profile via OAuth to automatically sync customer impressions, reviews, and track unauthorized profile edits.'
+              : 'Google OAuth API credentials are not set. Add GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET to your .env file to enable live GBP synchronization.'
+          }
+          actionText={isConfigured ? 'Connect with Google' : undefined}
+          onAction={isConfigured ? handleConnectGoogle : undefined}
         />
       )}
     </div>

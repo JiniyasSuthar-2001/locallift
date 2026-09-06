@@ -89,6 +89,43 @@ python run.py
 
 ---
 
+## Production Integrations Setup
+
+LocalLift connects to real production APIs for search ranking intelligence and business profile synchronization. The application runs smoothly in development mode without credentials; add credentials to your `.env` file to enable live sync.
+
+### 1. SERP & Rank Tracking (SerpApi)
+LocalLift uses a pluggable SERP Provider architecture (`app.services.serp`) supporting Google Search, Local Pack, and 5x5 Geo-Grid rankings:
+
+- **Supported Providers**: `serpapi` (default), `mock` (automated testing)
+- **Environment Variables**:
+  ```env
+  SERP_PROVIDER=serpapi
+  SERPAPI_KEY=your_serpapi_private_key_here
+  ```
+- **How to obtain**: Create an account at [SerpApi.com](https://serpapi.com) and retrieve your API key from your dashboard.
+- **Features**: Real organic top 100 lookup, Local Pack place matching, anti-hijack domain validation, discrete GPS 5x5 geo-grid scans with rate-limiting and in-memory TTL caching.
+
+### 2. Google Business Profile (OAuth 2.0 & APIs)
+LocalLift communicates with Google Business Profile APIs to discover verified locations, track changes, and synchronize performance metrics:
+
+- **Google Cloud Console Setup**:
+  1. Create a project in [Google Cloud Console](https://console.cloud.google.com/).
+  2. Enable **My Business Account Management API**, **My Business Business Information API**, and **Business Profile Performance API**.
+  3. Configure OAuth consent screen with scopes:
+     - `https://www.googleapis.com/auth/business.manage`
+     - `https://www.googleapis.com/auth/userinfo.email`
+  4. Create OAuth 2.0 Web Client credentials with Authorized Redirect URI:
+     `http://localhost:5173/integrations/google/callback`
+- **Environment Variables**:
+  ```env
+  GOOGLE_CLIENT_ID=your_google_client_id.apps.googleusercontent.com
+  GOOGLE_CLIENT_SECRET=your_google_client_secret
+  GOOGLE_REDIRECT_URI=http://localhost:5173/integrations/google/callback
+  ```
+- **Features**: OAuth 2.0 consent flow, auto-refreshing access tokens, idempotent profile synchronization, automatic `GBPChange` audit log tracking, and search/maps performance metrics aggregation.
+
+---
+
 ## Technology Stack
 
 - **Frontend**: React 18, TypeScript, Vite, TailwindCSS, Recharts, Lucide Icons.

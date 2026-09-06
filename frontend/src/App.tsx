@@ -25,6 +25,7 @@ import { OnboardingWizard } from './views/OnboardingWizard';
 import { SettingsView } from './views/SettingsView';
 import { AIAssistantView } from './views/AIAssistantView';
 import { TemplatesView } from './views/TemplatesView';
+import { GoogleCallbackView } from './views/GoogleCallbackView';
 
 export const App: React.FC = () => {
   return (
@@ -46,6 +47,7 @@ export const App: React.FC = () => {
               <Route path="google/gbp" element={<GBPView />} />
               <Route path="google/gsc" element={<GSCView />} />
               <Route path="google/ga4" element={<GA4View />} />
+              <Route path="integrations/google/callback" element={<GoogleCallbackView />} />
 
               {/* Rankings */}
               <Route path="rankings/keywords" element={<KeywordsView />} />

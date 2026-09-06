@@ -55,6 +55,13 @@ async def test_all_apis():
             assert conv_res.status_code == 200
             print("[OK] Problem -> Solution -> Task Conversion pipeline verified")
 
+        # 7b. Audit Diagnostic Summary (Citations NAP Discrepancy Matrix)
+        diag_res = await client.get(f"/api/v1/audits/diagnostic-summary/{proj_id}", headers=headers)
+        assert diag_res.status_code == 200
+        diag_data = diag_res.json()
+        assert "discrepancy_matrix" in diag_data
+        print(f"[OK] Audit Diagnostic Summary verified (Pillars: {list(diag_data['pillar_scores'].keys())})")
+
         # 8. Keywords & GeoGrid
         kw_res = await client.get(f"/api/v1/keywords/{proj_id}", headers=headers)
         assert kw_res.status_code == 200

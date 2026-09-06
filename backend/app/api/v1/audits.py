@@ -276,6 +276,7 @@ async def list_project_issues_alias(
 
 @router.get("/{project_id}/diagnostic-summary")
 @router.get("/summary/{project_id}")
+@router.get("/diagnostic-summary/{project_id}")
 async def get_diagnostic_summary(
     project_id: int,
     current_user: User = Depends(get_current_user),
@@ -350,19 +351,19 @@ async def get_diagnostic_summary(
         "business_name": {
             "website": web_name,
             "gbp": gbp_name,
-            "citations_mismatches": len([c for c in cit_mismatches if c.name and clean_str(c.name) != clean_str(web_name)]),
+            "citations_mismatches": len([c for c in cit_mismatches if c.found_name and clean_str(c.found_name) != clean_str(web_name)]),
             "is_aligned": name_aligned if gbp else True
         },
         "phone": {
             "website": web_phone,
             "gbp": gbp_phone,
-            "citations_mismatches": len([c for c in cit_mismatches if c.phone and clean_phone(c.phone) != clean_phone(web_phone)]),
+            "citations_mismatches": len([c for c in cit_mismatches if c.found_phone and clean_phone(c.found_phone) != clean_phone(web_phone)]),
             "is_aligned": phone_aligned if gbp else True
         },
         "address": {
             "website": web_addr,
             "gbp": gbp_addr,
-            "citations_mismatches": len([c for c in cit_mismatches if c.address and clean_str(c.address) != clean_str(web_addr)]),
+            "citations_mismatches": len([c for c in cit_mismatches if c.found_address and clean_str(c.found_address) != clean_str(web_addr)]),
             "is_aligned": addr_aligned if gbp else True
         },
         "website_url": {

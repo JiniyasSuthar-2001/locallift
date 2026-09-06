@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { GeoGridScan, GridPoint } from '../../types';
-import { MapPin, Navigation, Eye, CheckCircle2, RotateCw, Sparkles } from 'lucide-react';
+import { MapPin, Navigation, Eye, CheckCircle2, RotateCw, Sparkles, AlertCircle } from 'lucide-react';
 import { StatusBadge } from '../ui/StatusBadge';
 import { EmptyState } from '../ui/EmptyState';
 
@@ -42,6 +42,11 @@ export const LocalGridMap: React.FC<LocalGridMapProps> = ({ scan, onRescan, isSc
               5x5 GEO-GRID RANK MATRIX
             </span>
             <StatusBadge status={`${scan.radius_km}km Radius`} variant="blue" />
+            {scan.scan_status && scan.scan_status !== 'completed' && (
+              <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-900 border border-amber-200">
+                {scan.scan_status.toUpperCase()}
+              </span>
+            )}
           </div>
           <h3 className="text-lg font-black text-slate-900 mt-1 flex items-center space-x-2">
             <span>Center: {scan.center_name}</span>
@@ -56,7 +61,9 @@ export const LocalGridMap: React.FC<LocalGridMapProps> = ({ scan, onRescan, isSc
 
           <div className="text-right">
             <div className="text-[10px] uppercase font-bold text-slate-500">Avg Rank</div>
-            <div className="text-xl font-black text-slate-900">#{scan.average_rank}</div>
+            <div className="text-xl font-black text-slate-900">
+              {scan.average_rank > 0 ? `#${scan.average_rank}` : '—'}
+            </div>
           </div>
 
           {onRescan && (
@@ -81,12 +88,21 @@ export const LocalGridMap: React.FC<LocalGridMapProps> = ({ scan, onRescan, isSc
               <div key={rIdx} className="flex space-x-3">
                 {row.map((point, cIdx) => {
                   const isSelected = selectedPin?.lat === point.lat && selectedPin?.lng === point.lng;
-                  let bgStyle = 'bg-emerald-600 hover:bg-emerald-500 text-white';
+                  let bgStyle = 'bg-slate-400 hover:bg-slate-300 text-white';
+                  let displayLabel = '—';
 
-                  if (point.rank > 6) {
-                    bgStyle = 'bg-rose-600 hover:bg-rose-500 text-white';
-                  } else if (point.rank > 3) {
-                    bgStyle = 'bg-amber-500 hover:bg-amber-400 text-white';
+                  if (point.rank !== null && point.rank !== undefined) {
+                    displayLabel = `#${point.rank}`;
+                    if (point.rank <= 3) {
+                      bgStyle = 'bg-emerald-600 hover:bg-emerald-500 text-white';
+                    } else if (point.rank <= 6) {
+                      bgStyle = 'bg-amber-500 hover:bg-amber-400 text-white';
+                    } else {
+                      bgStyle = 'bg-rose-600 hover:bg-rose-500 text-white';
+                    }
+                  } else if (point.status === 'failed' || point.pin_status === 'failed') {
+                    displayLabel = '!';
+                    bgStyle = 'bg-rose-800 hover:bg-rose-700 text-white';
                   }
 
                   return (
@@ -96,9 +112,9 @@ export const LocalGridMap: React.FC<LocalGridMapProps> = ({ scan, onRescan, isSc
                       className={`w-12 h-12 rounded-full flex flex-col items-center justify-center font-black text-sm transition-all transform hover:scale-110 shadow-md ${bgStyle} ${
                         isSelected ? 'ring-4 ring-purple-600 scale-110' : ''
                       }`}
-                      title={`Coordinates: ${point.lat}, ${point.lng} | Rank #${point.rank}`}
+                      title={`Coordinates: ${point.lat}, ${point.lng} | Rank: ${displayLabel}`}
                     >
-                      <span>#{point.rank}</span>
+                      <span>{displayLabel}</span>
                     </button>
                   );
                 })}
@@ -106,7 +122,7 @@ export const LocalGridMap: React.FC<LocalGridMapProps> = ({ scan, onRescan, isSc
             ))}
           </div>
 
-          <div className="mt-5 flex items-center space-x-4 text-[11px] text-slate-600 font-semibold">
+          <div className="mt-5 flex flex-wrap items-center justify-center gap-4 text-[11px] text-slate-600 font-semibold">
             <span className="flex items-center space-x-1.5">
               <span className="w-3 h-3 rounded-full bg-emerald-600 inline-block" />
               <span>Rank 1-3 (Top Pack)</span>
@@ -118,6 +134,10 @@ export const LocalGridMap: React.FC<LocalGridMapProps> = ({ scan, onRescan, isSc
             <span className="flex items-center space-x-1.5">
               <span className="w-3 h-3 rounded-full bg-rose-600 inline-block" />
               <span>Rank 7+ (Drop-off)</span>
+            </span>
+            <span className="flex items-center space-x-1.5">
+              <span className="w-3 h-3 rounded-full bg-slate-400 inline-block" />
+              <span>Not in Top Pack</span>
             </span>
           </div>
         </div>
@@ -134,7 +154,9 @@ export const LocalGridMap: React.FC<LocalGridMapProps> = ({ scan, onRescan, isSc
               <div className="space-y-3 text-xs">
                 <div className="flex justify-between py-1 border-b border-slate-200">
                   <span className="text-slate-500 font-medium">Local Pack Position:</span>
-                  <span className="font-black text-slate-900 text-sm">#{selectedPin.rank}</span>
+                  <span className="font-black text-slate-900 text-sm">
+                    {selectedPin.rank !== null && selectedPin.rank !== undefined ? `#${selectedPin.rank}` : 'Not Ranked in Top Pack'}
+                  </span>
                 </div>
                 <div className="flex justify-between py-1 border-b border-slate-200">
                   <span className="text-slate-500 font-medium">Latitude:</span>
@@ -146,7 +168,17 @@ export const LocalGridMap: React.FC<LocalGridMapProps> = ({ scan, onRescan, isSc
                 </div>
                 <div className="flex justify-between py-1 border-b border-slate-200">
                   <span className="text-slate-500 font-medium">Local Visibility:</span>
-                  <StatusBadge status={selectedPin.status === 'green' ? 'Top 3 Pack' : selectedPin.status === 'yellow' ? 'Mid Pack' : 'Low Visibility'} />
+                  <StatusBadge
+                    status={
+                      selectedPin.rank && selectedPin.rank <= 3
+                        ? 'Top 3 Pack'
+                        : selectedPin.rank && selectedPin.rank <= 6
+                        ? 'Mid Pack'
+                        : selectedPin.rank
+                        ? 'Low Visibility'
+                        : 'Unranked'
+                    }
+                  />
                 </div>
                 {selectedPin.competitor_ahead && (
                   <div className="py-1">
