@@ -22,8 +22,8 @@ class GBPProfileOut(BaseModel):
     products: List[str] = []
     photos_count: int = 0
     posts_count: int = 0
-    completeness_score: int = 85
-    is_verified: bool = True
+    completeness_score: int = 0
+    is_verified: bool = False
     search_impressions: int = 0
     maps_impressions: int = 0
     website_clicks: int = 0

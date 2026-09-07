@@ -74,9 +74,13 @@ export const ContentGapsView: React.FC = () => {
                   <span className="text-slate-500 font-medium">Primary Keyword:</span>
                   <span className="font-bold text-slate-900">{opp.primary_keyword}</span>
                 </div>
-                <div className="flex justify-between">
-                  <span className="text-slate-500 font-medium">Estimated Search Volume:</span>
-                  <span className="font-mono text-purple-700 font-bold">{opp.search_volume} searches / mo</span>
+                <div className="flex justify-between items-center">
+                  <span className="text-slate-500 font-medium">Search Volume:</span>
+                  <span className="font-mono text-purple-700 font-bold text-[11px]">
+                    {opp.search_volume !== null && opp.search_volume !== undefined
+                      ? `${opp.search_volume} searches / mo`
+                      : (opp.search_volume_status || 'Unavailable — connect keyword data provider')}
+                  </span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-slate-500 font-medium">Search Intent:</span>

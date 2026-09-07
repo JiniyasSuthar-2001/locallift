@@ -368,7 +368,7 @@ class TemplateEngine:
             dummy_content = content
             for v in detected_vars:
                 if v in ["latitude", "longitude"]:
-                    dummy_content = dummy_content.replace(f"{{{{{v}}}}}", "-27.4698")
+                    dummy_content = dummy_content.replace(f"{{{{{v}}}}}", "0.0")
                 else:
                     dummy_content = dummy_content.replace(f"{{{{{v}}}}}", "sample_val")
             
@@ -411,6 +411,12 @@ class TemplateEngine:
             gbp_result = await db.execute(select(GoogleBusinessProfile).where(GoogleBusinessProfile.google_account_id == google_account.id))
             gbp = gbp_result.scalar_one_or_none()
 
+        has_valid_coords = (
+            location is not None and 
+            location.latitude is not None and 
+            location.longitude is not None
+        )
+
         # Build Context Values
         context: Dict[str, Any] = {
             "business_name": (gbp.business_name if gbp else None) or (project.name if project else "Local Business"),
@@ -424,8 +430,8 @@ class TemplateEngine:
             "city": (location.city if location else None) or "Metro City",
             "state": (location.state if location else None) or "State",
             "postal_code": (location.postal_code if location else None) or "10001",
-            "latitude": str(location.latitude if location and location.latitude else -27.4698),
-            "longitude": str(location.longitude if location and location.longitude else 153.0251),
+            "latitude": str(location.latitude) if has_valid_coords else None,
+            "longitude": str(location.longitude) if has_valid_coords else None,
             "reviewer_name": "Valued Customer",
             "rating": "5",
             "offer": "Free inspection with every local booking"
@@ -437,7 +443,15 @@ class TemplateEngine:
 
         # Render Content
         rendered = template.content
-        detected_vars = TemplateEngine.extract_variables(template.content)
+
+        # If schema_jsonld and coordinates are missing, omit "geo" block rather than inventing fake coordinates
+        if template.template_type == "schema_jsonld" and (context.get("latitude") is None or context.get("longitude") is None):
+            geo_pattern_with_leading_comma = r',\s*"geo":\s*\{\s*"@type":\s*"GeoCoordinates",\s*"latitude":\s*(?:\{\{latitude\}\}|"[^"]*"|[\d.-]+),\s*"longitude":\s*(?:\{\{longitude\}\}|"[^"]*"|[\d.-]+)\s*\}'
+            geo_pattern_without_leading_comma = r'"geo":\s*\{\s*"@type":\s*"GeoCoordinates",\s*"latitude":\s*(?:\{\{latitude\}\}|"[^"]*"|[\d.-]+),\s*"longitude":\s*(?:\{\{longitude\}\}|"[^"]*"|[\d.-]+)\s*\},\s*'
+            rendered = re.sub(geo_pattern_with_leading_comma, '', rendered)
+            rendered = re.sub(geo_pattern_without_leading_comma, '', rendered)
+
+        detected_vars = TemplateEngine.extract_variables(rendered)
         used_vars = {}
         missing_vars = []
 

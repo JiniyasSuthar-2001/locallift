@@ -170,6 +170,112 @@ async def run_crawler_and_audit_task(project_id: int, start_url: str, max_pages:
             )
             session.add(issue_obj)
 
+        # Save & Sync Schema Records for Schema Intelligence
+        import json
+        from app.models.local_seo import SchemaRecord
+        from app.services.schema_intelligence import SchemaIntelligenceEngine
+
+        industry_type = proj.primary_category if proj and proj.primary_category else "LocalBusiness"
+        existing_schema_res = await session.execute(
+            select(SchemaRecord).where(SchemaRecord.project_id == project_id)
+        )
+        existing_schema_map = {r.page_url: r for r in existing_schema_res.scalars().all()}
+
+        for p in pages_data:
+            p_url = p.get("url")
+            if not p_url:
+                continue
+
+            pt_res = SchemaIntelligenceEngine.detect_page_type(
+                url=p_url,
+                title=p.get("title"),
+                h1=p.get("h1"),
+                h2_list=p.get("h2_list", []),
+                existing_schemas=p.get("schema_types", [])
+            )
+            detected_pt = pt_res.get("page_type", "Homepage")
+            app_map = SchemaIntelligenceEngine.evaluate_applicability(
+                page_type=detected_pt,
+                business_type=industry_type
+            )
+
+            detected_types = p.get("schema_types", [])
+            json_ld_schemas = p.get("json_ld_schemas", [])
+            schema_entities = p.get("schema_entities", [])
+            errors = list(p.get("schema_parse_errors", []))
+            warnings = []
+            missing_props = []
+            nap_status = "Consistent"
+            is_valid = True
+
+            if json_ld_schemas:
+                for s in json_ld_schemas:
+                    if isinstance(s, dict):
+                        val_res = SchemaIntelligenceEngine.validate_entity(s, project_context=project_context)
+                        if not val_res.get("is_valid", True):
+                            is_valid = False
+                        for err in val_res.get("errors", []):
+                            errors.append(f"{err.get('field', 'schema')}: {err.get('message', '')}")
+                        for warn in val_res.get("warnings", []):
+                            warnings.append(f"{warn.get('field', 'schema')}: {warn.get('message', '')}")
+                        if val_res.get("nap_check", {}).get("nap_status") == "Mismatch":
+                            nap_status = "Mismatch"
+
+            for s_name, s_info in app_map.items():
+                if s_info.get("applicability") in ["Highly Applicable", "Applicable"] and s_name not in detected_types:
+                    missing_props.append(f"Missing recommended {s_name} schema for {detected_pt} page")
+
+            page_analysis = {
+                "url": p_url,
+                "page_type": detected_pt,
+                "business_type": industry_type,
+                "detected_types": detected_types,
+                "errors": errors,
+                "warnings": warnings,
+                "nap_status": nap_status
+            }
+            score_res = SchemaIntelligenceEngine.calculate_quality_score([page_analysis])
+            raw_json = json.dumps(json_ld_schemas) if json_ld_schemas else None
+
+            rec = existing_schema_map.get(p_url)
+            if rec:
+                rec.page_type = detected_pt
+                rec.business_type = industry_type
+                rec.detected_types = detected_types
+                rec.applicable_schemas = app_map
+                rec.errors = errors
+                rec.warnings = warnings
+                rec.missing_properties = missing_props
+                rec.is_valid = is_valid and (len(errors) == 0)
+                rec.quality_score = score_res["health_score"]
+                rec.score_breakdown = score_res["breakdown"]
+                rec.nap_status = nap_status
+                if raw_json:
+                    rec.raw_json_ld = raw_json
+                rec.last_validated_at = datetime.now(timezone.utc)
+            else:
+                new_rec = SchemaRecord(
+                    project_id=project_id,
+                    page_url=p_url,
+                    schema_type=detected_types[0] if detected_types else "LocalBusiness",
+                    page_type=detected_pt,
+                    business_type=industry_type,
+                    is_valid=is_valid and (len(errors) == 0),
+                    quality_score=score_res["health_score"],
+                    score_breakdown=score_res["breakdown"],
+                    detected_types=detected_types,
+                    applicable_schemas=app_map,
+                    errors=errors,
+                    warnings=warnings,
+                    missing_properties=missing_props,
+                    schema_source="JSON-LD" if json_ld_schemas else "None",
+                    schema_entities=schema_entities,
+                    nap_status=nap_status,
+                    raw_json_ld=raw_json,
+                    last_validated_at=datetime.now(timezone.utc)
+                )
+                session.add(new_rec)
+
         # Update Project Scores
         if proj:
             pillars = audit_result.get("pillar_scores", {})

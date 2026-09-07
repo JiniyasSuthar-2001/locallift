@@ -12,7 +12,8 @@ class Project(Base):
     
     name = Column(String(255), nullable=False)
     domain = Column(String(255), nullable=False)
-    primary_category = Column(String(100), default="Local Business")
+    primary_category = Column(String(255), default="Local Business")
+    additional_categories = Column(JSON, default=list)
     country = Column(String(50), default="United States")
     health_score = Column(Integer, default=78)
     

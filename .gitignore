@@ -20,6 +20,9 @@ localscope.db
 
 # Secrets & Local Environment
 .env
+.env.*
 .env.local
+backend/.env
+backend/.env.*
 .DS_Store
 Thumbs.db

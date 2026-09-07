@@ -262,13 +262,14 @@ async def disconnect_gbp(
     await verify_project_access(project_id, current_user, db)
     acc_res = await db.execute(select(GoogleAccount).where(GoogleAccount.project_id == project_id))
     account = acc_res.scalars().first()
-    if account:
+    if account and account.is_connected:
         account.is_connected = False
         account.access_token = None
         account.refresh_token = None
         await db.commit()
-
-    return {"message": "Google Business Profile disconnected successfully.", "status": "disconnected"}
+        return {"message": "Google Business Profile disconnected successfully.", "status": "disconnected"}
+    
+    return {"message": "No Google Business Profile connection was active.", "status": "not_connected"}
 
 @router.get("/gsc/{project_id}")
 async def get_gsc_data(

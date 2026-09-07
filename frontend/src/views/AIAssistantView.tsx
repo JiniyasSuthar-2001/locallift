@@ -11,6 +11,7 @@ export const AIAssistantView: React.FC = () => {
   const [query, setQuery] = useState('');
   const [loading, setLoading] = useState(false);
   const [analysis, setAnalysis] = useState<AIAnalysisResponse | null>(null);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   const quickPrompts = [
     'Why did my local ranking drop in the primary metro area?',
@@ -23,14 +24,17 @@ export const AIAssistantView: React.FC = () => {
     if (!activeProject || !question.trim()) return;
     try {
       setLoading(true);
+      setErrorMessage(null);
       setQuery(question);
       const resp = await api.post('/ai/diagnostic', {
         project_id: activeProject.id,
         query: question
       });
       setAnalysis(resp.data);
-    } catch (e) {
+    } catch (e: any) {
       console.error('AI Diagnostic failed:', e);
+      const detail = e?.response?.data?.detail || e?.message || 'AI diagnostic analysis failed.';
+      setErrorMessage(detail);
     } finally {
       setLoading(false);
     }
@@ -58,6 +62,20 @@ export const AIAssistantView: React.FC = () => {
           Root-cause SEO intelligence synthesizing keyword rank movements, GBP changes, customer reviews, and technical health signals for {activeProject.domain}.
         </p>
       </div>
+
+      {errorMessage && (
+        <div className="p-4 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 text-xs flex items-start space-x-3">
+          <div className="font-bold shrink-0">⚠️ AI Configuration Notice:</div>
+          <div>
+            <div className="font-semibold">{errorMessage}</div>
+            {errorMessage.includes('AI_NOT_CONFIGURED') && (
+              <div className="mt-1 text-slate-600">
+                To activate AI diagnostics, configure <code className="bg-amber-100 px-1.5 py-0.5 rounded font-mono text-[11px]">AI_API_KEY</code> in your backend environment variables or <code className="bg-amber-100 px-1.5 py-0.5 rounded font-mono text-[11px]">.env</code> file.
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Query Bar */}
       <div className="card-vibrant p-5 space-y-4">

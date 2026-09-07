@@ -116,7 +116,28 @@ export const SchemaGeneratorView: React.FC = () => {
       setCountry(loc?.country === 'Australia' ? 'AU' : (loc?.country || 'US'));
       setLatitude(loc?.latitude !== undefined && loc?.latitude !== null ? String(loc.latitude) : '');
       setLongitude(loc?.longitude !== undefined && loc?.longitude !== null ? String(loc.longitude) : '');
-      setBusinessType(activeProject.primary_category === 'Electrical Contractor' ? 'Electrician' : 'LocalBusiness');
+
+      const mapCategoryToSchemaType = (cat?: string): string => {
+        if (!cat) return 'LocalBusiness';
+        const c = cat.toLowerCase();
+        if (c.includes('dent')) return 'Dentist';
+        if (c.includes('electri')) return 'Electrician';
+        if (c.includes('plumb')) return 'Plumber';
+        if (c.includes('hvac') || c.includes('air conditioning')) return 'HVACBusiness';
+        if (c.includes('roof')) return 'RoofingContractor';
+        if (c.includes('law') || c.includes('attorney') || c.includes('legal')) return 'LegalService';
+        if (c.includes('auto') || c.includes('mechanic') || c.includes('car repair')) return 'AutoRepair';
+        if (c.includes('restaurant') || c.includes('cafe') || c.includes('bakery')) return 'Restaurant';
+        if (c.includes('real estate')) return 'RealEstateAgent';
+        if (c.includes('hotel') || c.includes('motel') || c.includes('resort')) return 'LodgingBusiness';
+        if (c.includes('hair') || c.includes('barber') || c.includes('salon')) return 'BeautySalon';
+        if (c.includes('accounting') || c.includes('accountant') || c.includes('tax')) return 'AccountingService';
+        if (c.includes('medical') || c.includes('clinic') || c.includes('doctor')) return 'MedicalClinic';
+        if (c.includes('vet') || c.includes('animal')) return 'VeterinaryCare';
+        return 'LocalBusiness';
+      };
+
+      setBusinessType(mapCategoryToSchemaType(activeProject.primary_category));
 
       fetchIntelligence();
     }

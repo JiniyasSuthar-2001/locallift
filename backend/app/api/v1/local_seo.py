@@ -8,10 +8,10 @@ from sqlalchemy.future import select
 from app.database import get_db
 from app.core.deps import get_current_user, verify_project_access
 from app.models.user import User
-from app.models.project import Project
+from app.models.project import Project, Website, Location
 from app.models.local_seo import Review, Citation, NAPRecord, Competitor, SchemaRecord
 from app.models.audit import WebsitePage
-from app.models.project import Location
+from app.services.crawler import WebsiteCrawler
 from app.schemas.local_seo import (
     ReviewOut, ReviewDraftResponse, ReviewApprovePublish,
     CitationCreate, CitationOut, NAPRecordOut, CompetitorCreate, CompetitorOut, SchemaRecordOut, SchemaGenerateRequest,
@@ -55,12 +55,24 @@ async def draft_review_response(
     proj = await verify_project_access(review.project_id, current_user, db)
     business_name = proj.name if proj else "Our Business"
 
-    drafted_text = AIAssistantService.draft_review_response(
-        author_name=review.author_name,
-        rating=review.rating,
-        review_text=review.review_text or "",
-        business_name=business_name
-    )
+    try:
+        drafted_text = await AIAssistantService.draft_review_response(
+            author_name=review.author_name,
+            rating=review.rating,
+            review_text=review.review_text or "",
+            business_name=business_name,
+            business_category=proj.primary_category if proj else None
+        )
+    except Exception as e:
+        err_msg = str(e)
+        if "AI_NOT_CONFIGURED" in err_msg:
+            raise HTTPException(status_code=400, detail="AI_NOT_CONFIGURED: AI_API_KEY is not configured in backend environment. Please configure your AI API key to enable AI review drafting.")
+        elif "AI_RATE_LIMIT" in err_msg:
+            raise HTTPException(status_code=429, detail="AI_RATE_LIMIT: Rate limit exceeded on AI provider. Please retry shortly.")
+        elif "AI_TIMEOUT" in err_msg:
+            raise HTTPException(status_code=504, detail="AI_TIMEOUT: AI request timed out. Please try again.")
+        else:
+            raise HTTPException(status_code=500, detail=f"AI generation failed: {err_msg[:200]}")
 
     review.response_text = drafted_text
     review.response_status = "drafted"
@@ -378,17 +390,167 @@ async def analyze_project_schemas(
         "longitude": loc.longitude if loc else None
     }
 
-    # If no crawled pages, ensure at least default schema records exist
-    records_res = await db.execute(select(SchemaRecord).where(SchemaRecord.project_id == project_id))
-    existing_records = records_res.scalars().all()
+    # 1. Fetch crawled pages from website or crawl live domain
+    web_res = await db.execute(select(Website).where(Website.project_id == project_id))
+    website = web_res.scalars().first()
+    
+    pages_to_process = []
+    if website:
+        pages_res = await db.execute(select(WebsitePage).where(WebsitePage.website_id == website.id))
+        stored_pages = pages_res.scalars().all()
+        if stored_pages:
+            for p in stored_pages:
+                pages_to_process.append({
+                    "url": p.url,
+                    "title": p.title,
+                    "h1": p.h1,
+                    "h2_list": p.h2_list or [],
+                    "schema_types": p.schema_types or [],
+                    "raw_json_ld": None
+                })
 
-    for rec in existing_records:
-        rec.last_validated_at = datetime.now(timezone.utc)
-        if rec.raw_json_ld:
-            val_res = SchemaIntelligenceEngine.validate_json_ld_string(rec.raw_json_ld)
-            rec.is_valid = val_res["is_valid"]
-            rec.errors = val_res["errors"]
-            rec.warnings = val_res["warnings"]
+    # If no stored pages yet, crawl domain or root URL directly
+    if not pages_to_process and proj.domain:
+        domain = proj.domain.strip()
+        start_url = domain if domain.startswith(("http://", "https://")) else f"https://{domain}"
+        crawler = WebsiteCrawler(start_url=start_url, max_pages=10)
+        crawled_data = await crawler.crawl()
+        for cp in crawled_data:
+            pages_to_process.append({
+                "url": cp.get("url"),
+                "title": cp.get("title"),
+                "h1": cp.get("h1"),
+                "h2_list": cp.get("h2_list", []),
+                "schema_types": cp.get("schema_types", []),
+                "json_ld_schemas": cp.get("json_ld_schemas", []),
+                "schema_entities": cp.get("schema_entities", []),
+                "schema_parse_errors": cp.get("schema_parse_errors", []),
+                "raw_json_ld": json.dumps(cp.get("json_ld_schemas", [])) if cp.get("json_ld_schemas") else None
+            })
+
+    # 2. Existing records mapping
+    rec_res = await db.execute(select(SchemaRecord).where(SchemaRecord.project_id == project_id))
+    existing_records = {r.page_url: r for r in rec_res.scalars().all()}
+
+    # 3. Process each page into SchemaRecord
+    industry_type = proj.primary_category or "LocalBusiness"
+    
+    for page in pages_to_process:
+        p_url = page.get("url")
+        if not p_url:
+            continue
+        
+        # Detect page type
+        pt_res = SchemaIntelligenceEngine.detect_page_type(
+            url=p_url,
+            title=page.get("title"),
+            h1=page.get("h1"),
+            h2_list=page.get("h2_list", []),
+            existing_schemas=page.get("schema_types", [])
+        )
+        detected_page_type = pt_res.get("page_type", "Homepage")
+        
+        # Evaluate applicability
+        app_map = SchemaIntelligenceEngine.evaluate_applicability(
+            page_type=detected_page_type,
+            business_type=industry_type
+        )
+        
+        # Validate schema entities
+        detected_types = list(page.get("schema_types", []))
+        json_ld_schemas = list(page.get("json_ld_schemas", []))
+        schema_entities = list(page.get("schema_entities", []))
+        raw_json = page.get("raw_json_ld")
+        
+        errors = list(page.get("schema_parse_errors", []))
+        warnings = []
+        missing_props = []
+        nap_status = "Consistent"
+        is_valid = True
+        
+        if json_ld_schemas:
+            for s in json_ld_schemas:
+                if isinstance(s, dict):
+                    val_res = SchemaIntelligenceEngine.validate_entity(s, project_context=project_context)
+                    if not val_res.get("is_valid", True):
+                        is_valid = False
+                    for err in val_res.get("errors", []):
+                        errors.append(f"{err.get('field', 'schema')}: {err.get('message', '')}")
+                    for warn in val_res.get("warnings", []):
+                        warnings.append(f"{warn.get('field', 'schema')}: {warn.get('message', '')}")
+                    if val_res.get("nap_check", {}).get("nap_status") == "Mismatch":
+                        nap_status = "Mismatch"
+        elif raw_json:
+            v_res = SchemaIntelligenceEngine.validate_json_ld_string(raw_json)
+            is_valid = v_res.get("is_valid", True)
+            errors.extend(v_res.get("errors", []))
+            warnings.extend(v_res.get("warnings", []))
+        
+        # Determine missing opportunities based on applicability
+        for s_name, s_info in app_map.items():
+            if s_info.get("applicability") in ["Highly Applicable", "Applicable"] and s_name not in detected_types:
+                missing_props.append(f"Missing recommended {s_name} schema for {detected_page_type} page")
+
+        # Page quality score
+        page_analysis = {
+            "url": p_url,
+            "page_type": detected_page_type,
+            "business_type": industry_type,
+            "detected_types": detected_types,
+            "errors": errors,
+            "warnings": warnings,
+            "nap_status": nap_status
+        }
+        score_res = SchemaIntelligenceEngine.calculate_quality_score([page_analysis])
+        
+        rec = existing_records.get(p_url)
+        if rec:
+            rec.page_type = detected_page_type
+            rec.business_type = industry_type
+            rec.detected_types = detected_types
+            rec.applicable_schemas = app_map
+            rec.errors = errors
+            rec.warnings = warnings
+            rec.missing_properties = missing_props
+            rec.is_valid = is_valid and (len(errors) == 0)
+            rec.quality_score = score_res["health_score"]
+            rec.score_breakdown = score_res["breakdown"]
+            rec.nap_status = nap_status
+            if raw_json:
+                rec.raw_json_ld = raw_json
+            rec.last_validated_at = datetime.now(timezone.utc)
+        else:
+            new_rec = SchemaRecord(
+                project_id=project_id,
+                page_url=p_url,
+                schema_type=detected_types[0] if detected_types else "LocalBusiness",
+                page_type=detected_page_type,
+                business_type=industry_type,
+                is_valid=is_valid and (len(errors) == 0),
+                quality_score=score_res["health_score"],
+                score_breakdown=score_res["breakdown"],
+                detected_types=detected_types,
+                applicable_schemas=app_map,
+                errors=errors,
+                warnings=warnings,
+                missing_properties=missing_props,
+                schema_source="JSON-LD" if json_ld_schemas else "None",
+                schema_entities=schema_entities,
+                nap_status=nap_status,
+                raw_json_ld=raw_json,
+                last_validated_at=datetime.now(timezone.utc)
+            )
+            db.add(new_rec)
+
+    # Re-validate any remaining existing records
+    for r_url, rec in existing_records.items():
+        if r_url not in [p.get("url") for p in pages_to_process]:
+            rec.last_validated_at = datetime.now(timezone.utc)
+            if rec.raw_json_ld:
+                val_res = SchemaIntelligenceEngine.validate_json_ld_string(rec.raw_json_ld)
+                rec.is_valid = val_res["is_valid"]
+                rec.errors = val_res["errors"]
+                rec.warnings = val_res["warnings"]
 
     await db.commit()
     return await get_schema_intelligence_summary(project_id, current_user, db)
@@ -401,8 +563,8 @@ async def recheck_project_schemas(
 ):
     await verify_project_access(project_id, current_user, db)
     summary_before = await get_schema_intelligence_summary(project_id, current_user, db)
-    # Refresh records
-    summary_after = await get_schema_intelligence_summary(project_id, current_user, db)
+    # Refresh records by executing full schema analysis
+    summary_after = await analyze_project_schemas(project_id, current_user, db)
     return {
         "message": "Schema re-analysis completed successfully",
         "score_before": summary_before["health_score"] if isinstance(summary_before, dict) else getattr(summary_before, "health_score", 0),

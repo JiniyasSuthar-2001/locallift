@@ -25,6 +25,7 @@ export const AIAssistantDrawer: React.FC<AIAssistantDrawerProps> = ({ isOpen, on
   const [query, setQuery] = useState('');
   const [loading, setLoading] = useState(false);
   const [analysis, setAnalysis] = useState<AIAnalysisResponse | null>(null);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   const quickPrompts = [
     'Why did my local ranking drop in the main metro area?',
@@ -39,14 +40,17 @@ export const AIAssistantDrawer: React.FC<AIAssistantDrawerProps> = ({ isOpen, on
 
     try {
       setLoading(true);
+      setErrorMessage(null);
       setQuery(q);
       const resp = await api.post('/ai/diagnostic', {
         project_id: activeProject.id,
         query: q
       });
       setAnalysis(resp.data);
-    } catch (err) {
+    } catch (err: any) {
       console.error('AI Diagnostic failed:', err);
+      const detail = err?.response?.data?.detail || err?.message || 'AI diagnostic analysis failed.';
+      setErrorMessage(detail);
     } finally {
       setLoading(false);
     }
@@ -100,6 +104,20 @@ export const AIAssistantDrawer: React.FC<AIAssistantDrawerProps> = ({ isOpen, on
                 ))}
               </div>
             </div>
+
+            {errorMessage && (
+              <div className="p-3.5 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 text-xs flex items-start space-x-2.5">
+                <div className="font-bold shrink-0">⚠️ AI Notice:</div>
+                <div>
+                  <div className="font-semibold">{errorMessage}</div>
+                  {errorMessage.includes('AI_NOT_CONFIGURED') && (
+                    <div className="mt-1 text-slate-600 text-[11px]">
+                      Configure <code className="bg-amber-100 px-1 py-0.5 rounded font-mono">AI_API_KEY</code> in your backend environment to activate AI diagnostics.
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
 
             {/* Loading State */}
             {loading && (

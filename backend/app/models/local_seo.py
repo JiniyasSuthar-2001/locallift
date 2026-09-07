@@ -109,7 +109,7 @@ class SchemaRecord(Base):
     page_type = Column(String(100), default="Homepage")
     business_type = Column(String(100), default="LocalBusiness")
     is_valid = Column(Boolean, default=True)
-    quality_score = Column(Integer, default=85)
+    quality_score = Column(Integer, default=0)
     score_breakdown = Column(JSON, default=dict)
     
     detected_types = Column(JSON, default=list)

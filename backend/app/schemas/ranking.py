@@ -60,13 +60,13 @@ class GeoGridScanOut(BaseModel):
     center_lng: float
     radius_km: float
     grid_size: int
-    average_rank: float
-    local_visibility_pct: float
+    average_rank: Optional[float] = None
+    local_visibility_pct: float = 0.0
     grid_points: List[Any]
-    scan_status: Optional[str] = "completed"
-    total_points: Optional[int] = 25
-    successful_points: Optional[int] = 25
-    failed_points: Optional[int] = 0
+    scan_status: str
+    total_points: int
+    successful_points: int
+    failed_points: int
     scanned_at: datetime
 
     class Config:

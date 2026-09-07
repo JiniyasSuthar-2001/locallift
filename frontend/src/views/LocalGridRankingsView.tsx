@@ -11,14 +11,16 @@ export const LocalGridRankingsView: React.FC = () => {
   const [scan, setScan] = useState<GeoGridScan | null>(null);
   const [loading, setLoading] = useState(false);
   const [isScanning, setIsScanning] = useState(false);
+  const [scanError, setScanError] = useState<string | null>(null);
 
   const fetchScan = async () => {
     if (!activeProject) return;
     try {
       setLoading(true);
+      setScanError(null);
       const resp = await api.get(`/keywords/${activeProject.id}/grid`);
       setScan(resp.data);
-    } catch (e) {
+    } catch (e: any) {
       console.error('Failed to load grid scan:', e);
     } finally {
       setLoading(false);
@@ -33,13 +35,16 @@ export const LocalGridRankingsView: React.FC = () => {
     if (!activeProject) return;
     try {
       setIsScanning(true);
+      setScanError(null);
       await api.post(`/keywords/${activeProject.id}/grid/rescan`, {
         radius_km: 7.5,
         grid_size: 5
       });
       await fetchScan();
-    } catch (e) {
+    } catch (e: any) {
       console.error('Grid rescan failed:', e);
+      const detail = e?.response?.data?.detail || e?.message || 'Geo-Grid scan failed.';
+      setScanError(detail);
     } finally {
       setIsScanning(false);
     }
@@ -70,6 +75,20 @@ export const LocalGridRankingsView: React.FC = () => {
           </p>
         </div>
       </div>
+
+      {scanError && (
+        <div className="p-4 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 text-xs flex items-start space-x-3">
+          <div className="font-bold shrink-0">⚠️ Error:</div>
+          <div>
+            <div className="font-semibold">{scanError}</div>
+            {scanError.includes('LOCATION_COORDINATES_REQUIRED') && (
+              <div className="mt-1 text-slate-600">
+                Please go to Project Settings and add a physical address or exact GPS coordinates (latitude / longitude) to enable 5x5 Geo-Grid map scanning.
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Main Grid Component */}
       <LocalGridMap scan={scan} onRescan={handleRescan} isScanning={isScanning} />

@@ -28,7 +28,8 @@ class ContentOpportunityOut(BaseModel):
     primary_keyword: str
     secondary_keywords: List[str]
     search_intent: str
-    search_volume: int
+    search_volume: Optional[int] = None
+    search_volume_status: str = "Volume unavailable — connect keyword data provider"
     business_value: str  # High, Medium, Low
     competition_level: str
     target_slug: str

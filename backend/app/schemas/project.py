@@ -29,6 +29,7 @@ class ProjectBase(BaseModel):
     name: str
     domain: str
     primary_category: Optional[str] = "Local Business"
+    additional_categories: Optional[List[str]] = []
     country: Optional[str] = "United States"
 
 class ProjectCreate(ProjectBase):
@@ -40,6 +41,7 @@ class ProjectUpdate(BaseModel):
     name: Optional[str] = None
     domain: Optional[str] = None
     primary_category: Optional[str] = None
+    additional_categories: Optional[List[str]] = None
     country: Optional[str] = None
     client_id: Optional[int] = None
 
@@ -59,6 +61,7 @@ class ProjectOut(ProjectBase):
     created_at: datetime
     updated_at: datetime
     locations: List[LocationOut] = []
+    additional_categories: List[str] = []
 
     class Config:
         from_attributes = True

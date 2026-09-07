@@ -42,9 +42,24 @@ export const LocalGridMap: React.FC<LocalGridMapProps> = ({ scan, onRescan, isSc
               5x5 GEO-GRID RANK MATRIX
             </span>
             <StatusBadge status={`${scan.radius_km}km Radius`} variant="blue" />
-            {scan.scan_status && scan.scan_status !== 'completed' && (
+            {scan.scan_status === 'completed' && (
+              <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-100 text-emerald-900 border border-emerald-200">
+                COMPLETED
+              </span>
+            )}
+            {scan.scan_status === 'completed_with_errors' && (
               <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-900 border border-amber-200">
-                {scan.scan_status.toUpperCase()}
+                COMPLETED WITH ERRORS
+              </span>
+            )}
+            {scan.scan_status === 'failed' && (
+              <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-rose-100 text-rose-900 border border-rose-200">
+                SCAN FAILED
+              </span>
+            )}
+            {scan.total_points !== undefined && (
+              <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-slate-100 text-slate-700 border border-slate-200">
+                {scan.successful_points ?? 0}/{scan.total_points} Points ({scan.failed_points ?? 0} Failed)
               </span>
             )}
           </div>
@@ -62,7 +77,9 @@ export const LocalGridMap: React.FC<LocalGridMapProps> = ({ scan, onRescan, isSc
           <div className="text-right">
             <div className="text-[10px] uppercase font-bold text-slate-500">Avg Rank</div>
             <div className="text-xl font-black text-slate-900">
-              {scan.average_rank > 0 ? `#${scan.average_rank}` : '—'}
+              {scan.average_rank !== null && scan.average_rank !== undefined && scan.average_rank > 0
+                ? `#${scan.average_rank}`
+                : '—'}
             </div>
           </div>
 

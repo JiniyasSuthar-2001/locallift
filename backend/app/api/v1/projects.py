@@ -13,8 +13,28 @@ from app.models.ranking import Keyword
 from app.models.local_seo import Review
 from app.models.analytics import GSCMetric
 from app.schemas.project import ProjectCreate, ProjectUpdate, ProjectOut, DashboardSummaryOut, LocationCreate, LocationOut
+from app.services.category_taxonomy import CategoryTaxonomy
 
 router = APIRouter(prefix="/projects", tags=["Projects"])
+
+@router.get("/categories")
+async def list_business_categories(
+    q: Optional[str] = None,
+    group: Optional[str] = None,
+    popular_only: bool = False,
+    limit: int = 30
+):
+    """
+    Search and retrieve business categories from the comprehensive taxonomy.
+    Supports query autocomplete, group filtering, and popular category highlights.
+    """
+    items = CategoryTaxonomy.search(query=q, group=group, popular_only=popular_only, limit=limit)
+    groups = CategoryTaxonomy.get_groups()
+    return {
+        "items": items,
+        "total": len(items),
+        "groups": groups
+    }
 
 @router.get("", response_model=List[ProjectOut])
 async def list_projects(
@@ -44,12 +64,25 @@ async def create_project(
 
     org_id = project_in.organization_id or mem.organization_id
 
+    # Normalize primary and additional categories
+    normalized_primary = CategoryTaxonomy.normalize_category_name(project_in.primary_category)
+    normalized_additionals = []
+    if project_in.additional_categories:
+        seen = {normalized_primary.lower()}
+        for cat in project_in.additional_categories:
+            if cat and cat.strip():
+                n = CategoryTaxonomy.normalize_category_name(cat)
+                if n.lower() not in seen:
+                    seen.add(n.lower())
+                    normalized_additionals.append(n)
+
     project = Project(
         organization_id=org_id,
         client_id=project_in.client_id,
         name=project_in.name,
         domain=project_in.domain.replace("https://", "").replace("http://", "").rstrip("/"),
-        primary_category=project_in.primary_category,
+        primary_category=normalized_primary,
+        additional_categories=normalized_additionals,
         country=project_in.country,
         health_score=0,
         technical_score=0,
@@ -66,6 +99,22 @@ async def create_project(
 
     # Create location
     if project_in.location:
+        lat = project_in.location.latitude
+        lng = project_in.location.longitude
+
+        # If coordinates not supplied, resolve via real geocoding provider
+        if lat is None or lng is None:
+            from app.services.geocoding import GeocodingService
+            geo_coords = await GeocodingService.geocode_address(
+                address=project_in.location.address,
+                city=project_in.location.city,
+                state=project_in.location.state,
+                postal_code=project_in.location.postal_code,
+                country=project_in.location.country
+            )
+            if geo_coords:
+                lat, lng = geo_coords
+
         loc = Location(
             project_id=project.id,
             name=project_in.location.name,
@@ -75,8 +124,8 @@ async def create_project(
             postal_code=project_in.location.postal_code,
             country=project_in.location.country,
             phone=project_in.location.phone,
-            latitude=project_in.location.latitude or -27.4698,
-            longitude=project_in.location.longitude or 153.0251
+            latitude=lat,
+            longitude=lng
         )
         db.add(loc)
 
@@ -120,6 +169,20 @@ async def update_project(
 ):
     project = await verify_project_access(project_id, current_user, db)
     update_data = project_in.model_dump(exclude_unset=True)
+    if "primary_category" in update_data and update_data["primary_category"]:
+        update_data["primary_category"] = CategoryTaxonomy.normalize_category_name(update_data["primary_category"])
+    if "additional_categories" in update_data and update_data["additional_categories"] is not None:
+        target_prim = update_data.get("primary_category") or project.primary_category or ""
+        seen = {target_prim.lower()}
+        clean_additionals = []
+        for cat in update_data["additional_categories"]:
+            if cat and cat.strip():
+                norm = CategoryTaxonomy.normalize_category_name(cat)
+                if norm.lower() not in seen:
+                    seen.add(norm.lower())
+                    clean_additionals.append(norm)
+        update_data["additional_categories"] = clean_additionals
+
     for field, val in update_data.items():
         if hasattr(project, field):
             setattr(project, field, val)

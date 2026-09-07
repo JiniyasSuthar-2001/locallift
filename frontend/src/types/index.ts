@@ -30,6 +30,17 @@ export interface Location {
   place_id?: string;
 }
 
+export interface BusinessCategory {
+  id: string;
+  name: string;
+  slug: string;
+  group: string;
+  aliases?: string[];
+  schema_type?: string;
+  gbp_category?: string;
+  is_popular?: boolean;
+}
+
 export interface Project {
   id: number;
   organization_id: number;
@@ -37,6 +48,7 @@ export interface Project {
   name: string;
   domain: string;
   primary_category: string;
+  additional_categories?: string[];
   country: string;
   health_score: number;
   technical_score: number;
@@ -186,9 +198,9 @@ export interface GeoGridScan {
   center_lng: number;
   radius_km: number;
   grid_size: number;
-  average_rank: number;
+  average_rank?: number | null;
   local_visibility_pct: number;
-  scan_status?: 'completed' | 'partial' | 'failed' | string;
+  scan_status?: 'completed' | 'completed_with_errors' | 'failed' | string;
   total_points?: number;
   successful_points?: number;
   failed_points?: number;
@@ -327,7 +339,8 @@ export interface ContentOpportunity {
   primary_keyword: string;
   secondary_keywords: string[];
   search_intent: string;
-  search_volume: number;
+  search_volume?: number | null;
+  search_volume_status?: string;
   business_value: string;
   competition_level?: string;
   target_slug: string;

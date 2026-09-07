@@ -342,11 +342,18 @@ async def trigger_grid_scan(
 
     # 2. Determine center coordinates from location or request
     loc = project.locations[0] if project.locations else None
-    lat_center = scan_req.center_lat or (loc.latitude if loc and loc.latitude else -27.4698)
-    lng_center = scan_req.center_lng or (loc.longitude if loc and loc.longitude else 153.0251)
+    lat_center = scan_req.center_lat if scan_req.center_lat is not None else (loc.latitude if loc else None)
+    lng_center = scan_req.center_lng if scan_req.center_lng is not None else (loc.longitude if loc else None)
+
+    if lat_center is None or lng_center is None:
+        raise HTTPException(
+            status_code=400,
+            detail="LOCATION_COORDINATES_REQUIRED: Valid geographic coordinates (latitude and longitude) are required for a Geo-Grid scan. Please configure your business location address or coordinates."
+        )
+
     radius = scan_req.radius_km or 10.0
     grid_size = scan_req.grid_size or 5
-    center_name = scan_req.center_name or (loc.name if loc else "City Center")
+    center_name = scan_req.center_name or (loc.name if loc and loc.name else "Business Location")
 
     # 3. Execute real GeoGrid scan via GeoGridScanner
     provider = get_serp_provider()
@@ -372,7 +379,11 @@ async def trigger_grid_scan(
         grid_size=grid_size,
         average_rank=scan_result["average_rank"],
         local_visibility_pct=scan_result["local_visibility_pct"],
-        grid_points=scan_result["grid_points"]
+        grid_points=scan_result["grid_points"],
+        scan_status=scan_result["scan_status"],
+        total_points=scan_result["total_points"],
+        successful_points=scan_result["successful_points"],
+        failed_points=scan_result["failed_points"]
     )
     db.add(scan)
     await db.commit()

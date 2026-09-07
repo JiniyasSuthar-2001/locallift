@@ -195,10 +195,15 @@ class GeoGridScanner:
         failed_points = total_points - successful_points
         top_3_count = len([r for r in found_ranks if r <= 3])
 
-        avg_rank = round(sum(found_ranks) / len(found_ranks), 2) if found_ranks else 0.0
+        avg_rank = round(sum(found_ranks) / len(found_ranks), 2) if found_ranks else None
         vis_pct = round((top_3_count / total_points) * 100, 1) if total_points > 0 else 0.0
 
-        scan_status = "completed" if failed_points == 0 else ("partial" if successful_points > 0 else "failed")
+        if total_points == 0 or successful_points == 0:
+            scan_status = "failed"
+        elif failed_points == 0:
+            scan_status = "completed"
+        else:
+            scan_status = "completed_with_errors"
 
         return {
             "center_lat": center_lat,

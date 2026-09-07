@@ -45,8 +45,8 @@ class GoogleBusinessProfile(Base):
     photos_count = Column(Integer, default=0)
     posts_count = Column(Integer, default=0)
     
-    completeness_score = Column(Integer, default=85)
-    is_verified = Column(Boolean, default=True)
+    completeness_score = Column(Integer, default=0)
+    is_verified = Column(Boolean, default=False)
     
     # Performance metrics
     search_impressions = Column(Integer, default=0)

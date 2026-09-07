@@ -13,6 +13,7 @@ import {
   LineChart
 } from 'lucide-react';
 import { useProject } from '../context/ProjectContext';
+import { CategorySelector } from '../components/common/CategorySelector';
 import api from '../api/client';
 
 export const OnboardingWizard: React.FC = () => {
@@ -23,7 +24,8 @@ export const OnboardingWizard: React.FC = () => {
   // Form State
   const [projectName, setProjectName] = useState('');
   const [domain, setDomain] = useState('');
-  const [category, setCategory] = useState('Local Contractor / Service');
+  const [category, setCategory] = useState('Dentist');
+  const [additionalCategories, setAdditionalCategories] = useState<string[]>([]);
   const [address, setAddress] = useState('');
   const [city, setCity] = useState('');
   const [state, setState] = useState('');
@@ -38,7 +40,8 @@ export const OnboardingWizard: React.FC = () => {
       const projResp = await api.post('/projects', {
         name: projectName.trim() || 'My Business Project',
         domain: domain.trim() || 'example.com',
-        primary_category: category,
+        primary_category: category || 'Local Business',
+        additional_categories: additionalCategories,
         country: 'United States',
         location: {
           name: 'Main Location',
@@ -145,27 +148,28 @@ export const OnboardingWizard: React.FC = () => {
             </div>
 
             <div>
-              <label className="text-slate-700 font-bold block mb-1">Primary Business Category</label>
-              <select
-                value={category}
-                onChange={(e) => setCategory(e.target.value)}
-                className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-slate-900 focus:outline-none focus:border-purple-500 text-sm font-medium cursor-pointer"
-              >
-                <option>Local Contractor / Service</option>
-                <option>Electrical Contractor</option>
-                <option>Plumbing Contractor</option>
-                <option>HVAC / Air Conditioning</option>
-                <option>Roofing Contractor</option>
-                <option>Dentist / Dental Clinic</option>
-                <option>Law Firm / Attorney</option>
-                <option>Automotive Repair Shop</option>
-              </select>
+              <CategorySelector
+                primaryCategory={category}
+                onChangePrimary={setCategory}
+                additionalCategories={additionalCategories}
+                onChangeAdditionals={setAdditionalCategories}
+                allowAdditionals={true}
+                maxAdditionals={5}
+                label="Primary Business Category"
+                helperText="Search your exact business category or industry taxonomy (e.g. Dentist, Plumber, Law Firm)"
+              />
             </div>
           </div>
 
           <div className="flex justify-end pt-4 border-t border-slate-100">
             <button
-              onClick={() => setStep(2)}
+              onClick={() => {
+                if (!category.trim()) {
+                  alert('Please select a Primary Business Category to continue.');
+                  return;
+                }
+                setStep(2);
+              }}
               className="flex items-center space-x-2 px-6 py-2.5 btn-vibrant-primary rounded-xl font-bold text-xs shadow-md"
             >
               <span>Continue to Location</span>

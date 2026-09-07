@@ -75,6 +75,22 @@ class GBPSyncService:
                     )
                     profile = prof_res.scalars().first()
 
+                    # Calculate real completeness score from actual available fields
+                    calculated_score = 0
+                    if title and title.strip():
+                        calculated_score += 15
+                    if primary_cat and primary_cat.strip():
+                        calculated_score += 15
+                    if address_str and address_str.strip():
+                        calculated_score += 15
+                    if phone_str and phone_str.strip():
+                        calculated_score += 15
+                    if website_uri and website_uri.strip():
+                        calculated_score += 15
+                    if regular_hours and isinstance(regular_hours, dict) and len(regular_hours) > 0:
+                        calculated_score += 15
+                    calculated_score += 10  # Verified account
+
                     if not profile:
                         # Create new profile
                         profile = GoogleBusinessProfile(
@@ -88,7 +104,7 @@ class GBPSyncService:
                             phone=phone_str,
                             website_url=website_uri,
                             opening_hours=regular_hours,
-                            completeness_score=85,
+                            completeness_score=min(100, calculated_score),
                             is_verified=True,
                             search_impressions=metrics.get("search_impressions", 0),
                             maps_impressions=metrics.get("maps_impressions", 0),
@@ -101,6 +117,7 @@ class GBPSyncService:
                         await db.flush()
                         synced_profiles_count += 1
                     else:
+                        profile.completeness_score = min(100, calculated_score)
                         # 4. Detect changes and log GBPChange records
                         changes_to_log = []
 

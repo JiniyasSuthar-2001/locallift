@@ -13,7 +13,7 @@ class Keyword(Base):
     search_intent = Column(String(50), default="Commercial")  # Informational, Commercial, Navigational, Transactional
     search_volume = Column(Integer, default=0)
     difficulty = Column(Integer, default=30)
-    target_location = Column(String(255), default="Brisbane CBD")
+    target_location = Column(String(255), nullable=True)
     
     current_rank = Column(Integer, nullable=True)
     previous_rank = Column(Integer, nullable=True)
@@ -51,15 +51,21 @@ class GeoGridScan(Base):
     keyword_id = Column(Integer, ForeignKey("keywords.id", ondelete="CASCADE"), nullable=False)
     
     center_name = Column(String(255), default="City Center")
-    center_lat = Column(Float, default=-27.4698)
-    center_lng = Column(Float, default=153.0251)
+    center_lat = Column(Float, nullable=False)
+    center_lng = Column(Float, nullable=False)
     radius_km = Column(Float, default=10.0)
     grid_size = Column(Integer, default=5)  # 5x5 grid
     
-    average_rank = Column(Float, default=2.4)
-    local_visibility_pct = Column(Float, default=78.5)
+    average_rank = Column(Float, nullable=True)
+    local_visibility_pct = Column(Float, default=0.0)
     
-    # 25 grid pins matrix data
+    # Real execution statistics
+    scan_status = Column(String(50), default="completed")  # completed, completed_with_errors, failed
+    total_points = Column(Integer, default=25)
+    successful_points = Column(Integer, default=0)
+    failed_points = Column(Integer, default=0)
+    
+    # Grid pins matrix data
     grid_points = Column(JSON, default=list)
     scanned_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
