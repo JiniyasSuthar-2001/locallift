@@ -12,10 +12,12 @@ import {
 } from 'lucide-react';
 import api from '../../api/client';
 import { useProject } from '../../context/ProjectContext';
+import { useAuth } from '../../context/AuthContext';
 import { getErrorMessage } from '../../utils/error';
 import { UserPendingInvitation } from '../../types';
 
 export const InvitationNotificationModal: React.FC = () => {
+  const { isAuthenticated } = useAuth();
   const { refreshProjects } = useProject();
   const [invitations, setInvitations] = useState<UserPendingInvitation[]>([]);
   const [currentIndex, setCurrentIndex] = useState<number>(0);
@@ -24,10 +26,14 @@ export const InvitationNotificationModal: React.FC = () => {
   const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
 
   const fetchPendingInvitations = async () => {
+    if (!isAuthenticated) {
+      setInvitations([]);
+      return;
+    }
     try {
       const res = await api.get<UserPendingInvitation[]>('/invitations/pending');
       setInvitations(res.data || []);
-      if (res.data.length > 0) {
+      if (res.data && res.data.length > 0) {
         setMinimized(false);
       }
     } catch (e) {
@@ -36,11 +42,15 @@ export const InvitationNotificationModal: React.FC = () => {
   };
 
   useEffect(() => {
+    if (!isAuthenticated) {
+      setInvitations([]);
+      return;
+    }
     fetchPendingInvitations();
     // Re-check periodically every 60 seconds
     const interval = setInterval(fetchPendingInvitations, 60000);
     return () => clearInterval(interval);
-  }, []);
+  }, [isAuthenticated]);
 
   if (invitations.length === 0) {
     return null;
