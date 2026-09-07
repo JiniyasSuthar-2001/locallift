@@ -5,7 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 
 from app.database import get_db
-from app.core.deps import get_current_user
+from app.core.deps import get_current_user, verify_project_access
 from app.models.user import User
 from app.models.audit import SEOIssue, SEOTask, TaskStatus, TaskPriority, IssueStatus
 from app.schemas.tasks import TaskCreate, TaskUpdate, TaskOut, ConvertIssueToTaskRequest
@@ -20,6 +20,7 @@ async def list_project_tasks(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
+    await verify_project_access(project_id, current_user, db)
     query = select(SEOTask).where(SEOTask.project_id == project_id)
     if status_filter:
         query = query.where(SEOTask.status == TaskStatus(status_filter))
@@ -35,6 +36,7 @@ async def create_task(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
+    await verify_project_access(task_in.project_id, current_user, db)
     task = SEOTask(
         project_id=task_in.project_id,
         issue_id=task_in.issue_id,
@@ -64,6 +66,8 @@ async def convert_issue_to_task(
     issue = iss_res.scalars().first()
     if not issue:
         raise HTTPException(status_code=404, detail="SEO Issue not found")
+
+    await verify_project_access(issue.project_id, current_user, db)
 
     # Update Issue status
     issue.status = IssueStatus.IN_TASK
@@ -96,6 +100,8 @@ async def update_task(
     task = result.scalars().first()
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")
+
+    await verify_project_access(task.project_id, current_user, db)
 
     if task_in.title is not None:
         task.title = task_in.title
@@ -138,6 +144,8 @@ async def delete_task(
     task = result.scalars().first()
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")
+
+    await verify_project_access(task.project_id, current_user, db)
 
     await db.delete(task)
     await db.commit()

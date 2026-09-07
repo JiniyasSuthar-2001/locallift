@@ -42,6 +42,15 @@ class Settings(BaseSettings):
     AI_API_KEY: str = ""
     AI_MODEL: str = "gemini-1.5-pro"
     
+    def validate_production_security(self) -> None:
+        """Fails fast or logs warnings if production uses insecure defaults."""
+        if self.ENVIRONMENT.lower() == "production" and self.SECRET_KEY == "locallift-super-secret-key-production-change-me-12345":
+            import logging
+            logging.getLogger("locallift.security").warning(
+                "SECURITY WARNING: Running in production environment with default SECRET_KEY. "
+                "Please configure SECRET_KEY in your production environment variables."
+            )
+
     class Config:
         case_sensitive = True
         env_file = (
@@ -52,3 +61,4 @@ class Settings(BaseSettings):
         extra = "ignore"
 
 settings = Settings()
+settings.validate_production_security()

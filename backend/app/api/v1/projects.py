@@ -96,19 +96,49 @@ async def create_project(
     )
     return result.scalars().first()
 
+from app.core.deps import get_current_user, verify_project_access, get_user_organization_ids
+
 @router.get("/{project_id}", response_model=ProjectOut)
 async def get_project(
     project_id: int,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
+    project = await verify_project_access(project_id, current_user, db)
     result = await db.execute(
-        select(Project).options(selectinload(Project.locations)).where(Project.id == project_id)
+        select(Project).options(selectinload(Project.locations)).where(Project.id == project.id)
     )
-    project = result.scalars().first()
-    if not project:
-        raise HTTPException(status_code=404, detail="Project not found")
-    return project
+    return result.scalars().first()
+
+@router.patch("/{project_id}", response_model=ProjectOut)
+@router.put("/{project_id}", response_model=ProjectOut)
+async def update_project(
+    project_id: int,
+    project_in: ProjectUpdate,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    project = await verify_project_access(project_id, current_user, db)
+    update_data = project_in.model_dump(exclude_unset=True)
+    for field, val in update_data.items():
+        if hasattr(project, field):
+            setattr(project, field, val)
+    await db.commit()
+    result = await db.execute(
+        select(Project).options(selectinload(Project.locations)).where(Project.id == project.id)
+    )
+    return result.scalars().first()
+
+@router.delete("/{project_id}")
+async def delete_project(
+    project_id: int,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    project = await verify_project_access(project_id, current_user, db)
+    await db.delete(project)
+    await db.commit()
+    return {"message": "Project deleted successfully", "id": project_id}
 
 @router.get("/{project_id}/dashboard", response_model=DashboardSummaryOut)
 async def get_dashboard_summary(
@@ -116,10 +146,7 @@ async def get_dashboard_summary(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
-    proj_result = await db.execute(select(Project).where(Project.id == project_id))
-    project = proj_result.scalars().first()
-    if not project:
-        raise HTTPException(status_code=404, detail="Project not found")
+    project = await verify_project_access(project_id, current_user, db)
 
     # Fetch recent issues
     issues_res = await db.execute(

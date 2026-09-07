@@ -6,7 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 
 from app.database import get_db
-from app.core.deps import get_current_user
+from app.core.deps import get_current_user, verify_project_access
 from app.models.user import User
 from app.models.project import Project
 from app.models.local_seo import Review, Citation, NAPRecord, Competitor, SchemaRecord
@@ -31,6 +31,7 @@ async def list_reviews(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
+    await verify_project_access(project_id, current_user, db)
     query = select(Review).where(Review.project_id == project_id)
     if sentiment:
         query = query.where(Review.sentiment == sentiment)
@@ -51,8 +52,7 @@ async def draft_review_response(
     if not review:
         raise HTTPException(status_code=404, detail="Review not found")
 
-    proj_res = await db.execute(select(Project).where(Project.id == review.project_id))
-    proj = proj_res.scalars().first()
+    proj = await verify_project_access(review.project_id, current_user, db)
     business_name = proj.name if proj else "Our Business"
 
     drafted_text = AIAssistantService.draft_review_response(
@@ -66,9 +66,10 @@ async def draft_review_response(
     review.response_status = "drafted"
     await db.commit()
     await db.refresh(review)
-    return {"message": "AI draft created successfully", "review": review}
+    return {"message": "AI draft created successfully", "review": review, "draft_response": drafted_text}
 
 @router.post("/reviews/{review_id}/approve")
+@router.post("/reviews/{review_id}/respond")
 async def approve_and_publish_review_response(
     review_id: int,
     payload: ReviewApprovePublish,
@@ -79,6 +80,8 @@ async def approve_and_publish_review_response(
     review = result.scalars().first()
     if not review:
         raise HTTPException(status_code=404, detail="Review not found")
+
+    await verify_project_access(review.project_id, current_user, db)
 
     review.response_text = payload.response_text
     review.response_status = "published"
@@ -95,6 +98,7 @@ async def list_citations(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
+    await verify_project_access(project_id, current_user, db)
     query = select(Citation).where(Citation.project_id == project_id)
     if status_filter:
         query = query.where(Citation.status == status_filter)
@@ -107,6 +111,7 @@ async def add_citation(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
+    await verify_project_access(cit_in.project_id, current_user, db)
     src_name = cit_in.source_name or cit_in.directory_name or "Directory Listing"
     dom = cit_in.domain
     if not dom and cit_in.listing_url:
@@ -138,6 +143,7 @@ async def get_nap_record(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
+    await verify_project_access(project_id, current_user, db)
     result = await db.execute(
         select(NAPRecord).where(NAPRecord.project_id == project_id).order_by(NAPRecord.id.desc())
     )
@@ -150,6 +156,7 @@ async def list_competitors(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
+    await verify_project_access(project_id, current_user, db)
     result = await db.execute(select(Competitor).where(Competitor.project_id == project_id))
     return result.scalars().all()
 
@@ -159,6 +166,7 @@ async def add_competitor(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
+    await verify_project_access(comp_in.project_id, current_user, db)
     comp = Competitor(
         project_id=comp_in.project_id,
         name=comp_in.name,
@@ -174,6 +182,22 @@ async def add_competitor(
     await db.refresh(comp)
     return comp
 
+@router.delete("/competitors/{competitor_id}")
+async def delete_competitor(
+    competitor_id: int,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    result = await db.execute(select(Competitor).where(Competitor.id == competitor_id))
+    comp = result.scalars().first()
+    if not comp:
+        raise HTTPException(status_code=404, detail="Competitor not found")
+
+    await verify_project_access(comp.project_id, current_user, db)
+    await db.delete(comp)
+    await db.commit()
+    return {"message": "Competitor deleted successfully"}
+
 # -----------------------------------------------------------------------------
 # Schema Intelligence, Generator & Validator Endpoints
 # -----------------------------------------------------------------------------
@@ -183,6 +207,7 @@ async def list_schemas(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
+    await verify_project_access(project_id, current_user, db)
     result = await db.execute(select(SchemaRecord).where(SchemaRecord.project_id == project_id))
     return result.scalars().all()
 
@@ -192,10 +217,7 @@ async def get_schema_intelligence_summary(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
-    proj_res = await db.execute(select(Project).where(Project.id == project_id))
-    proj = proj_res.scalars().first()
-    if not proj:
-        raise HTTPException(status_code=404, detail="Project not found")
+    proj = await verify_project_access(project_id, current_user, db)
 
     records_res = await db.execute(select(SchemaRecord).where(SchemaRecord.project_id == project_id))
     records = records_res.scalars().all()
@@ -339,11 +361,7 @@ async def analyze_project_schemas(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
-    # Fetch project and location
-    proj_res = await db.execute(select(Project).where(Project.id == project_id))
-    proj = proj_res.scalars().first()
-    if not proj:
-        raise HTTPException(status_code=404, detail="Project not found")
+    proj = await verify_project_access(project_id, current_user, db)
 
     loc_res = await db.execute(select(Location).where(Location.project_id == project_id))
     loc = loc_res.scalars().first()
@@ -359,12 +377,6 @@ async def analyze_project_schemas(
         "latitude": loc.latitude if loc else None,
         "longitude": loc.longitude if loc else None
     }
-
-    # Fetch existing website pages
-    pages_res = await db.execute(
-        select(WebsitePage).join(Project.websites).where(Project.id == project_id)
-    )
-    pages = pages_res.scalars().all()
 
     # If no crawled pages, ensure at least default schema records exist
     records_res = await db.execute(select(SchemaRecord).where(SchemaRecord.project_id == project_id))
@@ -387,12 +399,13 @@ async def recheck_project_schemas(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
+    await verify_project_access(project_id, current_user, db)
     summary_before = await get_schema_intelligence_summary(project_id, current_user, db)
     # Refresh records
     summary_after = await get_schema_intelligence_summary(project_id, current_user, db)
     return {
         "message": "Schema re-analysis completed successfully",
-        "score_before": summary_before.health_score,
-        "score_after": summary_after.health_score,
+        "score_before": summary_before["health_score"] if isinstance(summary_before, dict) else getattr(summary_before, "health_score", 0),
+        "score_after": summary_after["health_score"] if isinstance(summary_after, dict) else getattr(summary_after, "health_score", 0),
         "summary": summary_after
     }

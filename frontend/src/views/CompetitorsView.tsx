@@ -46,9 +46,8 @@ export const CompetitorsView: React.FC = () => {
         project_id: activeProject.id,
         name: name.trim(),
         domain: domain.trim() || undefined,
-        avg_maps_rank: 3.5,
-        total_reviews: 45,
-        rating: 4.6
+        rating: 0.0,
+        reviews_count: 0
       });
       setName('');
       setDomain('');

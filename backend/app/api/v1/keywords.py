@@ -7,7 +7,7 @@ from sqlalchemy.future import select
 from sqlalchemy.orm import selectinload
 
 from app.database import get_db
-from app.core.deps import get_current_user
+from app.core.deps import get_current_user, verify_project_access
 from app.models.user import User
 from app.models.project import Project, Location
 from app.models.ranking import Keyword, KeywordRanking, GeoGridScan
@@ -31,6 +31,7 @@ async def list_keywords(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
+    await verify_project_access(project_id, current_user, db)
     result = await db.execute(
         select(Keyword)
         .where(Keyword.project_id == project_id)
@@ -44,11 +45,8 @@ async def add_keyword(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
-    # Fetch project domain for accurate initial tracking
-    proj_res = await db.execute(select(Project).where(Project.id == kw_in.project_id))
-    project = proj_res.scalars().first()
-    if not project:
-        raise HTTPException(status_code=404, detail="Project not found")
+    # Fetch project domain for accurate initial tracking and verify access
+    project = await verify_project_access(kw_in.project_id, current_user, db)
 
     # Initial keyword record with no fake rank
     kw = Keyword(
@@ -119,10 +117,7 @@ async def check_keyword_rank(
     if not kw:
         raise HTTPException(status_code=404, detail="Keyword not found")
 
-    proj_res = await db.execute(select(Project).where(Project.id == kw.project_id))
-    project = proj_res.scalars().first()
-    if not project:
-        raise HTTPException(status_code=404, detail="Associated project not found")
+    project = await verify_project_access(kw.project_id, current_user, db)
 
     provider = get_serp_provider()
     country = "au" if "com.au" in project.domain else "us"
@@ -205,10 +200,7 @@ async def check_all_project_keywords(
     """
     Executes real live SERP checks for all tracked keywords in a project.
     """
-    proj_res = await db.execute(select(Project).where(Project.id == project_id))
-    project = proj_res.scalars().first()
-    if not project:
-        raise HTTPException(status_code=404, detail="Project not found")
+    project = await verify_project_access(project_id, current_user, db)
 
     kw_res = await db.execute(select(Keyword).where(Keyword.project_id == project_id))
     keywords = kw_res.scalars().all()
@@ -311,6 +303,9 @@ async def delete_keyword(
     kw = result.scalars().first()
     if not kw:
         raise HTTPException(status_code=404, detail="Keyword not found")
+
+    await verify_project_access(kw.project_id, current_user, db)
+
     await db.delete(kw)
     await db.commit()
     return {"message": "Keyword deleted successfully"}
@@ -339,12 +334,11 @@ async def trigger_grid_scan(
     else:
         raise HTTPException(status_code=400, detail="keyword_id is required for grid scan")
 
+    project = await verify_project_access(project_id, current_user, db)
     proj_res = await db.execute(
-        select(Project).options(selectinload(Project.locations)).where(Project.id == project_id)
+        select(Project).options(selectinload(Project.locations)).where(Project.id == project.id)
     )
     project = proj_res.scalars().first()
-    if not project:
-        raise HTTPException(status_code=404, detail="Project not found")
 
     # 2. Determine center coordinates from location or request
     loc = project.locations[0] if project.locations else None
@@ -395,6 +389,7 @@ async def rescan_project_grid(
     """
     Convenience endpoint for frontend to rescan active project grid.
     """
+    await verify_project_access(project_id, current_user, db)
     # Find primary keyword if not passed
     if not scan_req.keyword_id:
         kw_res = await db.execute(
@@ -417,6 +412,7 @@ async def get_project_grid(
     """
     Returns latest GeoGrid scan for project.
     """
+    await verify_project_access(project_id, current_user, db)
     query = select(GeoGridScan).where(GeoGridScan.project_id == project_id)
     if keyword_id:
         query = query.where(GeoGridScan.keyword_id == keyword_id)

@@ -220,10 +220,10 @@ export const SchemaGeneratorView: React.FC = () => {
 
   const applyRecommendationToGenerator = (rec: SchemaRecommendation) => {
     if (rec.action_type === 'generate_service') {
-      setServiceName('Emergency Electrical Repair');
-      setServiceDescription('24/7 rapid emergency electrical repair and diagnostic services.');
+      setServiceName(`${activeProject?.primary_category || 'Primary'} Service`);
+      setServiceDescription(`Professional ${activeProject?.primary_category || 'local'} services.`);
     } else if (rec.action_type === 'generate_localbusiness') {
-      setBusinessType('Electrician');
+      setBusinessType(activeProject?.primary_category || 'LocalBusiness');
     }
     setActiveTab('generator');
   };
@@ -239,14 +239,14 @@ export const SchemaGeneratorView: React.FC = () => {
     );
   }
 
-  const healthScore = summary?.health_score ?? 85;
+  const healthScore = summary?.health_score ?? 0;
   const stats = summary?.stats || {
-    pages_crawled: 5,
-    schemas_detected: 6,
-    valid_count: 5,
-    warnings_count: 3,
+    pages_crawled: 0,
+    schemas_detected: 0,
+    valid_count: 0,
+    warnings_count: 0,
     errors_count: 0,
-    missing_opportunities: 4
+    missing_opportunities: 0
   };
 
   return (

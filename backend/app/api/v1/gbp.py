@@ -10,7 +10,7 @@ from sqlalchemy.orm import selectinload
 
 from app.database import get_db
 from app.config import settings
-from app.core.deps import get_current_user
+from app.core.deps import get_current_user, verify_project_access
 from app.models.user import User
 from app.models.project import Project
 from app.models.gbp import GoogleBusinessProfile, GoogleAccount, GBPChange
@@ -38,6 +38,7 @@ async def get_gbp_profile(
     Retrieves the primary Google Business Profile for a project.
     Safe serialization: never exposes tokens or secrets.
     """
+    await verify_project_access(project_id, current_user, db)
     acc_res = await db.execute(select(GoogleAccount).where(GoogleAccount.project_id == project_id))
     account = acc_res.scalars().first()
     if not account:
@@ -57,6 +58,7 @@ async def get_gbp_status(
     """
     Checks Google connection status and configuration availability for the project.
     """
+    await verify_project_access(project_id, current_user, db)
     is_configured = GoogleOAuthService.is_configured()
 
     acc_res = await db.execute(select(GoogleAccount).where(GoogleAccount.project_id == project_id))
@@ -96,10 +98,7 @@ async def get_google_auth_url(
     """
     Generates the official Google OAuth 2.0 authorization URL.
     """
-    proj_res = await db.execute(select(Project).where(Project.id == project_id))
-    project = proj_res.scalars().first()
-    if not project:
-        raise HTTPException(status_code=404, detail="Project not found")
+    project = await verify_project_access(project_id, current_user, db)
 
     auth_url = GoogleOAuthService.get_authorization_url(
         project_id=project.id,
@@ -198,6 +197,7 @@ async def get_gbp_changes(
     """
     Retrieves the audit log of all changes detected on Google Business Profile.
     """
+    await verify_project_access(project_id, current_user, db)
     acc_res = await db.execute(select(GoogleAccount).where(GoogleAccount.project_id == project_id))
     account = acc_res.scalars().first()
     if not account:
@@ -224,6 +224,7 @@ async def sync_gbp_data(
     """
     Executes live idempotent synchronization of GBP profile information and performance metrics.
     """
+    await verify_project_access(project_id, current_user, db)
     acc_res = await db.execute(select(GoogleAccount).where(GoogleAccount.project_id == project_id))
     account = acc_res.scalars().first()
     if not account or not account.is_connected:
@@ -258,6 +259,7 @@ async def disconnect_gbp(
     """
     Disconnects the Google Business Profile integration for a project.
     """
+    await verify_project_access(project_id, current_user, db)
     acc_res = await db.execute(select(GoogleAccount).where(GoogleAccount.project_id == project_id))
     account = acc_res.scalars().first()
     if account:
@@ -277,6 +279,7 @@ async def get_gsc_data(
     """
     Returns real Google Search Console metrics stored for the project, or a connected=False state.
     """
+    await verify_project_access(project_id, current_user, db)
     from app.models.analytics import GSCMetric
     res = await db.execute(
         select(GSCMetric).where(GSCMetric.project_id == project_id).order_by(GSCMetric.date.desc())
@@ -326,6 +329,7 @@ async def get_ga4_data(
     """
     Returns real Google Analytics 4 metrics stored for the project, or a connected=False state.
     """
+    await verify_project_access(project_id, current_user, db)
     from app.models.analytics import GA4Metric
     res = await db.execute(
         select(GA4Metric).where(GA4Metric.project_id == project_id).order_by(GA4Metric.date.desc())

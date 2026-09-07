@@ -144,14 +144,14 @@ export const WebsiteAuditView: React.FC = () => {
 
   const schemaCount = pages.filter(p => p.schema_types && p.schema_types.length > 0).length;
 
-  // Derive Pillar Scores (from summary or fallbacks)
+  // Derive Pillar Scores (from summary or active project scores, default 0)
   const pillars = summary?.pillar_scores || {
-    crawl_health: activeProject?.technical_score || 82,
-    onpage_content: activeProject?.onpage_score || 75,
-    schema_structured_data: activeProject?.local_score || 68,
-    gbp_alignment: activeProject?.gbp_score || 85,
-    citations_nap: activeProject?.citations_score || 80,
-    reviews_reputation: activeProject?.reviews_score || 90
+    crawl_health: activeProject?.technical_score || 0,
+    onpage_content: activeProject?.onpage_score || 0,
+    schema_structured_data: activeProject?.local_score || 0,
+    gbp_alignment: activeProject?.gbp_score || 0,
+    citations_nap: activeProject?.citations_score || 0,
+    reviews_reputation: activeProject?.reviews_score || 0
   };
 
   const matrix = summary?.discrepancy_matrix;

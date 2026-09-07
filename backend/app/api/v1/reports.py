@@ -5,7 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 
 from app.database import get_db
-from app.core.deps import get_current_user
+from app.core.deps import get_current_user, verify_project_access
 from app.models.user import User
 from app.models.project import Project
 from app.models.audit import SEOAudit, SEOIssue, SEOTask
@@ -20,10 +20,7 @@ async def generate_executive_report(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
-    proj_res = await db.execute(select(Project).where(Project.id == project_id))
-    project = proj_res.scalars().first()
-    if not project:
-        raise HTTPException(status_code=404, detail="Project not found")
+    project = await verify_project_access(project_id, current_user, db)
 
     # Fetch stats
     iss_res = await db.execute(select(SEOIssue).where(SEOIssue.project_id == project_id))

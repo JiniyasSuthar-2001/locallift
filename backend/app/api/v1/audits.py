@@ -183,6 +183,8 @@ async def run_crawler_and_audit_task(project_id: int, start_url: str, max_pages:
 
         await session.commit()
 
+from app.core.deps import get_current_user, verify_project_access
+
 @router.post("/crawl/{project_id}")
 async def trigger_crawl(
     project_id: int,
@@ -191,10 +193,7 @@ async def trigger_crawl(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
-    proj_res = await db.execute(select(Project).where(Project.id == project_id))
-    proj = proj_res.scalars().first()
-    if not proj:
-        raise HTTPException(status_code=404, detail="Project not found")
+    proj = await verify_project_access(project_id, current_user, db)
 
     background_tasks.add_task(
         run_crawler_and_audit_task,
@@ -211,6 +210,7 @@ async def get_latest_audit(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
+    await verify_project_access(project_id, current_user, db)
     result = await db.execute(
         select(SEOAudit)
         .options(selectinload(SEOAudit.issues))
@@ -228,9 +228,18 @@ async def list_project_issues(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
+    await verify_project_access(project_id, current_user, db)
     query = select(SEOIssue).where(SEOIssue.project_id == project_id)
     if category:
-        query = query.where(SEOIssue.category == category)
+        if category.lower() in ["local seo", "local"]:
+            query = query.where(
+                (SEOIssue.category == "Local SEO") |
+                (SEOIssue.category.ilike("%Local%")) |
+                (SEOIssue.category == "Schema & Structured Data") |
+                (SEOIssue.category == "Google Business Profile")
+            )
+        else:
+            query = query.where(SEOIssue.category.ilike(f"%{category}%"))
     if severity:
         query = query.where(SEOIssue.severity == IssueSeverity(severity))
     if status_filter:
@@ -246,6 +255,7 @@ async def list_crawled_pages(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
+    await verify_project_access(project_id, current_user, db)
     web_res = await db.execute(select(Website).where(Website.project_id == project_id))
     website = web_res.scalars().first()
     if not website:
@@ -282,6 +292,7 @@ async def get_diagnostic_summary(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
+    await verify_project_access(project_id, current_user, db)
     # 1. Project & Location
     proj_res = await db.execute(
         select(Project).options(selectinload(Project.locations)).where(Project.id == project_id)
