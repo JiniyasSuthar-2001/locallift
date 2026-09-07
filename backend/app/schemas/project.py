@@ -20,7 +20,7 @@ class LocationCreate(LocationBase):
 class LocationOut(LocationBase):
     id: int
     project_id: int
-    created_at: datetime
+    created_at: Optional[datetime] = None
 
     class Config:
         from_attributes = True
@@ -44,27 +44,33 @@ class ProjectUpdate(BaseModel):
     additional_categories: Optional[List[str]] = None
     country: Optional[str] = None
     client_id: Optional[int] = None
+    status: Optional[str] = None
+    is_archived: Optional[bool] = None
 
 class ProjectOut(ProjectBase):
     id: int
     organization_id: int
     client_id: Optional[int] = None
-    health_score: int
-    technical_score: int
-    onpage_score: int
-    local_score: int
-    gbp_score: int
-    reviews_score: int
-    citations_score: int
-    keywords_score: int
-    maps_score: int
-    created_at: datetime
-    updated_at: datetime
-    locations: List[LocationOut] = []
-    additional_categories: List[str] = []
+    status: Optional[str] = "active"
+    is_archived: Optional[bool] = False
+    team_member_count: Optional[int] = 1
+    health_score: Optional[int] = 78
+    technical_score: Optional[int] = 85
+    onpage_score: Optional[int] = 80
+    local_score: Optional[int] = 75
+    gbp_score: Optional[int] = 70
+    reviews_score: Optional[int] = 88
+    citations_score: Optional[int] = 72
+    keywords_score: Optional[int] = 80
+    maps_score: Optional[int] = 74
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
+    locations: Optional[List[LocationOut]] = []
+    additional_categories: Optional[List[str]] = []
 
     class Config:
         from_attributes = True
+
 
 class DashboardSummaryOut(BaseModel):
     health_score: int

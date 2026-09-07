@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { User, AuthState } from '../types';
 import api from '../api/client';
 
@@ -13,31 +13,68 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
-  const [token, setToken] = useState<string | null>(localStorage.getItem('locallift_token'));
+  const [token, setToken] = useState<string | null>(() => {
+    return typeof window !== 'undefined' ? localStorage.getItem('locallift_token') : null;
+  });
   const [loading, setLoading] = useState<boolean>(true);
 
+  const logout = useCallback(() => {
+    localStorage.removeItem('locallift_token');
+    setToken(null);
+    setUser(null);
+    setLoading(false);
+  }, []);
+
+  // Listen for global 401 session expiration from api client
   useEffect(() => {
+    const handleAuthExpired = () => {
+      logout();
+    };
+
+    window.addEventListener('auth:expired', handleAuthExpired);
+    return () => {
+      window.removeEventListener('auth:expired', handleAuthExpired);
+    };
+  }, [logout]);
+
+  useEffect(() => {
+    let isMounted = true;
+
     const fetchMe = async () => {
-      if (!token) {
-        setUser(null);
-        setLoading(false);
+      const storedToken = localStorage.getItem('locallift_token');
+      if (!storedToken) {
+        if (isMounted) {
+          setUser(null);
+          setToken(null);
+          setLoading(false);
+        }
         return;
       }
 
       try {
         const resp = await api.get('/auth/me');
-        setUser(resp.data);
-      } catch (err) {
-        console.error('Failed to restore session:', err);
-        localStorage.removeItem('locallift_token');
-        setToken(null);
-        setUser(null);
+        if (isMounted) {
+          setUser(resp.data);
+          setToken(storedToken);
+        }
+      } catch (err: any) {
+        if (isMounted) {
+          localStorage.removeItem('locallift_token');
+          setToken(null);
+          setUser(null);
+        }
       } finally {
-        setLoading(false);
+        if (isMounted) {
+          setLoading(false);
+        }
       }
     };
 
     fetchMe();
+
+    return () => {
+      isMounted = false;
+    };
   }, [token]);
 
   const login = async (email: string, password: string): Promise<boolean> => {
@@ -83,14 +120,20 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
-  const logout = () => {
-    localStorage.removeItem('locallift_token');
-    setToken(null);
-    setUser(null);
-  };
+  const isAuthenticated = Boolean(user && token);
 
   return (
-    <AuthContext.Provider value={{ user, token, isAuthenticated: !!user, login, register, logout, loading }}>
+    <AuthContext.Provider
+      value={{
+        user,
+        token,
+        isAuthenticated,
+        login,
+        register,
+        logout,
+        loading
+      }}
+    >
       {children}
     </AuthContext.Provider>
   );

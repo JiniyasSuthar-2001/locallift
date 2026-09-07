@@ -5,6 +5,7 @@ import { GeoGridScan } from '../types';
 import { LocalGridMap } from '../components/rankings/LocalGridMap';
 import { EmptyState } from '../components/ui/EmptyState';
 import api from '../api/client';
+import { getErrorMessage } from '../utils/error';
 
 export const LocalGridRankingsView: React.FC = () => {
   const { activeProject } = useProject();
@@ -31,20 +32,20 @@ export const LocalGridRankingsView: React.FC = () => {
     fetchScan();
   }, [activeProject?.id]);
 
-  const handleRescan = async () => {
+  const handleRunScan = async () => {
     if (!activeProject) return;
     try {
       setIsScanning(true);
       setScanError(null);
-      await api.post(`/keywords/${activeProject.id}/grid/rescan`, {
+      await api.post(`/keywords/${activeProject.id}/grid/scan`, {
+        keyword: scan?.keyword || 'dentist near me',
         radius_km: 7.5,
         grid_size: 5
       });
       await fetchScan();
     } catch (e: any) {
       console.error('Grid rescan failed:', e);
-      const detail = e?.response?.data?.detail || e?.message || 'Geo-Grid scan failed.';
-      setScanError(detail);
+      setScanError(getErrorMessage(e, 'Geo-Grid scan failed.'));
     } finally {
       setIsScanning(false);
     }

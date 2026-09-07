@@ -41,14 +41,60 @@ async def list_projects(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
+    if current_user.is_superuser:
+        stmt = select(Project).options(
+            selectinload(Project.locations),
+            selectinload(Project.team_memberships)
+        ).order_by(Project.id.desc())
+        result = await db.execute(stmt)
+        projects = result.scalars().unique().all()
+        for p in projects:
+            active_count = sum(1 for m in p.team_memberships if m.status == 'active') if p.team_memberships else 0
+            p.team_member_count = 1 + active_count
+            if p.additional_categories is None:
+                p.additional_categories = []
+        return projects
+
     mem_result = await db.execute(select(OrganizationMember).where(OrganizationMember.user_id == current_user.id))
     memberships = mem_result.scalars().all()
     org_ids = [m.organization_id for m in memberships]
 
-    result = await db.execute(
-        select(Project).options(selectinload(Project.locations)).where(Project.organization_id.in_(org_ids))
+    from app.models.team import ProjectMembership
+    team_res = await db.execute(
+        select(ProjectMembership.project_id).where(
+            ProjectMembership.user_id == current_user.id,
+            ProjectMembership.status == "active"
+        )
     )
-    return result.scalars().all()
+    team_proj_ids = list(team_res.scalars().all())
+
+    conditions = []
+    if org_ids:
+        conditions.append(Project.organization_id.in_(org_ids))
+    if team_proj_ids:
+        conditions.append(Project.id.in_(team_proj_ids))
+
+    if not conditions:
+        return []
+
+    from sqlalchemy import or_
+    stmt = select(Project).options(
+        selectinload(Project.locations),
+        selectinload(Project.team_memberships)
+    ).where(or_(*conditions)).order_by(Project.id.desc())
+
+    result = await db.execute(stmt)
+    projects = result.scalars().unique().all()
+
+    for p in projects:
+        active_count = sum(1 for m in p.team_memberships if m.status == 'active') if p.team_memberships else 0
+        p.team_member_count = 1 + active_count
+        if p.additional_categories is None:
+            p.additional_categories = []
+
+    return projects
+
+
 
 @router.post("", response_model=ProjectOut)
 async def create_project(

@@ -1,7 +1,8 @@
 from datetime import datetime, timezone
-from sqlalchemy import Column, Integer, String, Float, DateTime, ForeignKey, Text, JSON
+from sqlalchemy import Column, Integer, String, Float, Boolean, DateTime, ForeignKey, Text, JSON
 from sqlalchemy.orm import relationship
 from app.database import Base
+
 
 class Project(Base):
     __tablename__ = "projects"
@@ -26,6 +27,8 @@ class Project(Base):
     citations_score = Column(Integer, default=72)
     keywords_score = Column(Integer, default=80)
     maps_score = Column(Integer, default=74)
+    status = Column(String(50), default="active")  # active, archived
+    is_archived = Column(Boolean, default=False)
     
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
     updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
@@ -46,6 +49,9 @@ class Project(Base):
     google_accounts = relationship("GoogleAccount", back_populates="project", cascade="all, delete-orphan")
     reports = relationship("Report", back_populates="project", cascade="all, delete-orphan")
     geo_grid_scans = relationship("GeoGridScan", back_populates="project", cascade="all, delete-orphan")
+    team_memberships = relationship("ProjectMembership", back_populates="project", cascade="all, delete-orphan")
+    invitations = relationship("ProjectInvitation", back_populates="project", cascade="all, delete-orphan")
+
 
 class Location(Base):
     __tablename__ = "locations"

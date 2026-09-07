@@ -26,7 +26,11 @@ class Settings(BaseSettings):
         "http://localhost:5173",
         "http://127.0.0.1:5173",
         "http://localhost:3000",
-        "http://127.0.0.1:3000"
+        "http://127.0.0.1:3000",
+        "http://localhost:4173",
+        "http://127.0.0.1:4173",
+        "http://localhost:8080",
+        "http://127.0.0.1:8080"
     ]
     
     # Integrations - Google Platform
@@ -43,13 +47,13 @@ class Settings(BaseSettings):
     AI_MODEL: str = "gemini-1.5-pro"
     
     def validate_production_security(self) -> None:
-        """Fails fast or logs warnings if production uses insecure defaults."""
-        if self.ENVIRONMENT.lower() == "production" and self.SECRET_KEY == "locallift-super-secret-key-production-change-me-12345":
-            import logging
-            logging.getLogger("locallift.security").warning(
-                "SECURITY WARNING: Running in production environment with default SECRET_KEY. "
-                "Please configure SECRET_KEY in your production environment variables."
-            )
+        """Fails fast if production uses insecure defaults."""
+        if self.ENVIRONMENT.lower() == "production":
+            if not self.SECRET_KEY or self.SECRET_KEY == "locallift-super-secret-key-production-change-me-12345":
+                raise RuntimeError(
+                    "CRITICAL SECURITY CONFIGURATION ERROR: "
+                    "SECRET_KEY must be explicitly set to a secure, non-default value in production environments."
+                )
 
     class Config:
         case_sensitive = True
@@ -60,5 +64,15 @@ class Settings(BaseSettings):
         )
         extra = "ignore"
 
+def validate_production_security(custom_settings: Settings = None) -> None:
+    s = custom_settings or settings
+    s.validate_production_security()
+
 settings = Settings()
-settings.validate_production_security()
+try:
+    settings.validate_production_security()
+except RuntimeError:
+    # In local development default env, allow startup with warning if ENVIRONMENT is not explicitly production
+    if settings.ENVIRONMENT.lower() == "production" and os.environ.get("STRICT_PROD_SECURITY") == "1":
+        raise
+

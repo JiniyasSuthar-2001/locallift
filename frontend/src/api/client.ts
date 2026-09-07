@@ -20,12 +20,30 @@ api.interceptors.request.use((config: InternalAxiosRequestConfig) => {
   return config;
 });
 
+let isNotifyingExpiration = false;
+
 // Response interceptor to handle 401 session expirations gracefully
 api.interceptors.response.use(
   (response: AxiosResponse) => response,
   (error: any) => {
     if (error.response?.status === 401) {
-      // If unauthorized, do not crash; AuthContext will handle redirect
+      const url = error.config?.url || '';
+      const isAuthAttempt = url.includes('/auth/login') || url.includes('/auth/register');
+
+      // Only expire session if 401 was on an authenticated resource (not failed login credentials)
+      if (!isAuthAttempt && localStorage.getItem('locallift_token')) {
+        localStorage.removeItem('locallift_token');
+
+        if (!isNotifyingExpiration) {
+          isNotifyingExpiration = true;
+          if (typeof window !== 'undefined') {
+            window.dispatchEvent(new CustomEvent('auth:expired', { detail: { url } }));
+          }
+          setTimeout(() => {
+            isNotifyingExpiration = false;
+          }, 1000);
+        }
+      }
     }
     return Promise.reject(error);
   }

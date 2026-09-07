@@ -6,6 +6,19 @@ from app.models.ranking import Keyword, KeywordRanking, GeoGridScan
 from app.models.local_seo import Review, Citation, NAPRecord, Competitor, SchemaRecord
 from app.models.analytics import GSCMetric, GA4Metric, Report, ScheduledJob
 from app.models.template import Template, TemplateUsage
+from app.models.connections import (
+    GoogleConnection,
+    GoogleAdsAccount,
+    GoogleSearchConsoleProperty,
+    GoogleAnalyticsProperty,
+    PublicBusinessListing,
+)
+from app.models.team import (
+    ProjectMembership,
+    ProjectInvitation,
+    DEFAULT_PROJECT_PERMISSIONS,
+    ALL_PROJECT_PERMISSIONS
+)
 
 __all__ = [
     "User", "Organization", "OrganizationMember", "Client", "OrgRole",
@@ -15,6 +28,11 @@ __all__ = [
     "Keyword", "KeywordRanking", "GeoGridScan",
     "Review", "Citation", "NAPRecord", "Competitor", "SchemaRecord",
     "GSCMetric", "GA4Metric", "Report", "ScheduledJob",
-    "Template", "TemplateUsage"
+    "Template", "TemplateUsage",
+    "GoogleConnection", "GoogleAdsAccount", "GoogleSearchConsoleProperty",
+    "GoogleAnalyticsProperty", "PublicBusinessListing",
+    "ProjectMembership", "ProjectInvitation"
 ]
+
+
 

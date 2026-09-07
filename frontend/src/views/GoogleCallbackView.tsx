@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { RotateCw, CheckCircle2, AlertCircle, Store } from 'lucide-react';
 import { useProject } from '../context/ProjectContext';
+import { getErrorMessage } from '../utils/error';
 import api from '../api/client';
 
 export const GoogleCallbackView: React.FC = () => {
@@ -30,26 +31,33 @@ export const GoogleCallbackView: React.FC = () => {
       }
 
       try {
-        await api.post('/gbp/oauth/callback', {
-          code,
-          state,
-          project_id: activeProject?.id
-        });
+        try {
+          await api.post('/connections/google/callback', {
+            code,
+            state
+          });
+        } catch (e) {
+          await api.post('/gbp/oauth/callback', {
+            code,
+            state,
+            project_id: activeProject?.id
+          });
+        }
         setStatus('success');
         await refreshDashboard();
         setTimeout(() => {
-          navigate('/google/gbp');
-        }, 2000);
+          navigate('/settings');
+        }, 1500);
       } catch (err: any) {
         setStatus('error');
         setErrorMessage(
-          err.response?.data?.detail || 'Failed to complete Google OAuth authentication with LocalLift backend.'
+          getErrorMessage(err, 'Failed to complete Google OAuth authentication with LocalLift backend.')
         );
       }
     };
 
     processCallback();
-  }, [searchParams, activeProject?.id]);
+  }, [searchParams, activeProject?.id, navigate, refreshDashboard]);
 
   return (
     <div className="min-h-[60vh] flex items-center justify-center p-6">

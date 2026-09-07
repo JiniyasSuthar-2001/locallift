@@ -33,8 +33,11 @@ export const OnboardingWizard: React.FC = () => {
   const [phone, setPhone] = useState('');
   const [keywordInput, setKeywordInput] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   const handleFinishOnboarding = async () => {
+    if (isSubmitting) return;
+    setErrorMessage(null);
     try {
       setIsSubmitting(true);
       const projResp = await api.post('/projects', {
@@ -60,27 +63,37 @@ export const OnboardingWizard: React.FC = () => {
       if (keywordInput.trim()) {
         const kws = keywordInput.split('\n').filter((k) => k.trim());
         for (const kw of kws) {
-          await api.post('/keywords', {
-            project_id: newProjectId,
-            keyword: kw.trim(),
-            target_location: city.trim() || 'Metro Area',
-            search_intent: 'Commercial',
-            search_volume: 450
-          });
+          try {
+            await api.post('/keywords', {
+              project_id: newProjectId,
+              keyword: kw.trim(),
+              target_location: city.trim() || 'Metro Area',
+              search_intent: 'Commercial',
+              search_volume: 450
+            });
+          } catch (kwErr) {
+            console.warn('Keyword creation skipped/failed:', kwErr);
+          }
         }
       }
 
-      // Trigger initial crawl
-      await api.post(`/audits/crawl/${newProjectId}`, {
-        url: `https://${domain.trim() || 'example.com'}`,
-        max_pages: 5
-      });
+      // Trigger initial crawl in background
+      try {
+        await api.post(`/audits/crawl/${newProjectId}`, {
+          url: `https://${domain.trim() || 'example.com'}`,
+          max_pages: 5
+        });
+      } catch (crawlErr) {
+        console.warn('Initial crawl trigger deferred:', crawlErr);
+      }
 
-      await refreshProjects();
-      await refreshDashboard();
+      // Refresh projects with preferred selection
+      await refreshProjects(newProjectId);
       navigate('/');
-    } catch (e) {
+    } catch (e: any) {
       console.error('Onboarding failed:', e);
+      const msg = e.response?.data?.message || e.message || 'Failed to create project. Please verify inputs and try again.';
+      setErrorMessage(msg);
     } finally {
       setIsSubmitting(false);
     }
@@ -337,6 +350,11 @@ export const OnboardingWizard: React.FC = () => {
           </div>
 
           <div className="space-y-4 text-xs">
+            {errorMessage && (
+              <div className="p-3.5 bg-rose-50 border border-rose-200 text-rose-800 rounded-xl text-xs font-semibold">
+                {errorMessage}
+              </div>
+            )}
             <div>
               <label className="text-slate-700 font-bold block mb-1">Keywords (One per line)</label>
               <textarea
@@ -352,14 +370,15 @@ export const OnboardingWizard: React.FC = () => {
           <div className="flex justify-between pt-4 border-t border-slate-100">
             <button
               onClick={() => setStep(3)}
-              className="px-5 py-2.5 btn-vibrant-secondary rounded-xl text-xs font-bold"
+              disabled={isSubmitting}
+              className="px-5 py-2.5 btn-vibrant-secondary rounded-xl text-xs font-bold disabled:opacity-50"
             >
               Back
             </button>
             <button
               onClick={handleFinishOnboarding}
               disabled={isSubmitting}
-              className="flex items-center space-x-2 px-7 py-3 btn-vibrant-primary rounded-xl font-black text-xs shadow-lg transition-all"
+              className="flex items-center space-x-2 px-7 py-3 btn-vibrant-primary rounded-xl font-black text-xs shadow-lg transition-all disabled:opacity-60 disabled:cursor-not-allowed"
             >
               <Sparkles className="w-4 h-4" />
               <span>{isSubmitting ? 'Creating Project & Initializing...' : 'Launch Project & Run Initial Audit'}</span>

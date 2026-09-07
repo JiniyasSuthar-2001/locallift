@@ -50,6 +50,9 @@ export interface Project {
   primary_category: string;
   additional_categories?: string[];
   country: string;
+  status?: string;
+  is_archived?: boolean;
+  team_member_count?: number;
   health_score: number;
   technical_score: number;
   onpage_score: number;
@@ -63,6 +66,7 @@ export interface Project {
   updated_at: string;
   locations: Location[];
 }
+
 
 export interface DashboardSummary {
   health_score: number;
@@ -473,5 +477,171 @@ export interface SchemaValidationResult {
   warnings: string[];
   entities: string[];
 }
+
+export interface GoogleConnectionSummary {
+  connected: boolean;
+  google_email?: string;
+  status: 'connected' | 'expired' | 'error' | 'disconnected' | 'not_connected';
+  created_at?: string;
+  last_sync_at?: string;
+  last_error?: string;
+  has_gbp: boolean;
+  has_ads: boolean;
+  has_gsc: boolean;
+  has_ga4: boolean;
+  counts: {
+    gbp_locations: number;
+    ads_accounts: number;
+    gsc_properties: number;
+    ga4_properties: number;
+    public_listings: number;
+  };
+}
+
+export interface DiscoveredGBPLocation {
+  account_id: string;
+  location_id: string;
+  location_name: string;
+  address?: string;
+  city?: string;
+  state?: string;
+  postal_code?: string;
+  country?: string;
+  phone?: string;
+  website_url?: string;
+  category?: string;
+  maps_uri?: string;
+  latitude?: number;
+  longitude?: number;
+  already_imported?: boolean;
+}
+
+export interface GoogleAdsAccountItem {
+  id: number;
+  customer_id: string;
+  descriptive_name?: string;
+  currency_code?: string;
+  time_zone?: string;
+  status?: string;
+  is_active: boolean;
+  last_sync_at?: string;
+}
+
+export interface GoogleSearchConsoleItem {
+  id: number;
+  site_url: string;
+  permission_level?: string;
+  is_active: boolean;
+  last_sync_at?: string;
+}
+
+export interface GoogleAnalyticsItem {
+  id: number;
+  property_id: string;
+  property_name?: string;
+  account_name?: string;
+  is_active: boolean;
+  last_sync_at?: string;
+}
+
+export interface PublicBusinessListingItem {
+  id: number;
+  organization_id: number;
+  business_name: string;
+  google_maps_url: string;
+  place_id?: string;
+  cid?: string;
+  category?: string;
+  address?: string;
+  city?: string;
+  state?: string;
+  postal_code?: string;
+  country?: string;
+  phone?: string;
+  website_url?: string;
+  rating?: number;
+  reviews_count?: number;
+  status: string;
+  created_at: string;
+  last_checked_at?: string;
+}
+
+export interface DiscoveredResourcesResponse {
+  connected: boolean;
+  gbp_locations: DiscoveredGBPLocation[];
+  ads_accounts: GoogleAdsAccountItem[];
+  gsc_properties: GoogleSearchConsoleItem[];
+  ga4_properties: GoogleAnalyticsItem[];
+  message: string;
+}
+
+export interface TeamMember {
+  id: number;
+  user_id: number;
+  name: string;
+  email: string;
+  role: string;
+  permissions: string[];
+  status: string;
+  created_at: string;
+}
+
+export interface TeamInvitation {
+  id: number;
+  project_id: number;
+  project_name: string;
+  email: string;
+  role: string;
+  permissions: string[];
+  status: string;
+  invited_by_name?: string;
+  created_at: string;
+  expires_at: string;
+}
+
+export interface ProjectTeamSummary {
+  project_id: number;
+  project_name: string;
+  owner: {
+    name: string;
+    email: string;
+    role: string;
+  };
+  seats_used: number;
+  max_seats: number;
+  seats_available: number;
+  members: TeamMember[];
+  pending_invitations: TeamInvitation[];
+}
+
+export interface UserPendingInvitation {
+  id: number;
+  project_id: number;
+  project_name: string;
+  project_domain: string;
+  organization_name: string;
+  invited_by_name: string;
+  role: string;
+  permissions: string[];
+  created_at: string;
+  expires_at: string;
+}
+
+export interface TeamDirectoryMember {
+  user_id: number;
+  name: string;
+  email: string;
+  global_role: string;
+  project_count: number;
+  projects: {
+    id: number;
+    name: string;
+    role: string;
+    permissions: string[];
+  }[];
+  status: string;
+}
+
+
 
 

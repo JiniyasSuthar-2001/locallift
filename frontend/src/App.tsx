@@ -1,6 +1,6 @@
 import React from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
-import { AuthProvider } from './context/AuthContext';
+import { AuthProvider, useAuth } from './context/AuthContext';
 import { ProjectProvider } from './context/ProjectContext';
 import { AppLayout } from './components/layout/AppLayout';
 
@@ -26,33 +26,29 @@ import { SettingsView } from './views/SettingsView';
 import { AIAssistantView } from './views/AIAssistantView';
 import { TemplatesView } from './views/TemplatesView';
 import { GoogleCallbackView } from './views/GoogleCallbackView';
+import { MyProjectsView } from './views/MyProjectsView';
+import { ProjectDetailsView } from './views/ProjectDetailsView';
+import { TeamDirectoryView } from './views/TeamDirectoryView';
+import { InvitationNotificationModal } from './components/team/InvitationNotificationModal';
 
 import { AuthModal } from './components/auth/AuthModal';
-import { useAuth } from './context/AuthContext';
 
-const AppContent: React.FC = () => {
-  const { isAuthenticated, loading } = useAuth();
-
-  if (loading) {
-    return (
-      <div className="flex h-screen items-center justify-center bg-slate-50">
-        <div className="text-center space-y-3">
-          <div className="w-10 h-10 border-4 border-purple-600 border-t-transparent rounded-full animate-spin mx-auto" />
-          <p className="text-xs font-bold text-slate-600">Initializing LocalLift...</p>
-        </div>
-      </div>
-    );
-  }
-
+const AuthenticatedApp: React.FC = () => {
   return (
-    <>
-      {!isAuthenticated && <AuthModal />}
+    <ProjectProvider>
+      <InvitationNotificationModal />
       <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
         <Routes>
           <Route path="/" element={<AppLayout />}>
             <Route index element={<Dashboard />} />
             <Route path="onboarding" element={<OnboardingWizard />} />
             
+            {/* Project Management & Team */}
+            <Route path="projects" element={<MyProjectsView />} />
+            <Route path="projects/:projectId" element={<ProjectDetailsView />} />
+            <Route path="team" element={<TeamDirectoryView />} />
+            <Route path="team/:memberId" element={<TeamDirectoryView />} />
+
             {/* SEO Auditing */}
             <Route path="audits/website" element={<WebsiteAuditView />} />
             <Route path="audits/local" element={<LocalSEOAuditView />} />
@@ -87,17 +83,44 @@ const AppContent: React.FC = () => {
           </Route>
         </Routes>
       </BrowserRouter>
-    </>
+    </ProjectProvider>
   );
+};
+
+
+const AppContent: React.FC = () => {
+  const { isAuthenticated, loading } = useAuth();
+
+  // 1. Initial authentication loading state (no protected UI flash)
+  if (loading) {
+    return (
+      <div className="flex h-screen items-center justify-center bg-slate-900">
+        <div className="text-center space-y-4">
+          <div className="w-12 h-12 border-4 border-purple-500 border-t-transparent rounded-full animate-spin mx-auto shadow-lg shadow-purple-500/20" />
+          <div className="space-y-1">
+            <h3 className="text-sm font-black text-white tracking-wider">LOCALLIFT</h3>
+            <p className="text-xs text-slate-400 font-medium">Restoring secure session...</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // 2. Unauthenticated state: Render AuthModal boundary only (AppLayout and ProjectProvider do NOT mount)
+  if (!isAuthenticated) {
+    return <AuthModal />;
+  }
+
+  // 3. Authenticated state: Mount protected routes & ProjectProvider
+  return <AuthenticatedApp />;
 };
 
 export const App: React.FC = () => {
   return (
     <AuthProvider>
-      <ProjectProvider>
-        <AppContent />
-      </ProjectProvider>
+      <AppContent />
     </AuthProvider>
   );
 };
+
 export default App;

@@ -24,7 +24,9 @@ class User(Base):
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
     memberships = relationship("OrganizationMember", back_populates="user", cascade="all, delete-orphan")
+    project_memberships = relationship("ProjectMembership", back_populates="user", cascade="all, delete-orphan")
     assigned_tasks = relationship("SEOTask", back_populates="assigned_to")
+
 
 class Organization(Base):
     __tablename__ = "organizations"

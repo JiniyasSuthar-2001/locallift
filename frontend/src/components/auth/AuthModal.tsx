@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Globe, Lock, Mail, User, Building, ArrowRight, Sparkles, ShieldCheck } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
+import { getErrorMessage } from '../../utils/error';
 
 export const AuthModal: React.FC = () => {
   const { login, register } = useAuth();
@@ -40,7 +41,7 @@ export const AuthModal: React.FC = () => {
         }
       }
     } catch (err: any) {
-      setError(err?.response?.data?.detail || 'Authentication error. Please try again.');
+      setError(getErrorMessage(err, 'Authentication error. Please try again.'));
     } finally {
       setLoading(false);
     }

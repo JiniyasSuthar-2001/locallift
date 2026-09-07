@@ -17,6 +17,10 @@ from app.api.v1.reports import router as reports_router
 from app.api.v1.organizations import router as organizations_router
 from app.api.v1.templates import router as templates_router
 from app.api.v1.categories import router as categories_router
+from app.api.v1.connections import router as connections_router
+from app.api.v1.team import router as team_router
+
+
 
 app = FastAPI(
     title=settings.PROJECT_NAME,
@@ -49,6 +53,10 @@ app.include_router(ai_router, prefix=settings.API_V1_STR)
 app.include_router(reports_router, prefix=settings.API_V1_STR)
 app.include_router(organizations_router, prefix=settings.API_V1_STR)
 app.include_router(templates_router, prefix=settings.API_V1_STR)
+app.include_router(connections_router, prefix=settings.API_V1_STR)
+app.include_router(team_router, prefix=settings.API_V1_STR)
+
+
 
 import uuid
 import logging
@@ -58,6 +66,16 @@ from fastapi.exceptions import RequestValidationError
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 logger = logging.getLogger("locallift")
+
+def _add_cors_headers(request: Request, headers: dict = None) -> dict:
+    h = dict(headers or {})
+    origin = request.headers.get("origin")
+    if origin and ("localhost" in origin or "127.0.0.1" in origin):
+        h["Access-Control-Allow-Origin"] = origin
+        h["Access-Control-Allow-Credentials"] = "true"
+        h["Access-Control-Allow-Methods"] = "*"
+        h["Access-Control-Allow-Headers"] = "*"
+    return h
 
 @app.exception_handler(StarletteHTTPException)
 async def http_exception_handler(request: Request, exc: StarletteHTTPException):
@@ -71,7 +89,7 @@ async def http_exception_handler(request: Request, exc: StarletteHTTPException):
             "detail": exc.detail,
             "request_id": req_id
         },
-        headers=getattr(exc, "headers", None) or {}
+        headers=_add_cors_headers(request, getattr(exc, "headers", None))
     )
 
 @app.exception_handler(RequestValidationError)
@@ -85,7 +103,8 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
             "message": "Invalid request parameters.",
             "detail": exc.errors(),
             "request_id": req_id
-        }
+        },
+        headers=_add_cors_headers(request)
     )
 
 @app.exception_handler(Exception)
@@ -98,8 +117,10 @@ async def global_exception_handler(request: Request, exc: Exception):
             "error": True,
             "code": "INTERNAL_SERVER_ERROR",
             "message": "An unexpected error occurred. Please contact support or check server logs.",
+            "detail": str(exc),
             "request_id": req_id
-        }
+        },
+        headers=_add_cors_headers(request)
     )
 
 def _sync_sqlite_schema(sync_conn):

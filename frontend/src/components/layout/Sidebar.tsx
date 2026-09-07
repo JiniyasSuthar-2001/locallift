@@ -19,7 +19,8 @@ import {
   Sparkles,
   Layers,
   Search,
-  Users2
+  Users2,
+  FolderKanban
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 
@@ -42,6 +43,7 @@ export const Sidebar: React.FC = () => {
       title: 'Overview',
       items: [
         { name: 'Dashboard', path: '/', icon: LayoutDashboard },
+        { name: 'My Projects', path: '/projects', icon: FolderKanban },
         { name: 'AI Diagnostic', path: '/ai-assistant', icon: Bot, badge: 'AI' },
       ]
     },
@@ -74,12 +76,14 @@ export const Sidebar: React.FC = () => {
       title: 'Operations & Assets',
       items: [
         { name: 'SEO Task Board', path: '/tasks', icon: CheckSquare },
+        { name: 'Team Directory', path: '/team', icon: Users2 },
         { name: 'Templates Hub', path: '/templates', icon: FileCode2, badge: 'New' },
         { name: 'Executive Reports', path: '/reports', icon: FileText },
         { name: 'Settings', path: '/settings', icon: Settings },
       ]
     }
   ];
+
 
   return (
     <aside className="w-[245px] bg-white border-r border-slate-200 flex flex-col shrink-0 h-screen sticky top-0 z-20 select-none">

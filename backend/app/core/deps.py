@@ -7,8 +7,9 @@ from sqlalchemy.future import select
 
 from app.database import get_db
 from app.config import settings
-from app.models.user import User, OrganizationMember
+from app.models.user import User, OrganizationMember, OrgRole
 from app.schemas.auth import TokenPayload
+
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl=f"{settings.API_V1_STR}/auth/login")
 
@@ -62,10 +63,13 @@ async def verify_project_access(
     db: AsyncSession
 ):
     """
-    Enforce tenant boundary: Verify that the current user's organization has access
-    to the given project_id. Returns the Project if authorized, raises 403 or 404 otherwise.
+    Enforce tenant and team boundary:
+    1. Superuser has access to everything.
+    2. Organization owners/admins/managers have access to all projects in their org.
+    3. Assigned project team members have access to projects they are members of.
     """
     from app.models.project import Project
+    from app.models.team import ProjectMembership
 
     if current_user.is_superuser:
         proj_res = await db.execute(select(Project).where(Project.id == project_id))
@@ -74,28 +78,93 @@ async def verify_project_access(
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found")
         return project
 
+    # 1. Check organization membership
     org_ids = await get_user_organization_ids(current_user.id, db)
-    if not org_ids:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Access denied: User does not belong to any organization"
+    if org_ids:
+        proj_res = await db.execute(
+            select(Project).where(
+                Project.id == project_id,
+                Project.organization_id.in_(org_ids)
+            )
         )
+        project = proj_res.scalars().first()
+        if project:
+            return project
 
-    proj_res = await db.execute(
-        select(Project).where(
-            Project.id == project_id,
-            Project.organization_id.in_(org_ids)
+    # 2. Check project-specific team membership
+    mem_res = await db.execute(
+        select(ProjectMembership)
+        .where(
+            ProjectMembership.project_id == project_id,
+            ProjectMembership.user_id == current_user.id,
+            ProjectMembership.status == "active"
         )
     )
-    project = proj_res.scalars().first()
-    if not project:
-        # Check if project exists for another org
-        exist_res = await db.execute(select(Project.id).where(Project.id == project_id))
-        if exist_res.scalar() is not None:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Access denied: You do not have permission to access this project"
+    membership = mem_res.scalars().first()
+    if membership:
+        proj_res = await db.execute(select(Project).where(Project.id == project_id))
+        project = proj_res.scalars().first()
+        if project:
+            return project
+
+    # 3. If neither, check if project exists at all for security error reporting
+    exist_res = await db.execute(select(Project.id).where(Project.id == project_id))
+    if exist_res.scalar() is not None:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied: You do not have permission to access this project"
+        )
+    raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found")
+
+async def verify_project_permission(
+    project_id: int,
+    permission_name: str,
+    current_user: User,
+    db: AsyncSession
+):
+    """
+    Verifies that the current user has a specific granular permission on the project.
+    Org Owners / Admins have all permissions by default.
+    Project team members must have the permission in their ProjectMembership.
+    """
+    from app.models.project import Project
+    from app.models.team import ProjectMembership, ALL_PROJECT_PERMISSIONS
+
+    project = await verify_project_access(project_id, current_user, db)
+
+    if current_user.is_superuser:
+        return project
+
+    # Check if user is Org Owner/Admin
+    org_ids = await get_user_organization_ids(current_user.id, db)
+    if project.organization_id in org_ids:
+        org_mem_res = await db.execute(
+            select(OrganizationMember).where(
+                OrganizationMember.organization_id == project.organization_id,
+                OrganizationMember.user_id == current_user.id
             )
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found")
-    return project
+        )
+        org_mem = org_mem_res.scalars().first()
+        if org_mem and org_mem.role in (OrgRole.OWNER, OrgRole.ADMIN, OrgRole.MANAGER):
+            return project
+
+    # Check project-specific permissions for team member
+    mem_res = await db.execute(
+        select(ProjectMembership).where(
+            ProjectMembership.project_id == project_id,
+            ProjectMembership.user_id == current_user.id,
+            ProjectMembership.status == "active"
+        )
+    )
+    membership = mem_res.scalars().first()
+    if membership:
+        perms = membership.permissions or []
+        if permission_name in perms:
+            return project
+
+    raise HTTPException(
+        status_code=status.HTTP_403_FORBIDDEN,
+        detail=f"Access denied: You do not have the required '{permission_name}' permission for this project."
+    )
+
 
