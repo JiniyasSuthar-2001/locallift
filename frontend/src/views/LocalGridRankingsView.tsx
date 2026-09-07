@@ -92,7 +92,7 @@ export const LocalGridRankingsView: React.FC = () => {
       )}
 
       {/* Main Grid Component */}
-      <LocalGridMap scan={scan} onRescan={handleRescan} isScanning={isScanning} />
+      <LocalGridMap scan={scan} onRescan={handleRunScan} isScanning={isScanning} />
     </div>
   );
 };

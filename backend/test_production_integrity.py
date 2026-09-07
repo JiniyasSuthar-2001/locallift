@@ -7,9 +7,13 @@ from app.models.project import Project, Location, Website
 from app.models.local_seo import SchemaRecord, Review
 from app.models.gbp import GoogleAccount
 from app.core.security import get_password_hash, create_access_token
+from app.test_helper import init_test_db
 from sqlalchemy.future import select
 
 async def test_production_integrity():
+    # Ensure DB tables exist for integrity tests
+    await init_test_db(seed_demo=False)
+
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
         async with AsyncSessionLocal() as session:

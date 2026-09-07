@@ -197,6 +197,7 @@ export interface GeoGridScan {
   id: number;
   project_id: number;
   keyword_id: number;
+  keyword?: string;
   center_name: string;
   center_lat: number;
   center_lng: number;
@@ -547,11 +548,15 @@ export interface GoogleAnalyticsItem {
 export interface PublicBusinessListingItem {
   id: number;
   organization_id: number;
-  business_name: string;
-  google_maps_url: string;
+  name?: string;
+  business_name?: string;
+  maps_url?: string;
+  google_maps_url?: string;
   place_id?: string;
   cid?: string;
+  primary_category?: string;
   category?: string;
+  formatted_address?: string;
   address?: string;
   city?: string;
   state?: string;
@@ -559,10 +564,12 @@ export interface PublicBusinessListingItem {
   country?: string;
   phone?: string;
   website_url?: string;
-  rating?: number;
-  reviews_count?: number;
-  status: string;
-  created_at: string;
+  rating?: number | null;
+  review_count?: number | null;
+  reviews_count?: number | null;
+  status?: string;
+  monitoring_status?: string;
+  created_at?: string;
   last_checked_at?: string;
 }
 

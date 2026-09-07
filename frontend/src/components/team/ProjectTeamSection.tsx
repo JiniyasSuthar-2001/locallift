@@ -14,6 +14,7 @@ import {
   UserPlus,
   Lock,
   Edit2
+} from 'lucide-react';
 import api from '../../api/client';
 import { getErrorMessage } from '../../utils/error';
 import { ProjectTeamSummary, TeamMember, TeamInvitation } from '../../types';

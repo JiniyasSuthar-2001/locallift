@@ -90,7 +90,7 @@ class PublicBusinessListing(Base):
     primary_category = Column(String(255), default="Local Business")
     
     rating = Column(Float, nullable=True)
-    review_count = Column(Integer, default=0)
+    review_count = Column(Integer, nullable=True, default=None)
     maps_url = Column(String(1000), nullable=True)
     latitude = Column(Float, nullable=True)
     longitude = Column(Float, nullable=True)

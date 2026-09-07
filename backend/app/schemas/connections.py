@@ -103,13 +103,15 @@ class PublicBusinessListingOut(BaseModel):
     formatted_address: Optional[str] = None
     phone: Optional[str] = None
     website_url: Optional[str] = None
-    primary_category: str
+    primary_category: Optional[str] = "Local Business"
     rating: Optional[float] = None
-    review_count: int
+    review_count: Optional[int] = None
     maps_url: Optional[str] = None
-    is_managed: bool
-    monitoring_status: str
-    created_at: datetime
+    latitude: Optional[float] = None
+    longitude: Optional[float] = None
+    is_managed: Optional[bool] = False
+    monitoring_status: Optional[str] = "active"
+    created_at: Optional[datetime] = None
 
     class Config:
         from_attributes = True

@@ -95,15 +95,19 @@ async def run_tests():
         print(f"  [PASS] Generated valid Google OAuth URL: {auth_url[:60]}...")
 
 
-        # 4. Test Public Google Maps URL Parser
-        print("\n[TEST 4] Testing Public Google Maps URL Parser...")
-        sample_url_1 = "https://www.google.com/maps/place/Apex+Dental+Care/@-27.4698,153.0251,17z/data=!3m1!4b1"
+        # 4. Test Public Google Maps URL Parser & Data Integrity
+        print("\n[TEST 4] Testing Public Google Maps URL Parser & Data Integrity...")
+        sample_url_1 = "https://www.google.com/maps/place/Apex+Dental+Care/@-27.4698,153.0251,17z/data=!1s0x6b915a1b2c3d4e5f:0x123456789abcdef0"
         parsed_1 = PublicGoogleMapsService.parse_maps_url(sample_url_1)
-        print(f"  Parsed URL 1: name='{parsed_1['name']}', lat={parsed_1['latitude']}, lng={parsed_1['longitude']}")
+        print(f"  Parsed Full URL 1: name='{parsed_1['name']}', lat={parsed_1['latitude']}, lng={parsed_1['longitude']}, place_id={parsed_1['place_id']}")
         assert parsed_1["name"] == "Apex Dental Care"
         assert parsed_1["latitude"] == -27.4698
+        assert parsed_1["longitude"] == 153.0251
+        assert parsed_1["place_id"] == "0x6b915a1b2c3d4e5f:0x123456789abcdef0"
+        assert parsed_1["rating"] is None, f"Expected rating=None, got {parsed_1['rating']}"
+        assert parsed_1["review_count"] is None, f"Expected review_count=None, got {parsed_1['review_count']}"
 
-        # Import public business
+        # 4b. Import public business - Data Integrity & No Fabricated Ratings/Reviews
         pub_listing = await PublicGoogleMapsService.import_public_business(
             organization_id=test_org.id,
             maps_url=sample_url_1,
@@ -114,7 +118,31 @@ async def run_tests():
         assert pub_listing.name == "Apex Dental Care"
         assert pub_listing.organization_id == test_org.id
         assert pub_listing.is_managed is False
-        print(f"  [PASS] Imported public business: ID={pub_listing.id}, name='{pub_listing.name}', is_managed={pub_listing.is_managed}")
+        assert pub_listing.rating is None, f"Fabricated rating detected: {pub_listing.rating}"
+        assert pub_listing.review_count is None, f"Fabricated review count detected: {pub_listing.review_count}"
+        print(f"  [PASS] Imported public business: ID={pub_listing.id}, name='{pub_listing.name}', rating={pub_listing.rating}, review_count={pub_listing.review_count}")
+
+        # 4c. Test Unresolvable Short URL Rejection (No fake names or fake addresses created)
+        print("  Testing Unresolvable Short Google Maps URL Rejection...")
+        unresolvable_short_url = "https://maps.app.goo.gl/nonexistent_short_code_98765"
+        
+        # Test parse_maps_url on unresolved short URL does NOT return short code as business name
+        parsed_short = PublicGoogleMapsService.parse_maps_url(unresolvable_short_url)
+        assert parsed_short["name"] is None, f"Opaque short code must not be used as business name, got: {parsed_short['name']}"
+
+        # Test import_public_business raises ValueError for unresolvable link
+        caught_unresolvable = False
+        try:
+            await PublicGoogleMapsService.import_public_business(
+                organization_id=test_org.id,
+                maps_url=unresolvable_short_url,
+                db=db
+            )
+        except ValueError as val_err:
+            caught_unresolvable = True
+            assert "Unable to resolve" in str(val_err) or "provide a full Google Maps" in str(val_err)
+            print(f"  [PASS] Unresolvable short link cleanly rejected with message: {val_err}")
+        assert caught_unresolvable, "FAIL: Unresolvable short link should have raised ValueError instead of inventing fake data!"
 
         # 5. Test Automatic GBP and Multi-Service Resource Discovery & Idempotent Import
         print("\n[TEST 5] Testing GBP Resource Import and Deduplication...")

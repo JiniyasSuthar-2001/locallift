@@ -16,8 +16,12 @@ from app.main import app
 from app.config import settings
 from app.services.seeder import seed_initial_demo_data
 from app.services.serp.factory import get_serp_provider
+from app.test_helper import init_test_db
 
 async def test_production_cleanliness():
+    # Ensure DB tables exist for clean tests
+    await init_test_db(seed_demo=False)
+
     print("\n=======================================================")
     print(">> TEST 1: ENVIRONMENT GUARDS (SEEDER & MOCK PROVIDER)")
     print("=======================================================")
