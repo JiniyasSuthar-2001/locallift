@@ -76,6 +76,11 @@ class ImportResourcesResponse(BaseModel):
     imported_websites_count: int
     message: str
 
+class GoogleCallbackRequest(BaseModel):
+    code: Optional[str] = None
+    state: Optional[str] = None
+    project_id: Optional[int] = None
+
 class PublicMapsImportRequest(BaseModel):
     maps_url: Optional[str] = None
     google_maps_url: Optional[str] = None

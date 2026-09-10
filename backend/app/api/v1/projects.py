@@ -130,15 +130,15 @@ async def create_project(
         primary_category=normalized_primary,
         additional_categories=normalized_additionals,
         country=project_in.country,
-        health_score=0,
-        technical_score=0,
-        onpage_score=0,
-        local_score=0,
-        gbp_score=0,
-        reviews_score=0,
-        citations_score=0,
-        keywords_score=0,
-        maps_score=0
+        health_score=None,
+        technical_score=None,
+        onpage_score=None,
+        local_score=None,
+        gbp_score=None,
+        reviews_score=None,
+        citations_score=None,
+        keywords_score=None,
+        maps_score=None
     )
     db.add(project)
     await db.flush()
@@ -359,23 +359,43 @@ async def get_dashboard_summary(
         "avg_position": latest_gsc.average_position if latest_gsc else 0.0
     }
 
+    from sqlalchemy import func
+    from app.models.audit import TaskStatus
+
+    # Real aggregated counts across entire project
+    open_issues_count = (await db.execute(
+        select(func.count(SEOIssue.id)).where(SEOIssue.project_id == project_id, SEOIssue.status == IssueStatus.OPEN)
+    )).scalar() or 0
+
+    active_tasks_count = (await db.execute(
+        select(func.count(SEOTask.id)).where(SEOTask.project_id == project_id, SEOTask.status.in_([TaskStatus.OPEN, TaskStatus.IN_PROGRESS]))
+    )).scalar() or 0
+
+    tracked_keywords_count = (await db.execute(
+        select(func.count(Keyword.id)).where(Keyword.project_id == project_id)
+    )).scalar() or 0
+
+    reviews_total_count = (await db.execute(
+        select(func.count(Review.id)).where(Review.project_id == project_id)
+    )).scalar() or 0
+
     return DashboardSummaryOut(
-        health_score=project.health_score or 0,
+        health_score=project.health_score,
         scores={
-            "technical": project.technical_score or 0,
-            "onpage": project.onpage_score or 0,
-            "local": project.local_score or 0,
-            "gbp": project.gbp_score or 0,
-            "reviews": project.reviews_score or 0,
-            "citations": project.citations_score or 0,
-            "keywords": project.keywords_score or 0,
-            "maps": project.maps_score or 0,
+            "technical": project.technical_score,
+            "onpage": project.onpage_score,
+            "local": project.local_score,
+            "gbp": project.gbp_score,
+            "reviews": project.reviews_score,
+            "citations": project.citations_score,
+            "keywords": project.keywords_score,
+            "maps": project.maps_score,
         },
         counts={
-            "open_issues": len([i for i in recent_issues if i["status"] == "open"]),
-            "active_tasks": len([t for t in recent_tasks if t["status"] in ["open", "in_progress"]]),
-            "tracked_keywords": len(top_keywords),
-            "reviews_total": len(recent_reviews)
+            "open_issues": open_issues_count,
+            "active_tasks": active_tasks_count,
+            "tracked_keywords": tracked_keywords_count,
+            "reviews_total": reviews_total_count
         },
         recent_issues=recent_issues,
         recent_tasks=recent_tasks,

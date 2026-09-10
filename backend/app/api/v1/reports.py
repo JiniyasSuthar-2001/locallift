@@ -58,7 +58,7 @@ async def generate_executive_report(
             }
         },
         "executive_summary": (
-            f"{project.name} has an overall Local SEO Health Score of {project.health_score}/100. "
+            (f"{project.name} has an overall Local SEO Health Score of {project.health_score}/100. " if project.health_score is not None else f"{project.name} Local SEO Health Score is awaiting initial audit. ") +
             f"The business currently tracks {len(keywords)} local search terms with strong performance across regional map packs. "
             f"During the last 30 days, {len([t for t in tasks if t.status == 'completed'])} technical and on-page optimization tasks were completed."
         ),
@@ -68,7 +68,7 @@ async def generate_executive_report(
             "top_10_keywords": len([k for k in keywords if k.current_rank and k.current_rank <= 10]),
             "total_reviews": len(reviews),
             "avg_rating": round(sum(r.rating for r in reviews) / len(reviews), 1) if reviews else 0.0,
-            "nap_consistency_score": nap.nap_score if nap else (100 if (nap and nap.is_consistent) else 0),
+            "nap_consistency_score": nap.nap_score if (nap and nap.nap_score is not None) else project.citations_score,
             "open_issues_count": len([i for i in issues if i.status == 'open']),
             "completed_tasks_count": len([t for t in tasks if t.status == 'completed'])
         },

@@ -335,7 +335,11 @@ export const MyProjectsView: React.FC = () => {
                   </Link>
 
                   <div className="text-[11px] font-bold text-slate-400">
-                    Score: <strong className="text-slate-800">{project.health_score || 75}</strong>/100
+                    Score: {project.health_score !== null && project.health_score !== undefined ? (
+                      <><strong className="text-slate-800">{project.health_score}</strong>/100</>
+                    ) : (
+                      <span className="text-slate-500 font-medium">Not yet calculated</span>
+                    )}
                   </div>
                 </div>
 

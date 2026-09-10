@@ -391,6 +391,7 @@ async def trigger_grid_scan(
     return scan
 
 @router.post("/{project_id}/grid/rescan", response_model=GeoGridScanOut)
+@router.post("/{project_id}/grid/scan", response_model=GeoGridScanOut)
 async def rescan_project_grid(
     project_id: int,
     scan_req: GeoGridScanRequest,
@@ -403,13 +404,22 @@ async def rescan_project_grid(
     await verify_project_access(project_id, current_user, db)
     # Find primary keyword if not passed
     if not scan_req.keyword_id:
-        kw_res = await db.execute(
-            select(Keyword).where(Keyword.project_id == project_id).order_by(Keyword.id.asc())
-        )
-        kw = kw_res.scalars().first()
-        if not kw:
-            raise HTTPException(status_code=400, detail="No keywords tracked for this project. Add a keyword first.")
-        scan_req.keyword_id = kw.id
+        if scan_req.keyword:
+            kw_match = await db.execute(
+                select(Keyword).where(Keyword.project_id == project_id, Keyword.keyword == scan_req.keyword.strip())
+            )
+            matched_kw = kw_match.scalars().first()
+            if matched_kw:
+                scan_req.keyword_id = matched_kw.id
+
+        if not scan_req.keyword_id:
+            kw_res = await db.execute(
+                select(Keyword).where(Keyword.project_id == project_id).order_by(Keyword.id.asc())
+            )
+            kw = kw_res.scalars().first()
+            if not kw:
+                raise HTTPException(status_code=400, detail="No keywords tracked for this project. Add a keyword first.")
+            scan_req.keyword_id = kw.id
 
     return await trigger_grid_scan(scan_req, current_user, db)
 

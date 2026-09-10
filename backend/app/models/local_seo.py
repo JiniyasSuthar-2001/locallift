@@ -39,7 +39,7 @@ class Citation(Base):
     source_name = Column(String(255), nullable=False)  # Yelp, YellowPages, Bing Places, Apple Maps, etc.
     domain = Column(String(255), nullable=False)
     listing_url = Column(String(1000), nullable=True)
-    domain_authority = Column(Integer, default=70)
+    domain_authority = Column(Integer, nullable=True, default=None)
     category = Column(String(100), default="General Directory")
     
     status = Column(String(50), default="listed")  # listed, missing, incorrect, pending
@@ -66,10 +66,10 @@ class NAPRecord(Base):
     canonical_phone = Column(String(50), nullable=False)
     canonical_website = Column(String(500), nullable=False)
     
-    nap_score = Column(Integer, default=85)
-    total_checked = Column(Integer, default=20)
-    consistent_count = Column(Integer, default=17)
-    mismatches_count = Column(Integer, default=3)
+    nap_score = Column(Integer, nullable=True, default=None)
+    total_checked = Column(Integer, default=0)
+    consistent_count = Column(Integer, default=0)
+    mismatches_count = Column(Integer, default=0)
     
     mismatches_data = Column(JSON, default=list)
     last_audit_date = Column(DateTime, default=lambda: datetime.now(timezone.utc))
@@ -86,11 +86,11 @@ class Competitor(Base):
     domain = Column(String(255), nullable=False)
     gbp_name = Column(String(255), nullable=True)
     
-    rating = Column(Float, default=4.5)
-    reviews_count = Column(Integer, default=45)
-    local_visibility_score = Column(Integer, default=70)
-    top_keywords_count = Column(Integer, default=15)
-    avg_maps_rank = Column(Float, default=3.5)
+    rating = Column(Float, nullable=True, default=None)
+    reviews_count = Column(Integer, default=0)
+    local_visibility_score = Column(Integer, nullable=True, default=None)
+    top_keywords_count = Column(Integer, default=0)
+    avg_maps_rank = Column(Float, nullable=True, default=None)
     
     comparison_data = Column(JSON, default=dict)
     opportunities_found = Column(JSON, default=list)

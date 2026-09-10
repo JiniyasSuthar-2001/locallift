@@ -1,7 +1,7 @@
 import React from 'react';
 
 interface HealthScoreRingProps {
-  score: number;
+  score?: number | null;
   size?: number;
   strokeWidth?: number;
   label?: string;
@@ -15,22 +15,29 @@ export const HealthScoreRing: React.FC<HealthScoreRingProps> = ({
   label = "SEO HEALTH",
   sublabel = "Overall Score"
 }) => {
+  const isAvailable = score !== null && score !== undefined && !Number.isNaN(score);
   const radius = (size - strokeWidth) / 2;
   const circumference = 2 * Math.PI * radius;
-  const safeScore = Math.min(100, Math.max(0, score || 0));
-  const strokeDashoffset = circumference - (safeScore / 100) * circumference;
+  const safeScore = isAvailable ? Math.min(100, Math.max(0, score)) : 0;
+  const strokeDashoffset = isAvailable ? circumference - (safeScore / 100) * circumference : circumference;
 
-  let strokeColor = '#10b981'; // Emerald >= 80
-  let glowColor = 'rgba(16, 185, 129, 0.4)';
-  if (safeScore < 60) {
-    strokeColor = '#f43f5e'; // Rose
-    glowColor = 'rgba(244, 63, 94, 0.4)';
-  } else if (safeScore < 75) {
-    strokeColor = '#f97316'; // Orange
-    glowColor = 'rgba(249, 115, 22, 0.4)';
-  } else if (safeScore < 80) {
-    strokeColor = '#eab308'; // Yellow
-    glowColor = 'rgba(234, 179, 8, 0.4)';
+  let strokeColor = '#64748b'; // Slate fallback
+  let glowColor = 'transparent';
+
+  if (isAvailable) {
+    if (safeScore >= 80) {
+      strokeColor = '#10b981'; // Emerald
+      glowColor = 'rgba(16, 185, 129, 0.4)';
+    } else if (safeScore >= 75) {
+      strokeColor = '#eab308'; // Yellow
+      glowColor = 'rgba(234, 179, 8, 0.4)';
+    } else if (safeScore >= 60) {
+      strokeColor = '#f97316'; // Orange
+      glowColor = 'rgba(249, 115, 22, 0.4)';
+    } else {
+      strokeColor = '#f43f5e'; // Rose
+      glowColor = 'rgba(244, 63, 94, 0.4)';
+    }
   }
 
   return (
@@ -47,34 +54,38 @@ export const HealthScoreRing: React.FC<HealthScoreRingProps> = ({
             fill="transparent"
           />
           {/* Animated score circle */}
-          <circle
-            cx={size / 2}
-            cy={size / 2}
-            r={radius}
-            stroke={strokeColor}
-            strokeWidth={strokeWidth}
-            strokeDasharray={circumference}
-            strokeDashoffset={strokeDashoffset}
-            strokeLinecap="round"
-            fill="transparent"
-            style={{
-              transition: 'stroke-dashoffset 1s ease-in-out, stroke 0.5s ease',
-              filter: `drop-shadow(0 0 8px ${glowColor})`
-            }}
-          />
+          {isAvailable && (
+            <circle
+              cx={size / 2}
+              cy={size / 2}
+              r={radius}
+              stroke={strokeColor}
+              strokeWidth={strokeWidth}
+              strokeDasharray={circumference}
+              strokeDashoffset={strokeDashoffset}
+              strokeLinecap="round"
+              fill="transparent"
+              style={{
+                transition: 'stroke-dashoffset 1s ease-in-out, stroke 0.5s ease',
+                filter: `drop-shadow(0 0 8px ${glowColor})`
+              }}
+            />
+          )}
         </svg>
         <div className="absolute flex flex-col items-center justify-center text-center">
           <span className="text-3xl font-extrabold tracking-tight text-white font-sans">
-            {safeScore}
+            {isAvailable ? safeScore : '—'}
           </span>
           <span className="text-[10px] font-semibold text-gray-400 tracking-wider uppercase">
-            / 100
+            {isAvailable ? '/ 100' : 'No Data'}
           </span>
         </div>
       </div>
       <div className="mt-3 text-center">
         <div className="text-xs font-bold tracking-widest text-emerald-400 uppercase">{label}</div>
-        <div className="text-[11px] text-gray-400 mt-0.5">{sublabel}</div>
+        <div className="text-[11px] text-gray-400 mt-0.5">
+          {isAvailable ? sublabel : 'Awaiting Audit'}
+        </div>
       </div>
     </div>
   );

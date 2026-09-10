@@ -37,10 +37,11 @@ export const LocalGridRankingsView: React.FC = () => {
     try {
       setIsScanning(true);
       setScanError(null);
-      await api.post(`/keywords/${activeProject.id}/grid/scan`, {
-        keyword: scan?.keyword || 'dentist near me',
-        radius_km: 7.5,
-        grid_size: 5
+      await api.post(`/keywords/${activeProject.id}/grid/rescan`, {
+        keyword_id: scan?.keyword_id,
+        keyword: scan?.center_name || 'dentist near me',
+        radius_km: scan?.radius_km || 7.5,
+        grid_size: scan?.grid_size || 5
       });
       await fetchScan();
     } catch (e: any) {

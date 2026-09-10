@@ -23,7 +23,7 @@ interface ProjectTeamSectionProps {
   projectId: number;
 }
 
-const ALL_AVAILABLE_PERMISSIONS = [
+export const ALL_AVAILABLE_PERMISSIONS = [
   { id: 'project_overview', label: 'Project Overview & Dashboard' },
   { id: 'seo_audit', label: 'Website Audit & Schema' },
   { id: 'local_seo', label: 'Local SEO, Reviews & Citations' },

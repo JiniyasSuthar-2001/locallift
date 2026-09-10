@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { RotateCw, CheckCircle2, AlertCircle, Store } from 'lucide-react';
 import { useProject } from '../context/ProjectContext';
@@ -11,9 +11,13 @@ export const GoogleCallbackView: React.FC = () => {
   const { activeProject, refreshDashboard } = useProject();
   const [status, setStatus] = useState<'processing' | 'success' | 'error'>('processing');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const hasCalledRef = useRef<boolean>(false);
 
   useEffect(() => {
     const processCallback = async () => {
+      if (hasCalledRef.current) return;
+      hasCalledRef.current = true;
+
       const code = searchParams.get('code');
       const state = searchParams.get('state');
       const error = searchParams.get('error');
@@ -31,18 +35,11 @@ export const GoogleCallbackView: React.FC = () => {
       }
 
       try {
-        try {
-          await api.post('/connections/google/callback', {
-            code,
-            state
-          });
-        } catch (e) {
-          await api.post('/gbp/oauth/callback', {
-            code,
-            state,
-            project_id: activeProject?.id
-          });
-        }
+        await api.post('/connections/google/callback', {
+          code,
+          state,
+          project_id: activeProject?.id
+        });
         setStatus('success');
         await refreshDashboard();
         setTimeout(() => {

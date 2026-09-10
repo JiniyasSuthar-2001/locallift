@@ -1,5 +1,6 @@
 from typing import List, Optional
-from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel
+from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from sqlalchemy.orm import selectinload
@@ -10,7 +11,31 @@ from app.models.user import User, Organization, OrganizationMember, Client, OrgR
 
 router = APIRouter(prefix="/organizations", tags=["Organizations & Clients"])
 
-@router.get("/clients")
+class ClientCreate(BaseModel):
+    name: str
+    contact_email: Optional[str] = None
+    phone: Optional[str] = None
+    notes: Optional[str] = None
+
+class ClientProjectOut(BaseModel):
+    id: int
+    name: str
+    health_score: Optional[int] = 0
+
+class ClientOut(BaseModel):
+    id: int
+    organization_id: int
+    name: str
+    contact_email: Optional[str] = None
+    phone: Optional[str] = None
+    notes: Optional[str] = None
+    projects_count: int = 0
+    projects: List[ClientProjectOut] = []
+
+    class Config:
+        from_attributes = True
+
+@router.get("/clients", response_model=List[ClientOut])
 async def list_clients(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
@@ -37,12 +62,9 @@ async def list_clients(
         for c in clients
     ]
 
-@router.post("/clients")
+@router.post("/clients", response_model=ClientOut, status_code=status.HTTP_201_CREATED)
 async def create_client(
-    name: str,
-    contact_email: Optional[str] = None,
-    phone: Optional[str] = None,
-    notes: Optional[str] = None,
+    client_in: ClientCreate,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
@@ -53,12 +75,21 @@ async def create_client(
 
     client = Client(
         organization_id=mem.organization_id,
-        name=name,
-        contact_email=contact_email,
-        phone=phone,
-        notes=notes
+        name=client_in.name.strip(),
+        contact_email=client_in.contact_email.strip() if client_in.contact_email else None,
+        phone=client_in.phone.strip() if client_in.phone else None,
+        notes=client_in.notes
     )
     db.add(client)
     await db.commit()
     await db.refresh(client)
-    return client
+    return {
+        "id": client.id,
+        "organization_id": client.organization_id,
+        "name": client.name,
+        "contact_email": client.contact_email,
+        "phone": client.phone,
+        "notes": client.notes,
+        "projects_count": 0,
+        "projects": []
+    }

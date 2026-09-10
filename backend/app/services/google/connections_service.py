@@ -239,7 +239,10 @@ class GoogleConnectionsService:
 
         # Idempotent persistence of discovered properties
         # GSC
-        existing_gsc = {p.site_url: p for p in connection.search_console_properties}
+        gsc_res = await db.execute(
+            select(GoogleSearchConsoleProperty).where(GoogleSearchConsoleProperty.connection_id == connection.id)
+        )
+        existing_gsc = {p.site_url: p for p in gsc_res.scalars().all()}
         for s in discovered_gsc:
             if s["site_url"] not in existing_gsc:
                 db.add(GoogleSearchConsoleProperty(
@@ -250,7 +253,10 @@ class GoogleConnectionsService:
                 ))
 
         # Ads
-        existing_ads = {a.customer_id: a for a in connection.ads_accounts}
+        ads_res = await db.execute(
+            select(GoogleAdsAccount).where(GoogleAdsAccount.connection_id == connection.id)
+        )
+        existing_ads = {a.customer_id: a for a in ads_res.scalars().all()}
         for a in discovered_ads:
             if a["customer_id"] not in existing_ads:
                 db.add(GoogleAdsAccount(
@@ -262,7 +268,10 @@ class GoogleConnectionsService:
                 ))
 
         # GA4
-        existing_ga4 = {g.property_id: g for g in connection.analytics_properties}
+        ga4_res = await db.execute(
+            select(GoogleAnalyticsProperty).where(GoogleAnalyticsProperty.connection_id == connection.id)
+        )
+        existing_ga4 = {g.property_id: g for g in ga4_res.scalars().all()}
         for g in discovered_ga4:
             if g["property_id"] not in existing_ga4:
                 db.add(GoogleAnalyticsProperty(
@@ -330,7 +339,7 @@ class GoogleConnectionsService:
                     primary_category=cat,
                     additional_categories=[],
                     country="United States",
-                    health_score=75
+                    health_score=None
                 )
                 db.add(proj)
                 await db.flush()
@@ -384,7 +393,7 @@ class GoogleConnectionsService:
                     primary_category="Local Business",
                     additional_categories=[],
                     country="United States",
-                    health_score=70
+                    health_score=None
                 )
                 db.add(proj)
                 await db.flush()

@@ -57,26 +57,42 @@ export const GA4View: React.FC = () => {
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
         <div className="card-vibrant p-4 space-y-1">
           <div className="text-[10px] font-black text-slate-500 uppercase tracking-wider">Organic Users</div>
-          <div className="text-2xl font-black text-slate-900 mt-1">{ga4Data?.organic_users || 0}</div>
-          <div className="text-[11px] text-purple-700 font-bold">Search visitors</div>
+          <div className="text-2xl font-black text-slate-900 mt-1">
+            {ga4Data?.connected ? (ga4Data?.organic_users ?? ga4Data?.total_users ?? 0) : '—'}
+          </div>
+          <div className="text-[11px] text-purple-700 font-bold">
+            {ga4Data?.connected ? 'Search visitors' : 'Not Connected'}
+          </div>
         </div>
 
         <div className="card-vibrant p-4 space-y-1">
           <div className="text-[10px] font-black text-slate-500 uppercase tracking-wider">Total Sessions</div>
-          <div className="text-2xl font-black text-slate-900 mt-1">{ga4Data?.sessions || 0}</div>
-          <div className="text-[11px] text-slate-500 font-medium">Browse sessions</div>
+          <div className="text-2xl font-black text-slate-900 mt-1">
+            {ga4Data?.connected ? (ga4Data?.sessions ?? ga4Data?.total_sessions ?? 0) : '—'}
+          </div>
+          <div className="text-[11px] text-slate-500 font-medium">
+            {ga4Data?.connected ? 'Browse sessions' : 'Not Connected'}
+          </div>
         </div>
 
         <div className="card-vibrant p-4 space-y-1">
           <div className="text-[10px] font-black text-slate-500 uppercase tracking-wider">Engagement Rate</div>
-          <div className="text-2xl font-black text-emerald-700 mt-1">{ga4Data?.engagement_rate ? `${ga4Data.engagement_rate}%` : '0%'}</div>
-          <div className="text-[11px] text-slate-500 font-medium">Active interactions</div>
+          <div className="text-2xl font-black text-emerald-700 mt-1">
+            {ga4Data?.connected && ga4Data?.engagement_rate !== undefined ? `${ga4Data.engagement_rate}%` : '—'}
+          </div>
+          <div className="text-[11px] text-slate-500 font-medium">
+            {ga4Data?.connected ? 'Active interactions' : 'Not Connected'}
+          </div>
         </div>
 
         <div className="card-vibrant p-4 space-y-1">
           <div className="text-[10px] font-black text-slate-500 uppercase tracking-wider">Local Conversions</div>
-          <div className="text-2xl font-black text-purple-700 mt-1">{ga4Data?.conversions || 0}</div>
-          <div className="text-[11px] text-purple-900 font-bold">Calls & Quote requests</div>
+          <div className="text-2xl font-black text-purple-700 mt-1">
+            {ga4Data?.connected ? (ga4Data?.conversions ?? ga4Data?.total_conversions ?? 0) : '—'}
+          </div>
+          <div className="text-[11px] text-purple-900 font-bold">
+            {ga4Data?.connected ? 'Calls & Quote requests' : 'Not Connected'}
+          </div>
         </div>
       </div>
 

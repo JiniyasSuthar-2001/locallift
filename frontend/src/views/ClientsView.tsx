@@ -8,6 +8,11 @@ export const ClientsView: React.FC = () => {
   const { projects } = useProject();
   const [clients, setClients] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [name, setName] = useState('');
+  const [contactEmail, setContactEmail] = useState('');
+  const [phone, setPhone] = useState('');
+  const [notes, setNotes] = useState('');
 
   const fetchClients = async () => {
     try {
@@ -25,6 +30,27 @@ export const ClientsView: React.FC = () => {
     fetchClients();
   }, []);
 
+  const handleCreateClient = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!name.trim()) return;
+    try {
+      await api.post('/organizations/clients', {
+        name: name.trim(),
+        contact_email: contactEmail.trim() || undefined,
+        phone: phone.trim() || undefined,
+        notes: notes.trim() || undefined
+      });
+      setName('');
+      setContactEmail('');
+      setPhone('');
+      setNotes('');
+      setIsModalOpen(false);
+      await fetchClients();
+    } catch (err) {
+      console.error('Failed to create client:', err);
+    }
+  };
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -38,6 +64,14 @@ export const ClientsView: React.FC = () => {
             Manage multiple client accounts, assign team permissions, and oversee multi-location local health scores.
           </p>
         </div>
+
+        <button
+          onClick={() => setIsModalOpen(true)}
+          className="flex items-center space-x-2 px-5 py-2.5 btn-vibrant-primary rounded-xl text-xs font-bold shadow-md self-start transition-all"
+        >
+          <Plus className="w-4 h-4" />
+          <span>Add Client</span>
+        </button>
       </div>
 
       {/* Clients Grid */}
@@ -98,7 +132,80 @@ export const ClientsView: React.FC = () => {
           badge="Agency Roster"
           title="No Clients Created"
           description="Create client accounts to manage permissions and group multi-location business projects."
+          actionText="Add Target Client"
+          onAction={() => setIsModalOpen(true)}
         />
+      )}
+
+      {/* Add Client Modal */}
+      {isModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
+          <div className="bg-white rounded-2xl p-6 max-w-md w-full space-y-4 shadow-2xl border border-slate-200">
+            <h3 className="text-base font-black text-slate-900">Add Agency Client</h3>
+            <form onSubmit={handleCreateClient} className="space-y-3 text-xs">
+              <div>
+                <label className="text-slate-700 block mb-1 font-bold">Client / Company Name</label>
+                <input
+                  type="text"
+                  required
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  placeholder="e.g. Acme Dental Group"
+                  className="w-full bg-slate-50 border border-slate-200 rounded-lg p-2.5 text-slate-900 focus:outline-none focus:border-purple-500 font-medium"
+                />
+              </div>
+
+              <div>
+                <label className="text-slate-700 block mb-1 font-bold">Contact Email</label>
+                <input
+                  type="email"
+                  value={contactEmail}
+                  onChange={(e) => setContactEmail(e.target.value)}
+                  placeholder="e.g. contact@acmedental.com"
+                  className="w-full bg-slate-50 border border-slate-200 rounded-lg p-2.5 text-slate-900 focus:outline-none focus:border-purple-500 font-medium"
+                />
+              </div>
+
+              <div>
+                <label className="text-slate-700 block mb-1 font-bold">Phone Number</label>
+                <input
+                  type="tel"
+                  value={phone}
+                  onChange={(e) => setPhone(e.target.value)}
+                  placeholder="e.g. +1 555-0199"
+                  className="w-full bg-slate-50 border border-slate-200 rounded-lg p-2.5 text-slate-900 focus:outline-none focus:border-purple-500 font-medium"
+                />
+              </div>
+
+              <div>
+                <label className="text-slate-700 block mb-1 font-bold">Internal Notes</label>
+                <textarea
+                  rows={2}
+                  value={notes}
+                  onChange={(e) => setNotes(e.target.value)}
+                  placeholder="e.g. Multi-location practice onboarding in Q3"
+                  className="w-full bg-slate-50 border border-slate-200 rounded-lg p-2.5 text-slate-900 focus:outline-none focus:border-purple-500 font-medium"
+                />
+              </div>
+
+              <div className="flex items-center justify-end space-x-2 pt-3 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setIsModalOpen(false)}
+                  className="px-4 py-2 rounded-lg bg-slate-100 text-slate-700 hover:bg-slate-200 font-bold"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-2 rounded-lg btn-vibrant-primary text-white font-bold"
+                >
+                  Save Client
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
       )}
     </div>
   );

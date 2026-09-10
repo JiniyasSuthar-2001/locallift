@@ -24,6 +24,7 @@ from app.schemas.connections import (
     GoogleAnalyticsPropertyOut,
     ImportResourcesRequest,
     ImportResourcesResponse,
+    GoogleCallbackRequest,
     PublicMapsImportRequest,
     PublicBusinessListingOut,
     DiscoveredGBPLocation
@@ -150,8 +151,10 @@ async def get_google_auth_url(
     }
 
 @router.post("/google/callback")
+@router.get("/google/callback")
 async def handle_google_callback(
-    code: str = Query(...),
+    req: Optional[GoogleCallbackRequest] = None,
+    code: Optional[str] = Query(None),
     state: Optional[str] = Query(None),
     project_id: Optional[int] = Query(None),
     current_user: User = Depends(get_current_user),
@@ -159,12 +162,22 @@ async def handle_google_callback(
 ):
     """
     Exchanges Google authorization code for tokens, securely persists the connection,
-    and runs initial resource discovery.
+    and runs initial resource discovery. Supports both JSON POST body and URL Query params.
     """
-    org_id = await get_active_org_id(current_user, db, project_id)
+    actual_code = (req.code if req and req.code else code)
+    actual_state = (req.state if req and req.state else state)
+    actual_project_id = (req.project_id if req and req.project_id is not None else project_id)
+
+    if not actual_code:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Missing authorization code from Google."
+        )
+
+    org_id = await get_active_org_id(current_user, db, actual_project_id)
 
     try:
-        token_data = await GoogleOAuthService.exchange_code_for_tokens(code)
+        token_data = await GoogleOAuthService.exchange_code_for_tokens(actual_code)
     except Exception as e:
         logger.error(f"Google OAuth token exchange failed: {e}")
         raise HTTPException(
@@ -178,7 +191,7 @@ async def handle_google_callback(
         user_id=current_user.id,
         token_data=token_data,
         db=db,
-        project_id=project_id
+        project_id=actual_project_id
     )
 
     # Run initial multi-service discovery

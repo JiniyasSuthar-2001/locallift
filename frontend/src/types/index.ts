@@ -53,15 +53,15 @@ export interface Project {
   status?: string;
   is_archived?: boolean;
   team_member_count?: number;
-  health_score: number;
-  technical_score: number;
-  onpage_score: number;
-  local_score: number;
-  gbp_score: number;
-  reviews_score: number;
-  citations_score: number;
-  keywords_score: number;
-  maps_score: number;
+  health_score?: number | null;
+  technical_score?: number | null;
+  onpage_score?: number | null;
+  local_score?: number | null;
+  gbp_score?: number | null;
+  reviews_score?: number | null;
+  citations_score?: number | null;
+  keywords_score?: number | null;
+  maps_score?: number | null;
   created_at: string;
   updated_at: string;
   locations: Location[];
@@ -69,16 +69,16 @@ export interface Project {
 
 
 export interface DashboardSummary {
-  health_score: number;
+  health_score?: number | null;
   scores: {
-    technical: number;
-    onpage: number;
-    local: number;
-    gbp: number;
-    reviews: number;
-    citations: number;
-    keywords: number;
-    maps: number;
+    technical?: number | null;
+    onpage?: number | null;
+    local?: number | null;
+    gbp?: number | null;
+    reviews?: number | null;
+    citations?: number | null;
+    keywords?: number | null;
+    maps?: number | null;
   };
   counts: {
     open_issues: number;
@@ -93,7 +93,7 @@ export interface DashboardSummary {
   gbp_summary?: {
     connected: boolean;
     business_name?: string;
-    completeness_score?: number;
+    completeness_score?: number | null;
     search_impressions?: number;
     maps_impressions?: number;
     calls?: number;
@@ -548,29 +548,22 @@ export interface GoogleAnalyticsItem {
 export interface PublicBusinessListingItem {
   id: number;
   organization_id: number;
-  name?: string;
-  business_name?: string;
-  maps_url?: string;
-  google_maps_url?: string;
-  place_id?: string;
-  cid?: string;
-  primary_category?: string;
-  category?: string;
-  formatted_address?: string;
-  address?: string;
-  city?: string;
-  state?: string;
-  postal_code?: string;
-  country?: string;
-  phone?: string;
-  website_url?: string;
+  project_id?: number | null;
+  place_id?: string | null;
+  name: string;
+  formatted_address?: string | null;
+  phone?: string | null;
+  website_url?: string | null;
+  primary_category?: string | null;
   rating?: number | null;
   review_count?: number | null;
-  reviews_count?: number | null;
-  status?: string;
+  maps_url?: string | null;
+  latitude?: number | null;
+  longitude?: number | null;
+  is_managed?: boolean;
   monitoring_status?: string;
-  created_at?: string;
-  last_checked_at?: string;
+  created_at?: string | null;
+  last_checked_at?: string | null;
 }
 
 export interface DiscoveredResourcesResponse {

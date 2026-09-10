@@ -132,7 +132,7 @@ export const Header: React.FC<HeaderProps> = ({ onOpenAI }) => {
                       <div className="text-[10px] text-slate-400 truncate">{p.domain}</div>
                     </div>
                     <span className="text-[10px] font-black px-1.5 py-0.5 rounded bg-purple-100 text-purple-800">
-                      {p.health_score}
+                      {p.health_score !== null && p.health_score !== undefined ? p.health_score : '—'}
                     </span>
                   </button>
                 ))}

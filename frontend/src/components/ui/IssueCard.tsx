@@ -12,6 +12,7 @@ import {
 import { SEOIssue } from '../../types';
 import { StatusBadge } from './StatusBadge';
 import api from '../../api/client';
+import { getErrorMessage } from '../../utils/error';
 
 interface IssueCardProps {
   issue: SEOIssue;
@@ -21,18 +22,24 @@ interface IssueCardProps {
 export const IssueCard: React.FC<IssueCardProps> = ({ issue, onConvertedToTask }) => {
   const [isExpanded, setIsExpanded] = useState(false);
   const [isConverting, setIsConverting] = useState(false);
-  const [converted, setConverted] = useState(false);
+  const [converted, setConverted] = useState(issue.status === 'in_task' || issue.status === 'resolved');
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [successMsg, setSuccessMsg] = useState<string | null>(null);
 
   const handleConvertToTask = async () => {
     try {
       setIsConverting(true);
-      await api.post(`/audits/issues/${issue.id}/convert-to-task`);
+      setErrorMsg(null);
+      setSuccessMsg(null);
+      await api.post(`/tasks/convert-issue/${issue.id}`, { priority: 'medium' });
       setConverted(true);
+      setSuccessMsg('Task created successfully');
       if (onConvertedToTask) {
         onConvertedToTask();
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error('Failed to convert issue to task:', err);
+      setErrorMsg(getErrorMessage(err, 'Failed to convert issue to task.'));
     } finally {
       setIsConverting(false);
     }
@@ -116,10 +123,17 @@ export const IssueCard: React.FC<IssueCardProps> = ({ issue, onConvertedToTask }
         </div>
       )}
 
+      {errorMsg && (
+        <div className="p-2.5 rounded-lg bg-rose-50 border border-rose-200 text-rose-800 text-xs flex items-center space-x-2 animate-fade-in">
+          <AlertTriangle className="w-3.5 h-3.5 text-rose-600 shrink-0" />
+          <span>{errorMsg}</span>
+        </div>
+      )}
+
       {/* Action Footer */}
       <div className="pt-2 flex items-center justify-between border-t border-slate-100 flex-wrap gap-2">
         <div className="text-[11px] font-semibold text-slate-500">
-          Status: <span className="font-bold capitalize text-slate-800">{issue.status}</span>
+          Status: <span className="font-bold capitalize text-slate-800">{converted ? 'in_task' : issue.status}</span>
         </div>
 
         <div className="flex items-center space-x-2">
@@ -154,7 +168,7 @@ export const IssueCard: React.FC<IssueCardProps> = ({ issue, onConvertedToTask }
             <button
               onClick={handleConvertToTask}
               disabled={isConverting}
-              className="inline-flex items-center space-x-1.5 px-3 py-1.5 btn-vibrant-primary rounded-lg text-xs font-bold shadow-sm transition-all"
+              className="inline-flex items-center space-x-1.5 px-3 py-1.5 btn-vibrant-primary rounded-lg text-xs font-bold shadow-sm transition-all disabled:opacity-50"
             >
               <Plus className="w-3.5 h-3.5" />
               <span>{isConverting ? 'Creating...' : 'Convert to Task'}</span>

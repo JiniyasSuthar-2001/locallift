@@ -56,7 +56,9 @@ export const ReviewsView: React.FC = () => {
 
   const handlePublishReply = async (reviewId: number) => {
     try {
-      const responseText = editingReply[reviewId];
+      const reviewObj = reviews.find(r => r.id === reviewId);
+      const responseText = editingReply[reviewId] ?? reviewObj?.response_text ?? '';
+      if (!responseText.trim()) return;
       await api.post(`/local-seo/reviews/${reviewId}/respond`, {
         response_text: responseText
       });
@@ -145,7 +147,7 @@ export const ReviewsView: React.FC = () => {
       <div className="space-y-4">
         {filtered.length > 0 ? (
           filtered.map((rev) => {
-            const hasDraft = rev.ai_draft_response || editingReply[rev.id];
+            const hasDraft = Boolean(rev.response_text || rev.ai_draft_response || (editingReply[rev.id] !== undefined));
             const isDrafting = draftingId === rev.id;
 
             return (
@@ -202,7 +204,7 @@ export const ReviewsView: React.FC = () => {
                         <div className="space-y-2">
                           <textarea
                             rows={3}
-                            value={editingReply[rev.id] !== undefined ? editingReply[rev.id] : (rev.ai_draft_response || '')}
+                            value={editingReply[rev.id] !== undefined ? editingReply[rev.id] : (rev.response_text || rev.ai_draft_response || '')}
                             onChange={(e) => setEditingReply({ ...editingReply, [rev.id]: e.target.value })}
                             className="w-full bg-white border border-slate-200 rounded-lg p-3 text-xs text-slate-900 focus:outline-none focus:border-purple-500 font-medium"
                           />

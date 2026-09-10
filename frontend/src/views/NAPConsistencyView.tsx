@@ -17,15 +17,24 @@ import api from '../api/client';
 
 export const NAPConsistencyView: React.FC = () => {
   const { activeProject } = useProject();
-  const [napRecords, setNapRecords] = useState<NAPRecord[]>([]);
+  const [napRecord, setNapRecord] = useState<NAPRecord | null>(null);
+  const [citations, setCitations] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
 
   const fetchNAPData = async () => {
     if (!activeProject) return;
     try {
       setLoading(true);
-      const resp = await api.get(`/local-seo/nap/${activeProject.id}`);
-      setNapRecords(resp.data || []);
+      const [napResp, citResp] = await Promise.allSettled([
+        api.get(`/local-seo/nap/${activeProject.id}`),
+        api.get(`/local-seo/citations/${activeProject.id}`)
+      ]);
+      if (napResp.status === 'fulfilled') {
+        setNapRecord(napResp.value.data);
+      }
+      if (citResp.status === 'fulfilled') {
+        setCitations(Array.isArray(citResp.value.data) ? citResp.value.data : []);
+      }
     } catch (e) {
       console.error('Failed to load NAP records:', e);
     } finally {
@@ -37,8 +46,8 @@ export const NAPConsistencyView: React.FC = () => {
     fetchNAPData();
   }, [activeProject?.id]);
 
-  const cleanRecords = napRecords.filter(n => n.has_discrepancy === false).length;
-  const consistencyPct = napRecords.length > 0 ? Math.round((cleanRecords / napRecords.length) * 100) : 100;
+  const cleanCitations = citations.filter(c => c.nap_status === 'consistent' || c.nap_status === 'match').length;
+  const consistencyPct = napRecord?.nap_score ?? (citations.length > 0 ? Math.round((cleanCitations / citations.length) * 100) : (activeProject?.citations_score ?? null));
 
   if (!activeProject) {
     return (
@@ -50,6 +59,8 @@ export const NAPConsistencyView: React.FC = () => {
       />
     );
   }
+
+  const primaryLocation = activeProject.locations && activeProject.locations.length > 0 ? activeProject.locations[0] : null;
 
   return (
     <div className="space-y-6">
@@ -78,7 +89,7 @@ export const NAPConsistencyView: React.FC = () => {
           </span>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-xs">
+        <div className="grid grid-cols-1 sm:grid-cols-4 gap-4 text-xs">
           <div className="p-3 rounded-xl bg-slate-50 border border-slate-200">
             <span className="text-[10px] font-bold uppercase text-slate-500 block mb-1">Legal Name</span>
             <span className="font-extrabold text-slate-900 text-sm">{activeProject.name}</span>
@@ -90,8 +101,15 @@ export const NAPConsistencyView: React.FC = () => {
           </div>
 
           <div className="p-3 rounded-xl bg-slate-50 border border-slate-200">
+            <span className="text-[10px] font-bold uppercase text-slate-500 block mb-1">Canonical Phone</span>
+            <span className="font-mono text-slate-800 font-semibold">{primaryLocation?.phone || 'Configured in Location'}</span>
+          </div>
+
+          <div className="p-3 rounded-xl bg-slate-50 border border-slate-200">
             <span className="text-[10px] font-bold uppercase text-slate-500 block mb-1">NAP Uniformity</span>
-            <span className="font-black text-purple-700 text-sm">{consistencyPct}% Consistent</span>
+            <span className="font-black text-purple-700 text-sm">
+              {consistencyPct !== null && consistencyPct !== undefined ? `${consistencyPct}% Consistent` : 'Not yet checked'}
+            </span>
           </div>
         </div>
       </div>
@@ -103,11 +121,11 @@ export const NAPConsistencyView: React.FC = () => {
             Directory Discrepancy Audit Log
           </h3>
           <span className="text-xs text-slate-500 font-bold">
-            {cleanRecords} of {napRecords.length} Clean Listings
+            {cleanCitations} of {citations.length} Clean Listings
           </span>
         </div>
 
-        {napRecords.length > 0 ? (
+        {citations.length > 0 ? (
           <div className="overflow-x-auto">
             <table className="w-full text-left text-xs text-slate-700">
               <thead className="bg-slate-50 text-slate-500 uppercase text-[10px] font-bold tracking-wider border-b border-slate-100">
@@ -120,17 +138,20 @@ export const NAPConsistencyView: React.FC = () => {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {napRecords.map((r) => (
-                  <tr key={r.id} className="hover:bg-slate-50/60 transition-colors">
-                    <td className="p-3.5 font-bold text-slate-900">{r.source_name}</td>
-                    <td className="p-3.5 text-slate-700">{r.listed_name}</td>
-                    <td className="p-3.5 text-slate-700">{r.listed_address}</td>
-                    <td className="p-3.5 font-mono text-slate-700">{r.listed_phone}</td>
-                    <td className="p-3.5">
-                      <StatusBadge status={r.has_discrepancy ? 'Mismatch' : 'Consistent'} />
-                    </td>
-                  </tr>
-                ))}
+                {citations.map((r) => {
+                  const isMatch = r.nap_status === 'consistent' || r.nap_status === 'match';
+                  return (
+                    <tr key={r.id} className="hover:bg-slate-50/60 transition-colors">
+                      <td className="p-3.5 font-bold text-slate-900">{r.source_name || r.directory_name || 'Directory'}</td>
+                      <td className="p-3.5 text-slate-700">{r.found_name || r.listed_name || activeProject.name}</td>
+                      <td className="p-3.5 text-slate-700">{r.found_address || r.listed_address || primaryLocation?.address || 'Listed on Directory'}</td>
+                      <td className="p-3.5 font-mono text-slate-700">{r.found_phone || r.listed_phone || primaryLocation?.phone || '—'}</td>
+                      <td className="p-3.5">
+                        <StatusBadge status={isMatch ? 'Consistent' : 'Mismatch'} />
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>

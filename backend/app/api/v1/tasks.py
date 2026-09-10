@@ -22,10 +22,16 @@ async def list_project_tasks(
 ):
     await verify_project_access(project_id, current_user, db)
     query = select(SEOTask).where(SEOTask.project_id == project_id)
-    if status_filter:
-        query = query.where(SEOTask.status == TaskStatus(status_filter))
-    if priority:
-        query = query.where(SEOTask.priority == TaskPriority(priority))
+    if status_filter and status_filter.lower() != "all":
+        try:
+            query = query.where(SEOTask.status == TaskStatus(status_filter.lower()))
+        except ValueError:
+            pass
+    if priority and priority.lower() != "all":
+        try:
+            query = query.where(SEOTask.priority == TaskPriority(priority.lower()))
+        except ValueError:
+            pass
 
     result = await db.execute(query.order_by(SEOTask.id.desc()))
     return result.scalars().all()
@@ -58,16 +64,31 @@ async def create_task(
 @router.post("/convert-issue/{issue_id}", response_model=TaskOut)
 async def convert_issue_to_task(
     issue_id: int,
-    req: ConvertIssueToTaskRequest,
+    req: Optional[ConvertIssueToTaskRequest] = None,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
+    req = req or ConvertIssueToTaskRequest()
     iss_res = await db.execute(select(SEOIssue).where(SEOIssue.id == issue_id))
     issue = iss_res.scalars().first()
     if not issue:
         raise HTTPException(status_code=404, detail="SEO Issue not found")
 
     await verify_project_access(issue.project_id, current_user, db)
+
+    # Check if a task already exists for this issue (idempotent conversion)
+    existing_task_res = await db.execute(
+        select(SEOTask).where(
+            SEOTask.project_id == issue.project_id,
+            SEOTask.issue_id == issue.id
+        )
+    )
+    existing_task = existing_task_res.scalars().first()
+    if existing_task:
+        issue.status = IssueStatus.IN_TASK
+        await db.commit()
+        await db.refresh(existing_task)
+        return existing_task
 
     # Update Issue status
     issue.status = IssueStatus.IN_TASK

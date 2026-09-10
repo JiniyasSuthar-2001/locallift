@@ -111,39 +111,54 @@ export const ReportsView: React.FC = () => {
         </div>
 
         {/* Score & Core Metrics */}
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-5 items-center">
-          <div className="p-6 rounded-2xl bg-purple-50/70 border border-purple-200 text-center space-y-1">
-            <span className="text-[10px] font-black uppercase tracking-wider text-purple-900 block">Overall Health Grade</span>
-            <span className="text-4xl font-black text-purple-900 block">{reportData.project?.health_score || activeProject.health_score}</span>
-            <span className="text-xs font-bold text-purple-700">out of 100</span>
-          </div>
+        {(() => {
+          const reportHealth = reportData.project?.health_score ?? activeProject.health_score ?? null;
+          const isHealthAvailable = reportHealth !== null && reportHealth !== undefined;
+          const napScore = reportData.metrics?.nap_consistency_score;
+          const isNapAvailable = napScore !== null && napScore !== undefined;
 
-          <div className="sm:col-span-2 grid grid-cols-2 gap-3 text-xs">
-            <div className="bg-slate-50 p-3 rounded-xl border border-slate-200">
-              <span className="text-slate-500 text-[10px] font-bold uppercase block">Tracked Keywords</span>
-              <span className="text-lg font-black text-slate-900 mt-0.5 block">{reportData.metrics?.total_keywords || 0} Terms</span>
-              <span className="text-[11px] text-emerald-700 font-bold">{reportData.metrics?.top_3_keywords || 0} in Top 3 Local Pack</span>
-            </div>
+          return (
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-5 items-center">
+              <div className="p-6 rounded-2xl bg-purple-50/70 border border-purple-200 text-center space-y-1">
+                <span className="text-[10px] font-black uppercase tracking-wider text-purple-900 block">Overall Health Grade</span>
+                <span className="text-4xl font-black text-purple-900 block">
+                  {isHealthAvailable ? reportHealth : '—'}
+                </span>
+                <span className="text-xs font-bold text-purple-700">
+                  {isHealthAvailable ? 'out of 100' : 'Awaiting Audit'}
+                </span>
+              </div>
 
-            <div className="bg-slate-50 p-3 rounded-xl border border-slate-200">
-              <span className="text-slate-500 text-[10px] font-bold uppercase block">Reputation Score</span>
-              <span className="text-lg font-black text-amber-500 mt-0.5 block">{reportData.metrics?.avg_rating || 0} ★ Rating</span>
-              <span className="text-[11px] text-slate-500 font-medium">{reportData.metrics?.total_reviews || 0} Verified Reviews</span>
-            </div>
+              <div className="sm:col-span-2 grid grid-cols-2 gap-3 text-xs">
+                <div className="bg-slate-50 p-3 rounded-xl border border-slate-200">
+                  <span className="text-slate-500 text-[10px] font-bold uppercase block">Tracked Keywords</span>
+                  <span className="text-lg font-black text-slate-900 mt-0.5 block">{reportData.metrics?.total_keywords ?? 0} Terms</span>
+                  <span className="text-[11px] text-emerald-700 font-bold">{reportData.metrics?.top_3_keywords ?? 0} in Top 3 Local Pack</span>
+                </div>
 
-            <div className="bg-slate-50 p-3 rounded-xl border border-slate-200">
-              <span className="text-slate-500 text-[10px] font-bold uppercase block">NAP Consistency</span>
-              <span className="text-lg font-black text-purple-700 mt-0.5 block">{reportData.metrics?.nap_consistency_score || 100}% Uniform</span>
-              <span className="text-[11px] text-slate-500 font-medium">Directory Alignment</span>
-            </div>
+                <div className="bg-slate-50 p-3 rounded-xl border border-slate-200">
+                  <span className="text-slate-500 text-[10px] font-bold uppercase block">Reputation Score</span>
+                  <span className="text-lg font-black text-amber-500 mt-0.5 block">{reportData.metrics?.avg_rating ?? 0} ★ Rating</span>
+                  <span className="text-[11px] text-slate-500 font-medium">{reportData.metrics?.total_reviews ?? 0} Verified Reviews</span>
+                </div>
 
-            <div className="bg-slate-50 p-3 rounded-xl border border-slate-200">
-              <span className="text-slate-500 text-[10px] font-bold uppercase block">Optimizations Completed</span>
-              <span className="text-lg font-black text-slate-900 mt-0.5 block">{reportData.metrics?.completed_tasks_count || 0} Tasks</span>
-              <span className="text-[11px] text-emerald-700 font-bold">Zero Critical Blockers</span>
+                <div className="bg-slate-50 p-3 rounded-xl border border-slate-200">
+                  <span className="text-slate-500 text-[10px] font-bold uppercase block">NAP Consistency</span>
+                  <span className="text-lg font-black text-purple-700 mt-0.5 block">
+                    {isNapAvailable ? `${napScore}% Uniform` : 'Awaiting Audit'}
+                  </span>
+                  <span className="text-[11px] text-slate-500 font-medium">Directory Alignment</span>
+                </div>
+
+                <div className="bg-slate-50 p-3 rounded-xl border border-slate-200">
+                  <span className="text-slate-500 text-[10px] font-bold uppercase block">Optimizations Completed</span>
+                  <span className="text-lg font-black text-slate-900 mt-0.5 block">{reportData.metrics?.completed_tasks_count ?? 0} Tasks</span>
+                  <span className="text-[11px] text-emerald-700 font-bold">Zero Critical Blockers</span>
+                </div>
+              </div>
             </div>
-          </div>
-        </div>
+          );
+        })()}
 
         {/* Recommended Action Plan */}
         {reportData.next_month_recommendations && reportData.next_month_recommendations.length > 0 && (

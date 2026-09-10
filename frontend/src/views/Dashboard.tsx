@@ -105,13 +105,18 @@ export const Dashboard: React.FC = () => {
     );
   }
 
+  const overallHealth = dashboard?.health_score !== undefined && dashboard?.health_score !== null 
+    ? dashboard.health_score 
+    : activeProject.health_score;
+  const isHealthCalculated = overallHealth !== null && overallHealth !== undefined;
+
   const scores = dashboard?.scores || {
-    technical: activeProject.technical_score || 80,
-    onpage: activeProject.onpage_score || 80,
-    local: activeProject.local_score || 75,
-    citations: activeProject.citations_score || 70,
-    reviews: activeProject.reviews_score || 85,
-    gbp: activeProject.gbp_score || 70
+    technical: activeProject.technical_score ?? null,
+    onpage: activeProject.onpage_score ?? null,
+    local: activeProject.local_score ?? null,
+    citations: activeProject.citations_score ?? null,
+    reviews: activeProject.reviews_score ?? null,
+    gbp: activeProject.gbp_score ?? null
   };
 
   const healthBreakdown = [
@@ -136,12 +141,20 @@ export const Dashboard: React.FC = () => {
               SEO Health
             </span>
             <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-purple-200 text-purple-900 border border-purple-300">
-              {activeProject.health_score >= 80 ? 'Good' : activeProject.health_score >= 60 ? 'Fair' : 'Attention'}
+              {isHealthCalculated
+                ? (overallHealth >= 80 ? 'Good' : overallHealth >= 60 ? 'Fair' : 'Attention')
+                : 'Awaiting Audit'}
             </span>
           </div>
           <div className="flex items-baseline space-x-1.5">
-            <span className="text-2xl lg:text-3xl font-black text-slate-900">{activeProject.health_score}</span>
-            <span className="text-xs font-bold text-slate-500">/ 100</span>
+            <span className="text-2xl lg:text-3xl font-black text-slate-900">
+              {isHealthCalculated ? overallHealth : '—'}
+            </span>
+            {isHealthCalculated ? (
+              <span className="text-xs font-bold text-slate-500">/ 100</span>
+            ) : (
+              <span className="text-xs font-semibold text-slate-500">Not yet audited</span>
+            )}
           </div>
           <div className="text-[11px] text-purple-900 font-semibold flex items-center space-x-1">
             <span className="text-purple-600 font-black">●</span>
@@ -399,27 +412,34 @@ export const Dashboard: React.FC = () => {
             <h3 className="text-sm font-extrabold text-slate-900 tracking-tight">
               SEO Pillar Health Breakdown
             </h3>
-            <span className="text-xs font-black text-purple-700">{activeProject.health_score} / 100</span>
+            <span className="text-xs font-black text-purple-700">
+              {isHealthCalculated ? `${overallHealth} / 100` : 'Awaiting Audit'}
+            </span>
           </div>
 
           <div className="space-y-3.5">
-            {healthBreakdown.map((item, idx) => (
-              <div key={idx} className="space-y-1">
-                <div className="flex items-center justify-between text-xs">
-                  <span className="font-bold text-slate-800">{item.name}</span>
-                  <span className="font-bold text-slate-900">{item.score} / 100</span>
+            {healthBreakdown.map((item, idx) => {
+              const isPillarCalculated = item.score !== null && item.score !== undefined;
+              return (
+                <div key={idx} className="space-y-1">
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="font-bold text-slate-800">{item.name}</span>
+                    <span className="font-bold text-slate-900">
+                      {isPillarCalculated ? `${item.score} / 100` : <span className="text-slate-400 font-normal">Awaiting audit</span>}
+                    </span>
+                  </div>
+                  <div className="w-full h-2 rounded-full bg-slate-100 overflow-hidden">
+                    <div
+                      className="h-full rounded-full transition-all duration-500"
+                      style={{
+                        width: isPillarCalculated ? `${item.score}%` : '0%',
+                        backgroundColor: isPillarCalculated ? item.color : '#E2E8F0'
+                      }}
+                    />
+                  </div>
                 </div>
-                <div className="w-full h-2 rounded-full bg-slate-100 overflow-hidden">
-                  <div
-                    className="h-full rounded-full transition-all duration-500"
-                    style={{
-                      width: `${item.score}%`,
-                      backgroundColor: item.color
-                    }}
-                  />
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
 

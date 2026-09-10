@@ -74,6 +74,7 @@ class GeoGridScanOut(BaseModel):
 
 class GeoGridScanRequest(BaseModel):
     keyword_id: Optional[int] = None
+    keyword: Optional[str] = None
     center_name: Optional[str] = "City Center"
     center_lat: Optional[float] = None
     center_lng: Optional[float] = None

@@ -54,15 +54,15 @@ class ProjectOut(ProjectBase):
     status: Optional[str] = "active"
     is_archived: Optional[bool] = False
     team_member_count: Optional[int] = 1
-    health_score: Optional[int] = 78
-    technical_score: Optional[int] = 85
-    onpage_score: Optional[int] = 80
-    local_score: Optional[int] = 75
-    gbp_score: Optional[int] = 70
-    reviews_score: Optional[int] = 88
-    citations_score: Optional[int] = 72
-    keywords_score: Optional[int] = 80
-    maps_score: Optional[int] = 74
+    health_score: Optional[int] = None
+    technical_score: Optional[int] = None
+    onpage_score: Optional[int] = None
+    local_score: Optional[int] = None
+    gbp_score: Optional[int] = None
+    reviews_score: Optional[int] = None
+    citations_score: Optional[int] = None
+    keywords_score: Optional[int] = None
+    maps_score: Optional[int] = None
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
     locations: Optional[List[LocationOut]] = []
@@ -73,7 +73,7 @@ class ProjectOut(ProjectBase):
 
 
 class DashboardSummaryOut(BaseModel):
-    health_score: int
+    health_score: Optional[int] = None
     scores: dict
     counts: dict
     recent_issues: List[Any]

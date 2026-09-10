@@ -33,10 +33,10 @@ async def list_reviews(
 ):
     await verify_project_access(project_id, current_user, db)
     query = select(Review).where(Review.project_id == project_id)
-    if sentiment:
-        query = query.where(Review.sentiment == sentiment)
-    if response_status:
-        query = query.where(Review.response_status == response_status)
+    if sentiment and sentiment.lower() != "all":
+        query = query.where(Review.sentiment.ilike(sentiment.strip()))
+    if response_status and response_status.lower() != "all":
+        query = query.where(Review.response_status.ilike(response_status.strip()))
 
     result = await db.execute(query.order_by(Review.review_date.desc()))
     return result.scalars().all()
@@ -112,8 +112,8 @@ async def list_citations(
 ):
     await verify_project_access(project_id, current_user, db)
     query = select(Citation).where(Citation.project_id == project_id)
-    if status_filter:
-        query = query.where(Citation.status == status_filter)
+    if status_filter and status_filter.lower() != "all":
+        query = query.where(Citation.status.ilike(status_filter.strip()))
     result = await db.execute(query.order_by(Citation.domain_authority.desc()))
     return result.scalars().all()
 
@@ -137,10 +137,10 @@ async def add_citation(
         source_name=src_name,
         domain=dom,
         listing_url=cit_in.listing_url,
-        domain_authority=cit_in.domain_authority or 50,
+        domain_authority=cit_in.domain_authority,
         category=cit_in.category or "General Directory",
-        status="active",
-        nap_status=cit_in.nap_status or "match",
+        status=cit_in.status or "listed",
+        nap_status=cit_in.nap_status or "consistent",
         last_checked_at=datetime.now(timezone.utc)
     )
     db.add(cit)
@@ -179,10 +179,11 @@ async def add_competitor(
     db: AsyncSession = Depends(get_db)
 ):
     await verify_project_access(comp_in.project_id, current_user, db)
+    clean_domain = comp_in.domain.replace("https://", "").replace("http://", "").rstrip("/") if comp_in.domain else f"{comp_in.name.lower().replace(' ', '')}.com"
     comp = Competitor(
         project_id=comp_in.project_id,
         name=comp_in.name,
-        domain=comp_in.domain.replace("https://", "").replace("http://", "").rstrip("/"),
+        domain=clean_domain,
         gbp_name=comp_in.gbp_name,
         rating=comp_in.rating or 0.0,
         reviews_count=comp_in.reviews_count or 0,

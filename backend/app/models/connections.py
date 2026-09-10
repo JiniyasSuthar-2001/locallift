@@ -23,11 +23,11 @@ class GoogleConnection(Base):
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
     updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
 
-    organization = relationship("Organization")
-    project = relationship("Project")
-    ads_accounts = relationship("GoogleAdsAccount", back_populates="connection", cascade="all, delete-orphan")
-    search_console_properties = relationship("GoogleSearchConsoleProperty", back_populates="connection", cascade="all, delete-orphan")
-    analytics_properties = relationship("GoogleAnalyticsProperty", back_populates="connection", cascade="all, delete-orphan")
+    organization = relationship("Organization", lazy="selectin")
+    project = relationship("Project", lazy="selectin")
+    ads_accounts = relationship("GoogleAdsAccount", back_populates="connection", cascade="all, delete-orphan", lazy="selectin")
+    search_console_properties = relationship("GoogleSearchConsoleProperty", back_populates="connection", cascade="all, delete-orphan", lazy="selectin")
+    analytics_properties = relationship("GoogleAnalyticsProperty", back_populates="connection", cascade="all, delete-orphan", lazy="selectin")
 
 class GoogleAdsAccount(Base):
     __tablename__ = "google_ads_accounts"

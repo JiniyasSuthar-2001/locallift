@@ -6,7 +6,8 @@ import {
   Star,
   ExternalLink,
   Shield,
-  Sparkles
+  Sparkles,
+  Trash2
 } from 'lucide-react';
 import { useProject } from '../context/ProjectContext';
 import { Competitor } from '../types';
@@ -58,6 +59,15 @@ export const CompetitorsView: React.FC = () => {
     }
   };
 
+  const handleDeleteCompetitor = async (competitorId: number) => {
+    try {
+      await api.delete(`/local-seo/competitors/${competitorId}`);
+      setCompetitors((prev) => prev.filter((c) => c.id !== competitorId));
+    } catch (e) {
+      console.error('Failed to delete competitor:', e);
+    }
+  };
+
   if (!activeProject) {
     return (
       <EmptyState
@@ -98,7 +108,7 @@ export const CompetitorsView: React.FC = () => {
           {competitors.map((comp) => (
             <div
               key={comp.id}
-              className="card-vibrant p-5 space-y-4 transition-all"
+              className="card-vibrant p-5 space-y-4 transition-all relative group"
             >
               <div className="flex items-start justify-between">
                 <div>
@@ -115,9 +125,18 @@ export const CompetitorsView: React.FC = () => {
                     </a>
                   )}
                 </div>
-                <span className="px-2 py-0.5 rounded bg-purple-50 text-purple-800 text-[10px] font-bold border border-purple-200">
-                  Tracked
-                </span>
+                <div className="flex items-center space-x-1.5">
+                  <span className="px-2 py-0.5 rounded bg-purple-50 text-purple-800 text-[10px] font-bold border border-purple-200">
+                    Tracked
+                  </span>
+                  <button
+                    onClick={() => handleDeleteCompetitor(comp.id)}
+                    title="Remove competitor"
+                    className="p-1 rounded-md text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors opacity-0 group-hover:opacity-100"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
+                </div>
               </div>
 
               <div className="grid grid-cols-2 gap-2 text-xs">
@@ -131,7 +150,8 @@ export const CompetitorsView: React.FC = () => {
                 <div className="p-3 rounded-xl bg-slate-50 border border-slate-200">
                   <span className="text-[10px] text-slate-500 font-bold block">Reviews & Rating</span>
                   <span className="text-lg font-black text-amber-500 mt-0.5 block">
-                    {comp.rating} ★ <span className="text-xs text-slate-500 font-normal">({comp.total_reviews})</span>
+                    {comp.rating !== null && comp.rating !== undefined ? `${comp.rating} ★` : '—'}{' '}
+                    <span className="text-xs text-slate-500 font-normal">({comp.reviews_count ?? (comp as any).total_reviews ?? 0})</span>
                   </span>
                 </div>
               </div>

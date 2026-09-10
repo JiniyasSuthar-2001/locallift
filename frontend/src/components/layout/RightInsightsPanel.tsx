@@ -91,7 +91,9 @@ export const RightInsightsPanel: React.FC = () => {
               <div>
                 <div className="flex items-center space-x-1.5">
                   <span className="text-2xl font-black text-slate-900">
-                    {gbpData.completeness_score || 88}%
+                    {gbpData.completeness_score !== null && gbpData.completeness_score !== undefined
+                      ? `${gbpData.completeness_score}%`
+                      : '—'}
                   </span>
                 </div>
                 <div className="text-[11px] text-slate-500 mt-0.5 font-medium">Profile Completeness</div>

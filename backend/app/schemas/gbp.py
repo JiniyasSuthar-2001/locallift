@@ -29,8 +29,8 @@ class GBPProfileOut(BaseModel):
     website_clicks: int = 0
     call_clicks: int = 0
     direction_requests: int = 0
-    last_synced_at: datetime
-    created_at: datetime
+    last_synced_at: Optional[datetime] = None
+    created_at: Optional[datetime] = None
 
     class Config:
         from_attributes = True

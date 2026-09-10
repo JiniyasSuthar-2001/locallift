@@ -23,6 +23,7 @@ import { ReportsView } from './views/ReportsView';
 import { ClientsView } from './views/ClientsView';
 import { OnboardingWizard } from './views/OnboardingWizard';
 import { SettingsView } from './views/SettingsView';
+import { ConnectionsView } from './views/ConnectionsView';
 import { AIAssistantView } from './views/AIAssistantView';
 import { TemplatesView } from './views/TemplatesView';
 import { GoogleCallbackView } from './views/GoogleCallbackView';
@@ -55,10 +56,12 @@ const AuthenticatedApp: React.FC = () => {
             <Route path="seo/schema" element={<SchemaGeneratorView />} />
             <Route path="seo/content-gaps" element={<ContentGapsView />} />
 
-            {/* Google */}
+            {/* Google & Integrations */}
             <Route path="google/gbp" element={<GBPView />} />
             <Route path="google/gsc" element={<GSCView />} />
             <Route path="google/ga4" element={<GA4View />} />
+            <Route path="connections" element={<ConnectionsView />} />
+            <Route path="integrations" element={<ConnectionsView />} />
             <Route path="integrations/google/callback" element={<GoogleCallbackView />} />
 
             {/* Rankings */}

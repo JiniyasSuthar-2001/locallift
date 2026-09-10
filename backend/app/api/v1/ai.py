@@ -75,7 +75,7 @@ async def analyze_project_query(
         "city": loc.city if loc else "",
         "state": loc.state if loc else "",
         "country": loc.country if loc else project.country,
-        "health_score": project.health_score or 0,
+        "health_score": project.health_score,
         "issues": [{"title": i.title, "category": i.category, "severity": str(i.severity)} for i in iss_res.scalars().all()],
         "keywords": [{"keyword": k.keyword, "rank": k.current_rank, "location": k.target_location} for k in kw_res.scalars().all()],
         "reviews": [{"author": r.author_name, "rating": r.rating, "text": r.review_text, "sentiment": r.sentiment, "status": r.response_status} for r in rev_res.scalars().all()],

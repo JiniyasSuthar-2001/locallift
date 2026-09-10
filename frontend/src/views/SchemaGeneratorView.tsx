@@ -260,7 +260,8 @@ export const SchemaGeneratorView: React.FC = () => {
     );
   }
 
-  const healthScore = summary?.health_score ?? 0;
+  const healthScore = summary?.health_score !== undefined && summary?.health_score !== null ? summary.health_score : null;
+  const isHealthScoreAvailable = healthScore !== null && healthScore !== undefined;
   const stats = summary?.stats || {
     pages_crawled: 0,
     schemas_detected: 0,
@@ -299,7 +300,9 @@ export const SchemaGeneratorView: React.FC = () => {
             <HealthScoreRing score={healthScore} size={64} strokeWidth={6} label="Health" />
             <div className="text-left">
               <div className="text-xs font-black text-slate-900">
-                {healthScore >= 90 ? 'Optimal Schema' : healthScore >= 75 ? 'Good Coverage' : 'Needs Optimization'}
+                {isHealthScoreAvailable
+                  ? (healthScore >= 90 ? 'Optimal Schema' : healthScore >= 75 ? 'Good Coverage' : 'Needs Optimization')
+                  : 'Awaiting Audit'}
               </div>
               <div className="text-[11px] text-slate-500 font-medium">
                 {stats.schemas_detected} entities on {stats.pages_crawled} pages

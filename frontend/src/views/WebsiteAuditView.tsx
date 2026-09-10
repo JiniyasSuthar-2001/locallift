@@ -144,15 +144,18 @@ export const WebsiteAuditView: React.FC = () => {
 
   const schemaCount = pages.filter(p => p.schema_types && p.schema_types.length > 0).length;
 
-  // Derive Pillar Scores (from summary or active project scores, default 0)
+  // Derive Pillar Scores (from summary or active project scores)
   const pillars = summary?.pillar_scores || {
-    crawl_health: activeProject?.technical_score || 0,
-    onpage_content: activeProject?.onpage_score || 0,
-    schema_structured_data: activeProject?.local_score || 0,
-    gbp_alignment: activeProject?.gbp_score || 0,
-    citations_nap: activeProject?.citations_score || 0,
-    reviews_reputation: activeProject?.reviews_score || 0
+    crawl_health: activeProject?.technical_score ?? null,
+    onpage_content: activeProject?.onpage_score ?? null,
+    schema_structured_data: activeProject?.local_score ?? null,
+    gbp_alignment: activeProject?.gbp_score ?? null,
+    citations_nap: activeProject?.citations_score ?? null,
+    reviews_reputation: activeProject?.reviews_score ?? null
   };
+
+  const overallAuditScore = summary?.overall_score ?? activeProject?.health_score ?? null;
+  const isOverallScoreAvailable = overallAuditScore !== null && overallAuditScore !== undefined;
 
   const matrix = summary?.discrepancy_matrix;
 
@@ -275,10 +278,10 @@ export const WebsiteAuditView: React.FC = () => {
           <div className="flex items-center space-x-4 md:border-r md:border-white/10 pr-4">
             <div className="w-20 h-20 rounded-2xl bg-white/10 backdrop-blur-md flex flex-col items-center justify-center border border-white/20 shrink-0">
               <span className="text-3xl font-black text-white leading-none">
-                {summary?.overall_score || activeProject.health_score || 72}
+                {isOverallScoreAvailable ? overallAuditScore : '—'}
               </span>
               <span className="text-[10px] font-bold text-purple-200 mt-1 uppercase tracking-wider">
-                / 100
+                {isOverallScoreAvailable ? '/ 100' : 'Awaiting Audit'}
               </span>
             </div>
             <div>
@@ -334,36 +337,57 @@ export const WebsiteAuditView: React.FC = () => {
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3.5">
-          {pillarCards.map((p) => (
-            <div key={p.id} className="card-vibrant p-4 space-y-3 bg-white">
-              <div className="flex items-start justify-between">
-                <div>
-                  <span className="text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-md bg-slate-100 text-slate-600 font-mono">
-                    Weight: {p.weight}
-                  </span>
-                  <h4 className="text-xs font-bold text-slate-900 mt-1.5">{p.name}</h4>
+          {pillarCards.map((p) => {
+            const isScoreAvailable = p.score !== null && p.score !== undefined;
+            return (
+              <div key={p.id} className="card-vibrant p-4 space-y-3 bg-white">
+                <div className="flex items-start justify-between">
+                  <div>
+                    <span className="text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-md bg-slate-100 text-slate-600 font-mono">
+                      Weight: {p.weight}
+                    </span>
+                    <h4 className="text-xs font-bold text-slate-900 mt-1.5">{p.name}</h4>
+                  </div>
+                  <div className="text-right">
+                    <span className={`text-xl font-black ${
+                      !isScoreAvailable
+                        ? 'text-slate-400'
+                        : p.score >= 80
+                        ? 'text-emerald-600'
+                        : p.score >= 60
+                        ? 'text-amber-600'
+                        : 'text-rose-600'
+                    }`}>
+                      {isScoreAvailable ? p.score : '—'}
+                    </span>
+                    <span className="text-[10px] font-bold text-slate-400 block">
+                      {isScoreAvailable ? '/ 100' : 'Awaiting audit'}
+                    </span>
+                  </div>
                 </div>
-                <div className="text-right">
-                  <span className={`text-xl font-black ${p.score >= 80 ? 'text-emerald-600' : p.score >= 60 ? 'text-amber-600' : 'text-rose-600'}`}>
-                    {p.score}
-                  </span>
-                  <span className="text-[10px] font-bold text-slate-400 block">/ 100</span>
+
+                {/* Progress Bar */}
+                <div className="w-full bg-slate-100 rounded-full h-2 overflow-hidden">
+                  <div
+                    className={`h-2 rounded-full ${
+                      !isScoreAvailable
+                        ? 'bg-slate-200'
+                        : p.score >= 80
+                        ? 'bg-emerald-500'
+                        : p.score >= 60
+                        ? 'bg-amber-500'
+                        : 'bg-rose-500'
+                    } transition-all duration-500`}
+                    style={{ width: isScoreAvailable ? `${Math.min(100, p.score)}%` : '0%' }}
+                  />
                 </div>
-              </div>
 
-              {/* Progress Bar */}
-              <div className="w-full bg-slate-100 rounded-full h-2 overflow-hidden">
-                <div
-                  className={`h-2 rounded-full ${p.score >= 80 ? 'bg-emerald-500' : p.score >= 60 ? 'bg-amber-500' : 'bg-rose-500'} transition-all duration-500`}
-                  style={{ width: `${Math.min(100, p.score)}%` }}
-                />
+                <p className="text-[11px] text-slate-500 leading-tight font-medium">
+                  {p.desc}
+                </p>
               </div>
-
-              <p className="text-[11px] text-slate-500 leading-tight font-medium">
-                {p.desc}
-              </p>
-            </div>
-          ))}
+            );
+          })}
         </div>
       </div>
 

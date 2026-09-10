@@ -71,28 +71,42 @@ export const GSCView: React.FC = () => {
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
         <div className="card-vibrant p-4 space-y-1">
           <div className="text-[10px] font-black text-slate-500 uppercase tracking-wider">Total Organic Clicks</div>
-          <div className="text-2xl font-black text-slate-900 mt-1">{gscData?.total_clicks || 0}</div>
-          <div className="text-[11px] text-purple-700 font-bold">Organic visits</div>
+          <div className="text-2xl font-black text-slate-900 mt-1">
+            {gscData?.connected ? (gscData?.total_clicks ?? 0) : '—'}
+          </div>
+          <div className="text-[11px] text-purple-700 font-bold">
+            {gscData?.connected ? 'Organic visits' : 'Not Connected'}
+          </div>
         </div>
 
         <div className="card-vibrant p-4 space-y-1">
           <div className="text-[10px] font-black text-slate-500 uppercase tracking-wider">Total Impressions</div>
           <div className="text-2xl font-black text-slate-900 mt-1">
-            {gscData?.total_impressions ? gscData.total_impressions.toLocaleString() : 0}
+            {gscData?.connected && gscData?.total_impressions !== undefined ? gscData.total_impressions.toLocaleString() : '—'}
           </div>
-          <div className="text-[11px] text-emerald-700 font-bold">Search appearances</div>
+          <div className="text-[11px] text-emerald-700 font-bold">
+            {gscData?.connected ? 'Search appearances' : 'Not Connected'}
+          </div>
         </div>
 
         <div className="card-vibrant p-4 space-y-1">
           <div className="text-[10px] font-black text-slate-500 uppercase tracking-wider">Average CTR</div>
-          <div className="text-2xl font-black text-purple-700 mt-1">{gscData?.average_ctr ? `${gscData.average_ctr}%` : '0%'}</div>
-          <div className="text-[11px] text-slate-500 font-medium">Click-through rate</div>
+          <div className="text-2xl font-black text-purple-700 mt-1">
+            {gscData?.connected && gscData?.average_ctr !== undefined ? `${gscData.average_ctr}%` : '—'}
+          </div>
+          <div className="text-[11px] text-slate-500 font-medium">
+            {gscData?.connected ? 'Click-through rate' : 'Not Connected'}
+          </div>
         </div>
 
         <div className="card-vibrant p-4 space-y-1">
           <div className="text-[10px] font-black text-slate-500 uppercase tracking-wider">Average Position</div>
-          <div className="text-2xl font-black text-slate-900 mt-1">{gscData?.average_position ? `#${gscData.average_position}` : '—'}</div>
-          <div className="text-[11px] text-slate-500 font-medium">Google SERP Rank</div>
+          <div className="text-2xl font-black text-slate-900 mt-1">
+            {gscData?.connected && gscData?.average_position ? `#${gscData.average_position}` : '—'}
+          </div>
+          <div className="text-[11px] text-slate-500 font-medium">
+            {gscData?.connected ? 'Google SERP Rank' : 'Not Connected'}
+          </div>
         </div>
       </div>
 

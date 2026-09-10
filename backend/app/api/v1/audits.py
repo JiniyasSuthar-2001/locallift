@@ -336,7 +336,7 @@ async def list_project_issues(
 ):
     await verify_project_access(project_id, current_user, db)
     query = select(SEOIssue).where(SEOIssue.project_id == project_id)
-    if category:
+    if category and category.lower() != "all":
         if category.lower() in ["local seo", "local"]:
             query = query.where(
                 (SEOIssue.category == "Local SEO") |
@@ -346,10 +346,16 @@ async def list_project_issues(
             )
         else:
             query = query.where(SEOIssue.category.ilike(f"%{category}%"))
-    if severity:
-        query = query.where(SEOIssue.severity == IssueSeverity(severity))
-    if status_filter:
-        query = query.where(SEOIssue.status == IssueStatus(status_filter))
+    if severity and severity.lower() != "all":
+        try:
+            query = query.where(SEOIssue.severity == IssueSeverity(severity.lower()))
+        except ValueError:
+            pass
+    if status_filter and status_filter.lower() != "all":
+        try:
+            query = query.where(SEOIssue.status == IssueStatus(status_filter.lower()))
+        except ValueError:
+            pass
 
     result = await db.execute(query.order_by(SEOIssue.id.desc()))
     return result.scalars().all()
@@ -492,12 +498,12 @@ async def get_diagnostic_summary(
 
     # Pillar Scores
     pillar_scores = {
-        "crawl_health": latest_audit.overall_score if latest_audit else (project.technical_score or 0),
-        "onpage_content": project.onpage_score or 0,
-        "schema_structured_data": project.local_score or 0,
-        "gbp_alignment": project.gbp_score or ((100 if (name_aligned and phone_aligned) else 50) if gbp else 0),
-        "citations_nap": project.citations_score or (100 if (citations and not cit_mismatches) else (50 if cit_mismatches else 0)),
-        "reviews_reputation": project.reviews_score or (round(avg_rating * 20) if reviews else 0)
+        "crawl_health": latest_audit.overall_score if latest_audit else project.technical_score,
+        "onpage_content": project.onpage_score,
+        "schema_structured_data": project.local_score,
+        "gbp_alignment": project.gbp_score if project.gbp_score is not None else (((100 if (name_aligned and phone_aligned) else 50) if gbp else None)),
+        "citations_nap": project.citations_score if project.citations_score is not None else ((100 if not cit_mismatches else 50) if citations else None),
+        "reviews_reputation": project.reviews_score if project.reviews_score is not None else (round(avg_rating * 20) if reviews else None)
     }
 
     issues_out = []
@@ -518,7 +524,7 @@ async def get_diagnostic_summary(
 
     return {
         "project_id": project_id,
-        "overall_score": latest_audit.overall_score if latest_audit else (project.health_score or 0),
+        "overall_score": latest_audit.overall_score if latest_audit else project.health_score,
         "pages_analyzed": latest_audit.pages_analyzed if latest_audit else 0,
         "critical_issues": latest_audit.critical_issues if latest_audit else 0,
         "warnings": latest_audit.warnings if latest_audit else 0,
@@ -535,7 +541,7 @@ async def get_diagnostic_summary(
         "citations_status": {
             "total": len(citations),
             "mismatches": len(cit_mismatches),
-            "active": len([c for c in citations if c.status == "active"])
+            "active": len([c for c in citations if c.status in ["active", "listed"]])
         },
         "reviews_status": {
             "total": len(reviews),

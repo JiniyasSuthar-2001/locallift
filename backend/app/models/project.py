@@ -16,17 +16,17 @@ class Project(Base):
     primary_category = Column(String(255), default="Local Business")
     additional_categories = Column(JSON, default=list)
     country = Column(String(50), default="United States")
-    health_score = Column(Integer, default=78)
+    health_score = Column(Integer, nullable=True, default=None)
     
     # Detailed sub-scores
-    technical_score = Column(Integer, default=85)
-    onpage_score = Column(Integer, default=80)
-    local_score = Column(Integer, default=75)
-    gbp_score = Column(Integer, default=70)
-    reviews_score = Column(Integer, default=88)
-    citations_score = Column(Integer, default=72)
-    keywords_score = Column(Integer, default=80)
-    maps_score = Column(Integer, default=74)
+    technical_score = Column(Integer, nullable=True, default=None)
+    onpage_score = Column(Integer, nullable=True, default=None)
+    local_score = Column(Integer, nullable=True, default=None)
+    gbp_score = Column(Integer, nullable=True, default=None)
+    reviews_score = Column(Integer, nullable=True, default=None)
+    citations_score = Column(Integer, nullable=True, default=None)
+    keywords_score = Column(Integer, nullable=True, default=None)
+    maps_score = Column(Integer, nullable=True, default=None)
     status = Column(String(50), default="active")  # active, archived
     is_archived = Column(Boolean, default=False)
     

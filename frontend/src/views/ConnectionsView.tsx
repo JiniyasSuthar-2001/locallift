@@ -172,17 +172,16 @@ export const ConnectionsView: React.FC = () => {
     setSubmittingMaps(true);
     setErrorMsg(null);
     try {
-      const res = await api.post<{ message?: string; listing?: PublicBusinessListingItem; name?: string }>(
+      const res = await api.post<PublicBusinessListingItem>(
         '/connections/public-maps/import',
         {
           maps_url: mapsUrl.trim(),
-          google_maps_url: mapsUrl.trim(),
           business_name: mapsName.trim() || undefined,
-          category: mapsCategory.trim() || undefined
+          target_category: mapsCategory.trim() || undefined
         }
       );
 
-      const name = res.data?.listing?.name || res.data?.name || 'Business';
+      const name = res.data?.name || 'Business';
       setSuccessMsg(`Public business "${name}" added for monitoring.`);
       setShowMapsModal(false);
       setMapsUrl('');
@@ -547,7 +546,7 @@ export const ConnectionsView: React.FC = () => {
                 <tr>
                   <th className="py-2.5 px-3">Monitored Business</th>
                   <th className="py-2.5 px-3">Mode</th>
-                  <th className="py-2.5 px-3">Category / City</th>
+                  <th className="py-2.5 px-3">Category / Address</th>
                   <th className="py-2.5 px-3">Public Rating</th>
                   <th className="py-2.5 px-3">Actions</th>
                 </tr>
@@ -557,13 +556,14 @@ export const ConnectionsView: React.FC = () => {
                   <tr key={pub.id} className="hover:bg-slate-50/60 transition-colors">
                     <td className="py-2.5 px-3 font-bold text-slate-900">
                       <div className="flex items-center space-x-2">
-                        <span>{pub.business_name}</span>
-                        {pub.google_maps_url && (
+                        <span>{pub.name}</span>
+                        {pub.maps_url && (
                           <a
-                            href={pub.google_maps_url}
+                            href={pub.maps_url}
                             target="_blank"
                             rel="noopener noreferrer"
                             className="text-slate-400 hover:text-blue-600"
+                            title="Open in Google Maps"
                           >
                             <ExternalLink className="w-3 h-3" />
                           </a>
@@ -577,10 +577,22 @@ export const ConnectionsView: React.FC = () => {
                       </span>
                     </td>
                     <td className="py-2.5 px-3 text-slate-600">
-                      {pub.category || 'Local Service'} • {pub.city || 'Local'}
+                      <div className="font-semibold text-slate-800">{pub.primary_category || 'Local Business'}</div>
+                      <div className="text-[11px] text-slate-400 truncate max-w-xs">{pub.formatted_address || 'Address unlisted'}</div>
                     </td>
                     <td className="py-2.5 px-3 text-slate-700 font-medium">
-                      {pub.rating ? `${pub.rating} ★ (${pub.reviews_count || 0} reviews)` : 'Pending crawl'}
+                      {(() => {
+                        if (pub.rating != null && pub.review_count != null) {
+                          return <span>{pub.rating} ★ ({pub.review_count} {pub.review_count === 1 ? 'review' : 'reviews'})</span>;
+                        }
+                        if (pub.rating != null) {
+                          return <span>{pub.rating} ★ (Unknown reviews)</span>;
+                        }
+                        if (pub.review_count != null) {
+                          return <span>{pub.review_count} {pub.review_count === 1 ? 'review' : 'reviews'} (Rating unknown)</span>;
+                        }
+                        return <span className="text-slate-400 italic">Unknown / Pending crawl</span>;
+                      })()}
                     </td>
                     <td className="py-2.5 px-3">
                       <span className="text-[10px] text-slate-400 italic">Owner actions disabled</span>

@@ -36,7 +36,8 @@ class CitationCreate(BaseModel):
     domain: Optional[str] = None
     listing_url: Optional[str] = None
     category: Optional[str] = "General Directory"
-    domain_authority: Optional[int] = 50
+    domain_authority: Optional[int] = None
+    status: Optional[str] = "listed"
     nap_status: Optional[str] = "match"
 
 class CitationOut(BaseModel):
@@ -45,7 +46,7 @@ class CitationOut(BaseModel):
     source_name: str
     domain: str
     listing_url: Optional[str] = None
-    domain_authority: int
+    domain_authority: Optional[int] = None
     category: str
     status: str  # listed, missing, incorrect, pending
     nap_status: str  # consistent, mismatch, missing
@@ -61,9 +62,9 @@ class CitationOut(BaseModel):
 class CompetitorCreate(BaseModel):
     project_id: int
     name: str
-    domain: str
+    domain: Optional[str] = None
     gbp_name: Optional[str] = None
-    rating: Optional[float] = 0.0
+    rating: Optional[float] = None
     reviews_count: Optional[int] = 0
 
 
@@ -74,7 +75,7 @@ class NAPRecordOut(BaseModel):
     canonical_address: str
     canonical_phone: str
     canonical_website: str
-    nap_score: int
+    nap_score: Optional[int] = None
     total_checked: int
     consistent_count: int
     mismatches_count: int
@@ -90,11 +91,11 @@ class CompetitorOut(BaseModel):
     name: str
     domain: str
     gbp_name: Optional[str] = None
-    rating: float
-    reviews_count: int
-    local_visibility_score: int
-    top_keywords_count: int
-    avg_maps_rank: Optional[float] = 3.5
+    rating: Optional[float] = None
+    reviews_count: int = 0
+    local_visibility_score: Optional[int] = None
+    top_keywords_count: int = 0
+    avg_maps_rank: Optional[float] = None
     comparison_data: Dict[str, Any] = {}
     opportunities_found: List[Any] = []
 

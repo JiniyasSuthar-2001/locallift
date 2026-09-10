@@ -133,7 +133,20 @@ async def handle_google_oauth_callback(
             logger.warning(f"Could not decode OAuth state: {e}")
 
     if not project_id:
-        raise HTTPException(status_code=400, detail="Project ID missing from OAuth flow")
+        # Fallback to current user's active organization project
+        org_id = current_user.active_organization_id
+        if org_id:
+            proj_res = await db.execute(select(Project).where(Project.organization_id == org_id))
+            first_proj = proj_res.scalars().first()
+            if first_proj:
+                project_id = first_proj.id
+        if not project_id:
+            proj_any = await db.execute(select(Project).order_by(Project.id.asc()))
+            first_any = proj_any.scalars().first()
+            if first_any:
+                project_id = first_any.id
+            else:
+                raise HTTPException(status_code=400, detail="Project ID missing from OAuth flow. Create a project first.")
 
     # 2. Exchange code for tokens
     try:
@@ -341,20 +354,29 @@ async def get_ga4_data(
         return {
             "connected": False,
             "total_users": 0,
+            "organic_users": 0,
             "total_sessions": 0,
+            "sessions": 0,
             "engagement_rate": 0.0,
             "total_conversions": 0,
+            "conversions": 0,
             "landing_pages": [],
             "traffic_sources": []
         }
 
     latest = metrics[0]
+    total_u = sum(m.organic_users for m in metrics)
+    total_s = sum(m.sessions for m in metrics)
+    total_c = sum(m.conversions for m in metrics)
     return {
         "connected": True,
-        "total_users": sum(m.organic_users for m in metrics),
-        "total_sessions": sum(m.sessions for m in metrics),
+        "total_users": total_u,
+        "organic_users": total_u,
+        "total_sessions": total_s,
+        "sessions": total_s,
         "engagement_rate": round(sum(m.engagement_rate for m in metrics) / len(metrics), 1),
-        "total_conversions": sum(m.conversions for m in metrics),
+        "total_conversions": total_c,
+        "conversions": total_c,
         "landing_pages": latest.landing_pages or [],
         "traffic_sources": latest.traffic_sources or []
     }
