@@ -90,7 +90,8 @@ class GeoGridScanner:
         async def scan_point(point: Dict[str, Any]) -> Dict[str, Any]:
             p_lat = point["lat"]
             p_lng = point["lng"]
-            cache_key = (keyword.strip().lower(), round(p_lat, 4), round(p_lng, 4))
+            prov_id = getattr(provider, "provider_name", type(provider).__name__)
+            cache_key = (prov_id, keyword.strip().lower(), round(p_lat, 4), round(p_lng, 4))
 
             # 1. Check in-memory cache
             if cache_key in cls._CACHE:
@@ -111,7 +112,7 @@ class GeoGridScanner:
                             lat=p_lat,
                             lng=p_lng
                         )
-                        if serp_resp.success:
+                        if serp_resp.success and getattr(provider, "is_configured", True):
                             cls._CACHE[cache_key] = (now_ts, serp_resp)
                     except Exception as e:
                         logger.error(f"Geo-Grid point scan failed at ({p_lat}, {p_lng}): {e}")

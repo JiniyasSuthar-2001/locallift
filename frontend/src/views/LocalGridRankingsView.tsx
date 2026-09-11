@@ -37,9 +37,13 @@ export const LocalGridRankingsView: React.FC = () => {
     try {
       setIsScanning(true);
       setScanError(null);
+      const fallbackKeyword = activeProject.primary_category
+        ? `${activeProject.primary_category.toLowerCase()} near me`
+        : `${activeProject.name} near me`;
+
       await api.post(`/keywords/${activeProject.id}/grid/rescan`, {
         keyword_id: scan?.keyword_id,
-        keyword: scan?.center_name || 'dentist near me',
+        keyword: scan?.center_name || fallbackKeyword,
         radius_km: scan?.radius_km || 7.5,
         grid_size: scan?.grid_size || 5
       });

@@ -163,11 +163,13 @@ def test_safe_schema_generator_no_fake_defaults():
     assert srv_node["provider"]["@id"] == biz_node["@id"]
 
 def test_db_schema_records_query():
+    from app.test_helper import init_test_db
     from app.database import AsyncSessionLocal
     from app.models.local_seo import SchemaRecord
     from sqlalchemy import select
     
     async def _query():
+        await init_test_db(seed_demo=False)
         async with AsyncSessionLocal() as session:
             stmt = select(SchemaRecord)
             res = await session.execute(stmt)

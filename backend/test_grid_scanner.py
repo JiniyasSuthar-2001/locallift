@@ -22,7 +22,11 @@ def test_grid_matrix_generation():
 
 def test_geogrid_live_scan_execution():
     async def _test():
-        provider = MockSERPProvider()
+        preset = [
+            {"position": 1, "title": "Queenshine Electricals", "link": "https://queenshineelectricals.com.au/services/emergency", "type": "local_pack"},
+            {"position": 2, "title": "Competitor Power", "link": "https://competitorpower.com.au", "type": "local_pack"}
+        ]
+        provider = MockSERPProvider(preset_results=preset)
         res = await GeoGridScanner.scan_grid(
             provider=provider,
             keyword="electrician brisbane",

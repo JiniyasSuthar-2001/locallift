@@ -232,7 +232,7 @@ async def check_all_project_keywords(
                 ranking_url=kw.ranking_url,
                 serp_type=kw.serp_type,
                 provider=serp_resp.provider,
-                status="provider_error",
+                status="not_configured" if serp_resp.error_code == "SERP_PROVIDER_NOT_CONFIGURED" else "provider_error",
                 error_message=serp_resp.error_message,
                 last_checked_at=kw.last_checked_at or datetime.now(timezone.utc)
             ))
@@ -401,25 +401,42 @@ async def rescan_project_grid(
     """
     Convenience endpoint for frontend to rescan active project grid.
     """
-    await verify_project_access(project_id, current_user, db)
+    project = await verify_project_access(project_id, current_user, db)
     # Find primary keyword if not passed
     if not scan_req.keyword_id:
-        if scan_req.keyword:
-            kw_match = await db.execute(
-                select(Keyword).where(Keyword.project_id == project_id, Keyword.keyword == scan_req.keyword.strip())
-            )
-            matched_kw = kw_match.scalars().first()
-            if matched_kw:
-                scan_req.keyword_id = matched_kw.id
-
-        if not scan_req.keyword_id:
+        kw_phrase = (scan_req.keyword or (f"{project.primary_category} near me" if project.primary_category else project.name)).strip()
+        kw_match = await db.execute(
+            select(Keyword).where(Keyword.project_id == project_id, Keyword.keyword == kw_phrase)
+        )
+        matched_kw = kw_match.scalars().first()
+        if not matched_kw:
+            # Check if ANY keyword is tracked
             kw_res = await db.execute(
                 select(Keyword).where(Keyword.project_id == project_id).order_by(Keyword.id.asc())
             )
-            kw = kw_res.scalars().first()
-            if not kw:
-                raise HTTPException(status_code=400, detail="No keywords tracked for this project. Add a keyword first.")
-            scan_req.keyword_id = kw.id
+            any_kw = kw_res.scalars().first()
+            if any_kw:
+                matched_kw = any_kw
+            else:
+                # Auto-create initial keyword for the project
+                proj_res = await db.execute(
+                    select(Project).options(selectinload(Project.locations)).where(Project.id == project.id)
+                )
+                proj_full = proj_res.scalars().first()
+                loc = proj_full.locations[0] if proj_full and proj_full.locations else None
+                matched_kw = Keyword(
+                    project_id=project_id,
+                    keyword=kw_phrase,
+                    target_location=loc.city if loc and loc.city else "Metro Area",
+                    search_intent="Commercial",
+                    created_at=datetime.now(timezone.utc)
+                )
+                db.add(matched_kw)
+                await db.flush()
+                await db.refresh(matched_kw)
+
+        scan_req.keyword_id = matched_kw.id
+        scan_req.keyword = matched_kw.keyword
 
     return await trigger_grid_scan(scan_req, current_user, db)
 

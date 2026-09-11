@@ -63,27 +63,8 @@ class MockSERPProvider(SERPProvider):
                     local_items.append(item)
                 else:
                     organic_items.append(item)
-        else:
-            # Default preset mock data for tests
-            domains = [
-                "queenshineelectricals.com.au",
-                "citysparksbrisbane.com.au",
-                "metroelectricalqld.com.au",
-                "yellowpages.com.au"
-            ]
-            for pos, dom in enumerate(domains, 1):
-                link = f"https://{dom}/services/emergency-electrician" if "queenshine" in dom else f"https://{dom}"
-                organic_items.append(
-                    SERPItem(
-                        position=pos,
-                        title=f"{dom.capitalize()} - Electrical Services",
-                        link=link,
-                        domain=dom,
-                        snippet="Licensed 24/7 emergency electrical contractor.",
-                        item_type="organic"
-                    )
-                )
 
+        # When no preset results are provided, return clean empty lists (never inject fake fallback domains)
         return SERPResponse(
             provider="mock",
             keyword=keyword,

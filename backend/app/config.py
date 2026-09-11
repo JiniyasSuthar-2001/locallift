@@ -51,7 +51,7 @@ class Settings(BaseSettings):
     GOOGLE_REDIRECT_URI: str = "http://localhost:5173/integrations/google/callback"
     
     # Integrations - SERP / Rank Tracking
-    SERP_PROVIDER: str = "mock"  # serpapi, mock
+    SERP_PROVIDER: str = "serpapi"  # serpapi (unconfigured until SERPAPI_KEY is supplied)
     SERPAPI_KEY: str = ""
     
     # AI Engine

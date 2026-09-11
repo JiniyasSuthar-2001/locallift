@@ -56,12 +56,24 @@ def test_serp_rank_lookup_found_and_not_found():
 
 def test_mock_provider_live_search():
     async def _test():
-        provider = MockSERPProvider()
+        # 1. Mock without presets returns clean empty results (never fabricated domains)
+        empty_provider = MockSERPProvider()
+        empty_resp = await empty_provider.search_keyword("electrician brisbane", location="Brisbane CBD")
+        assert empty_resp.success is True
+        assert len(empty_resp.organic_results) == 0
+
+        # 2. Mock with explicit test presets returns provided items
+        preset = [
+            {"position": 1, "title": "Test 1", "link": "https://test1.com"},
+            {"position": 2, "title": "Test 2", "link": "https://test2.com"}
+        ]
+        provider = MockSERPProvider(preset_results=preset)
         resp = await provider.search_keyword("electrician brisbane", location="Brisbane CBD")
         assert resp.success is True
-        assert len(resp.organic_results) >= 3
+        assert len(resp.organic_results) == 2
+        assert resp.organic_results[0].domain == "test1.com"
 
-        # Simulate timeout error
+        # 3. Simulate timeout error
         err_provider = MockSERPProvider(simulate_error="timeout")
         err_resp = await err_provider.search_keyword("test")
         assert err_resp.success is False

@@ -204,30 +204,52 @@ async def handle_google_callback(
         "discovery": discovery_res
     }
 
+@router.post("/google/discover")
+@router.get("/google/discover")
 @router.post("/google/sync")
-async def sync_google_resources(
+async def discover_and_sync_google_resources(
     project_id: Optional[int] = None,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
     """
     Performs on-demand discovery and synchronization across all connected Google resources.
+    Returns DiscoveredResourcesResponse matching frontend expectations.
     """
     org_id = await get_active_org_id(current_user, db, project_id)
     conn = await GoogleConnectionsService.get_connection_for_org(org_id, db)
 
     if not conn or conn.status == "disconnected":
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="No active Google connection found for this organization."
-        )
+        return {
+            "connected": False,
+            "success": False,
+            "gbp_locations": [],
+            "ads_accounts": [],
+            "gsc_properties": [],
+            "ga4_properties": [],
+            "message": "No active Google connection found for this organization."
+        }
 
     discovery_res = await GoogleConnectionsService.discover_and_sync_all_resources(conn, db)
 
+    gsc_props = [
+        {"site_url": s.get("site_url", ""), "permission_level": s.get("permission_level", "siteOwner")}
+        for s in discovery_res.get("search_console", [])
+    ]
+    ga4_props = [
+        {"property_id": g.get("property_id", ""), "display_name": g.get("display_name", ""), "account_name": g.get("account_name", "")}
+        for g in discovery_res.get("analytics_properties", [])
+    ]
+
     return {
+        "connected": True,
         "success": True,
         "last_sync_at": conn.last_sync_at,
-        "discovery": discovery_res
+        "gbp_locations": discovery_res.get("gbp_locations", []),
+        "ads_accounts": discovery_res.get("ads_accounts", []),
+        "gsc_properties": gsc_props,
+        "ga4_properties": ga4_props,
+        "message": "Google resources discovered and synchronized successfully."
     }
 
 @router.post("/google/import-resources", response_model=ImportResourcesResponse)
