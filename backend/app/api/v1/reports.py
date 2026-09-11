@@ -38,6 +38,73 @@ async def generate_executive_report(
     nap_res = await db.execute(select(NAPRecord).where(NAPRecord.project_id == project_id))
     nap = nap_res.scalars().first()
 
+    total_kw = len(keywords)
+    top_3 = len([k for k in keywords if k.current_rank and k.current_rank <= 3])
+    top_10 = len([k for k in keywords if k.current_rank and k.current_rank <= 10])
+    completed_tasks = len([t for t in tasks if t.status == 'completed'])
+    open_issues = len([i for i in issues if i.status == 'open'])
+    total_revs = len(reviews)
+    avg_rating = round(sum(r.rating for r in reviews) / total_revs, 1) if total_revs > 0 else None
+
+    # Construct truthful executive summary
+    summary_parts = []
+    if project.health_score is not None:
+        summary_parts.append(f"{project.name} has an overall Local SEO Health Score of {project.health_score}/100.")
+    else:
+        summary_parts.append(f"{project.name} Local SEO Health Score is awaiting initial audit.")
+
+    if total_kw == 0:
+        summary_parts.append("No local search keywords are currently configured or tracked.")
+    elif top_3 > 0:
+        summary_parts.append(f"The business currently tracks {total_kw} local search terms with {top_3} ranking in the Top 3 Local Pack.")
+    elif top_10 > 0:
+        summary_parts.append(f"The business currently tracks {total_kw} local search terms with {top_10} ranking in the Top 10.")
+    else:
+        summary_parts.append(f"The business currently tracks {total_kw} local search terms awaiting first rank scan or visibility improvements.")
+
+    if completed_tasks > 0:
+        summary_parts.append(f"During the last 30 days, {completed_tasks} technical and on-page optimization tasks were completed.")
+    else:
+        summary_parts.append("No optimization tasks have been completed in the last 30 days.")
+
+    executive_summary = " ".join(summary_parts)
+
+    # Dynamic data-driven recommendations
+    recommendations: List[str] = []
+    if project.health_score is None:
+        recommendations.append("Execute an initial website technical and on-page audit to identify baseline crawl issues.")
+    elif open_issues > 0:
+        recommendations.append(f"Resolve {open_issues} open technical and on-page SEO issues to improve site crawlability.")
+
+    if total_kw == 0:
+        recommendations.append("Add high-intent local target keywords to begin monitoring local map pack rankings.")
+    elif top_3 == 0 and total_kw > 0:
+        recommendations.append("Optimize localized landing pages and GBP categories to push tracked keywords into the Top 3 Local Pack.")
+    else:
+        recommendations.append("Continue proactive review generation campaign to maintain Top 3 Local Pack density.")
+
+    if total_revs == 0:
+        recommendations.append("Launch a customer review acquisition campaign to build initial local social proof and star ratings.")
+    elif avg_rating is not None and avg_rating < 4.5:
+        recommendations.append("Improve customer sentiment and actively respond to feedback to raise the average review rating.")
+
+    if nap is None or nap.nap_score is None or nap.nap_score < 85:
+        recommendations.append("Audit and standardize NAP (Name, Address, Phone) consistency across major directory citations.")
+
+    if len(recommendations) < 3:
+        recommendations.append("Deploy localized Schema markup across key service pages to enhance search engine rich snippets.")
+    if len(recommendations) < 4:
+        recommendations.append("Publish regular Google Business Profile updates and localized service posts to boost engagement.")
+
+    seen_recs = set()
+    final_recommendations = []
+    for r in recommendations:
+        if r not in seen_recs:
+            seen_recs.add(r)
+            final_recommendations.append(r)
+        if len(final_recommendations) == 4:
+            break
+
     return {
         "title": f"Local SEO Executive Performance Report — {project.name}",
         "generated_at": datetime.now(timezone.utc).isoformat(),
@@ -57,25 +124,16 @@ async def generate_executive_report(
                 "maps": project.maps_score,
             }
         },
-        "executive_summary": (
-            (f"{project.name} has an overall Local SEO Health Score of {project.health_score}/100. " if project.health_score is not None else f"{project.name} Local SEO Health Score is awaiting initial audit. ") +
-            f"The business currently tracks {len(keywords)} local search terms with strong performance across regional map packs. "
-            f"During the last 30 days, {len([t for t in tasks if t.status == 'completed'])} technical and on-page optimization tasks were completed."
-        ),
+        "executive_summary": executive_summary,
         "metrics": {
-            "total_keywords": len(keywords),
-            "top_3_keywords": len([k for k in keywords if k.current_rank and k.current_rank <= 3]),
-            "top_10_keywords": len([k for k in keywords if k.current_rank and k.current_rank <= 10]),
-            "total_reviews": len(reviews),
-            "avg_rating": round(sum(r.rating for r in reviews) / len(reviews), 1) if reviews else 0.0,
+            "total_keywords": total_kw,
+            "top_3_keywords": top_3,
+            "top_10_keywords": top_10,
+            "total_reviews": total_revs,
+            "avg_rating": avg_rating,
             "nap_consistency_score": nap.nap_score if (nap and nap.nap_score is not None) else project.citations_score,
-            "open_issues_count": len([i for i in issues if i.status == 'open']),
-            "completed_tasks_count": len([t for t in tasks if t.status == 'completed'])
+            "open_issues_count": open_issues,
+            "completed_tasks_count": completed_tasks
         },
-        "next_month_recommendations": [
-            "Deploy localized Schema markup across sub-service pages.",
-            "Continue proactive review generation campaign to maintain Top 3 Local Pack density.",
-            "Fix remaining NAP citations on directory sources.",
-            "Publish weekly GBP photo updates and localized service posts."
-        ]
+        "next_month_recommendations": final_recommendations
     }

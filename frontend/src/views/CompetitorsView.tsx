@@ -47,9 +47,7 @@ export const CompetitorsView: React.FC = () => {
       await api.post('/local-seo/competitors', {
         project_id: activeProject.id,
         name: name.trim(),
-        domain: domain.trim() || undefined,
-        rating: 0.0,
-        reviews_count: 0
+        domain: domain.trim() || undefined
       });
       setName('');
       setDomain('');

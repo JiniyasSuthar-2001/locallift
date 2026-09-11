@@ -185,7 +185,7 @@ async def add_competitor(
         name=comp_in.name,
         domain=clean_domain,
         gbp_name=comp_in.gbp_name,
-        rating=comp_in.rating or 0.0,
+        rating=comp_in.rating,
         reviews_count=comp_in.reviews_count or 0,
         local_visibility_score=0,
         top_keywords_count=0

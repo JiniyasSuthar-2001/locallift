@@ -1,19 +1,82 @@
-import React, { useState } from 'react';
-import { Settings, Link2, Sliders, CheckCircle2, Store } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import {
+  Settings,
+  Link2,
+  Sliders,
+  CheckCircle2,
+  AlertCircle,
+  Building2,
+  Globe,
+  Tag,
+  Shield,
+  Layers,
+  Sparkles,
+  Info
+} from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useProject } from '../context/ProjectContext';
 import { ConnectionsView } from './ConnectionsView';
+import { EmptyState } from '../components/ui/EmptyState';
+import api from '../api/client';
+import { getErrorMessage } from '../utils/error';
 
 export const SettingsView: React.FC = () => {
   const { user } = useAuth();
-  const { activeProject } = useProject();
+  const { activeProject, refreshProjects } = useProject();
   const [activeTab, setActiveTab] = useState<'general' | 'connections'>('connections');
-  const [saved, setSaved] = useState(false);
 
-  const handleSave = (e: React.FormEvent) => {
+  // Form State
+  const [name, setName] = useState('');
+  const [domain, setDomain] = useState('');
+  const [primaryCategory, setPrimaryCategory] = useState('');
+  const [country, setCountry] = useState('United States');
+
+  // Request State
+  const [isSaving, setIsSaving] = useState(false);
+  const [successMsg, setSuccessMsg] = useState<string | null>(null);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+
+  // Sync form state when activeProject changes
+  useEffect(() => {
+    if (activeProject) {
+      setName(activeProject.name || '');
+      setDomain(activeProject.domain || '');
+      setPrimaryCategory(activeProject.primary_category || 'Local Business');
+      setCountry(activeProject.country || 'United States');
+      setSuccessMsg(null);
+      setErrorMsg(null);
+    }
+  }, [activeProject?.id, activeProject?.name, activeProject?.domain, activeProject?.primary_category, activeProject?.country]);
+
+  const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
-    setSaved(true);
-    setTimeout(() => setSaved(false), 2000);
+    if (!activeProject) return;
+    if (!name.trim() || !domain.trim()) {
+      setErrorMsg('Project name and target domain are required.');
+      return;
+    }
+
+    setIsSaving(true);
+    setErrorMsg(null);
+    setSuccessMsg(null);
+
+    try {
+      const cleanDomain = domain.trim().replace(/^https?:\/\//, '').replace(/\/+$/, '');
+      const resp = await api.put(`/projects/${activeProject.id}`, {
+        name: name.trim(),
+        domain: cleanDomain,
+        primary_category: primaryCategory.trim() || 'Local Business',
+        country: country.trim() || 'United States'
+      });
+
+      await refreshProjects(activeProject.id);
+      setSuccessMsg('Project configuration saved and synchronized successfully.');
+      setTimeout(() => setSuccessMsg(null), 4000);
+    } catch (err: any) {
+      setErrorMsg(getErrorMessage(err, 'Failed to update project settings.'));
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   return (
@@ -25,7 +88,7 @@ export const SettingsView: React.FC = () => {
           <span>Platform & Organization Settings</span>
         </h1>
         <p className="text-xs text-slate-500 mt-1">
-          Manage agency connections, Google multi-service integrations, scheduled audits, and account preferences.
+          Manage agency connections, Google multi-service integrations, project details, and audit execution preferences.
         </p>
       </div>
 
@@ -52,7 +115,7 @@ export const SettingsView: React.FC = () => {
           }`}
         >
           <Sliders className="w-4 h-4" />
-          <span>General & Audit Schedules</span>
+          <span>General & Project Settings</span>
         </button>
       </div>
 
@@ -60,69 +123,171 @@ export const SettingsView: React.FC = () => {
       {activeTab === 'connections' && <ConnectionsView />}
 
       {activeTab === 'general' && (
-        <div className="card-vibrant p-6 space-y-6">
-          <form onSubmit={handleSave} className="space-y-5 text-xs">
-            <div>
-              <h3 className="text-sm font-black text-slate-900 mb-3">Organization & Project Details</h3>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <label className="text-slate-700 font-bold block mb-1">Active Project Name</label>
-                  <input
-                    type="text"
-                    defaultValue={activeProject?.name || ''}
-                    placeholder="e.g. My Business"
-                    className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-slate-900 focus:outline-none focus:border-purple-500 font-medium"
-                  />
+        <div className="space-y-6">
+          {!activeProject ? (
+            <EmptyState
+              icon={Building2}
+              badge="Project Settings"
+              title="No Active Project Selected"
+              description="Select or create a business project to configure project parameters and domain targets."
+            />
+          ) : (
+            <>
+              {/* Notifications */}
+              {successMsg && (
+                <div className="p-3.5 bg-emerald-50 border border-emerald-200 rounded-xl flex items-center space-x-2 text-xs text-emerald-800 animate-fade-in">
+                  <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-600" />
+                  <span className="flex-1 font-medium">{successMsg}</span>
+                  <button onClick={() => setSuccessMsg(null)} aria-label="Dismiss notification" className="text-emerald-500 hover:text-emerald-800 text-xs font-bold">✕</button>
                 </div>
-                <div>
-                  <label className="text-slate-700 font-bold block mb-1">Account Email</label>
-                  <input
-                    type="email"
-                    disabled
-                    defaultValue={user?.email || ''}
-                    placeholder="user@example.com"
-                    className="w-full bg-slate-100 border border-slate-200 rounded-xl p-2.5 text-slate-500 font-medium"
-                  />
+              )}
+
+              {errorMsg && (
+                <div className="p-3.5 bg-rose-50 border border-rose-200 rounded-xl flex items-center space-x-2 text-xs text-rose-700 animate-fade-in">
+                  <AlertCircle className="w-4 h-4 shrink-0 text-rose-600" />
+                  <span className="flex-1 font-medium">{errorMsg}</span>
+                  <button onClick={() => setErrorMsg(null)} aria-label="Dismiss error notification" className="text-rose-500 hover:text-rose-800 text-xs font-bold">✕</button>
                 </div>
-              </div>
-            </div>
+              )}
 
-            <div className="pt-4 border-t border-slate-200">
-              <h3 className="text-sm font-black text-slate-900 mb-3">Automated Scheduled Audits</h3>
-              <div className="space-y-2.5">
-                <label className="flex items-center space-x-3 cursor-pointer">
-                  <input type="checkbox" defaultChecked className="rounded border-slate-300 text-purple-600 focus:ring-purple-500" />
-                  <span className="text-slate-800 font-medium">Daily local keyword rank tracking and GBP change monitoring</span>
-                </label>
-                <label className="flex items-center space-x-3 cursor-pointer">
-                  <input type="checkbox" defaultChecked className="rounded border-slate-300 text-purple-600 focus:ring-purple-500" />
-                  <span className="text-slate-800 font-medium">Weekly automated website technical crawl & schema validation</span>
-                </label>
-                <label className="flex items-center space-x-3 cursor-pointer">
-                  <input type="checkbox" defaultChecked className="rounded border-slate-300 text-purple-600 focus:ring-purple-500" />
-                  <span className="text-slate-800 font-medium">Monthly executive performance PDF report compilation</span>
-                </label>
-              </div>
-            </div>
+              <div className="card-vibrant p-6 space-y-6 bg-white border border-slate-200 rounded-2xl shadow-xs">
+                <form onSubmit={handleSave} className="space-y-6 text-xs">
+                  <div>
+                    <h3 className="text-sm font-black text-slate-900 mb-1 flex items-center space-x-2">
+                      <Building2 className="w-4 h-4 text-purple-600" />
+                      <span>Active Project Configuration</span>
+                    </h3>
+                    <p className="text-[11px] text-slate-500 mb-4">
+                      Update metadata, primary business taxonomy, and domain bindings for the current project.
+                    </p>
 
-            <div className="flex items-center justify-between pt-4 border-t border-slate-200">
-              {saved ? (
-                <span className="text-xs text-emerald-700 font-bold flex items-center space-x-1">
-                  <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-                  <span>Settings saved successfully</span>
-                </span>
-              ) : <span />}
-              <button
-                type="submit"
-                className="px-6 py-2.5 btn-vibrant-primary rounded-xl text-xs font-bold shadow-md transition-all"
-              >
-                Save Configuration
-              </button>
-            </div>
-          </form>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <div>
+                        <label className="text-slate-700 font-bold block mb-1">Active Project Name</label>
+                        <input
+                          type="text"
+                          required
+                          value={name}
+                          onChange={(e) => setName(e.target.value)}
+                          placeholder="e.g. Apex Electrical Services"
+                          className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-slate-900 focus:outline-none focus:border-purple-500 font-medium"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="text-slate-700 font-bold block mb-1">Target Website Domain</label>
+                        <input
+                          type="text"
+                          required
+                          value={domain}
+                          onChange={(e) => setDomain(e.target.value)}
+                          placeholder="e.g. apexelectrical.com.au"
+                          className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-slate-900 focus:outline-none focus:border-purple-500 font-medium"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="text-slate-700 font-bold block mb-1">Primary Business Category</label>
+                        <input
+                          type="text"
+                          value={primaryCategory}
+                          onChange={(e) => setPrimaryCategory(e.target.value)}
+                          placeholder="e.g. Electrician, Plumber, Dental Clinic"
+                          className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-slate-900 focus:outline-none focus:border-purple-500 font-medium"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="text-slate-700 font-bold block mb-1">Target Country</label>
+                        <input
+                          type="text"
+                          value={country}
+                          onChange={(e) => setCountry(e.target.value)}
+                          placeholder="e.g. United States, Australia, United Kingdom"
+                          className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-slate-900 focus:outline-none focus:border-purple-500 font-medium"
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="pt-4 border-t border-slate-200">
+                    <h3 className="text-sm font-black text-slate-900 mb-1 flex items-center space-x-2">
+                      <Shield className="w-4 h-4 text-purple-600" />
+                      <span>Account & Organization Reference</span>
+                    </h3>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-3">
+                      <div>
+                        <label className="text-slate-700 font-bold block mb-1">Account Email</label>
+                        <input
+                          type="email"
+                          disabled
+                          value={user?.email || ''}
+                          className="w-full bg-slate-100 border border-slate-200 rounded-xl p-2.5 text-slate-500 font-medium cursor-not-allowed"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-slate-700 font-bold block mb-1">User Role</label>
+                        <input
+                          type="text"
+                          disabled
+                          value={user?.role || 'Admin'}
+                          className="w-full bg-slate-100 border border-slate-200 rounded-xl p-2.5 text-slate-500 font-medium cursor-not-allowed"
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Honest Audit Engine & Architecture Information */}
+                  <div className="pt-4 border-t border-slate-200">
+                    <h3 className="text-sm font-black text-slate-900 mb-1 flex items-center space-x-2">
+                      <Layers className="w-4 h-4 text-purple-600" />
+                      <span>Audit & Rank Tracking Engine Status</span>
+                    </h3>
+                    <p className="text-[11px] text-slate-500 mb-3">
+                      LocalLift executes live on-demand website crawling and SERP ranking scans with direct audit verifications.
+                    </p>
+
+                    <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 space-y-2.5 text-[11px] text-slate-700">
+                      <div className="flex items-start space-x-2.5">
+                        <Info className="w-4 h-4 text-purple-600 shrink-0 mt-0.5" />
+                        <div>
+                          <span className="font-bold text-slate-900">On-Demand Engine: </span>
+                          <span>
+                            Technical website crawls, NAP consistency audits, Schema validations, and Geo-Grid SERP scans run on-demand via the respective audit tools.
+                          </span>
+                        </div>
+                      </div>
+                      <div className="flex items-start space-x-2.5">
+                        <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
+                        <div>
+                          <span className="font-bold text-slate-900">Data Integrity Safeguard: </span>
+                          <span>
+                            No fabricated fallback metrics or mock rank scores are used. Incomplete audits honestly report an awaiting status until a live audit is executed.
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center justify-end pt-4 border-t border-slate-200">
+                    <button
+                      type="submit"
+                      disabled={isSaving}
+                      className="px-6 py-2.5 btn-vibrant-primary rounded-xl text-xs font-bold shadow-md transition-all disabled:opacity-50 flex items-center space-x-2"
+                    >
+                      {isSaving ? (
+                        <span>Saving...</span>
+                      ) : (
+                        <span>Save Configuration</span>
+                      )}
+                    </button>
+                  </div>
+                </form>
+              </div>
+            </>
+          )}
         </div>
       )}
     </div>
   );
 };
-

@@ -138,7 +138,11 @@ export const ReportsView: React.FC = () => {
 
                 <div className="bg-slate-50 p-3 rounded-xl border border-slate-200">
                   <span className="text-slate-500 text-[10px] font-bold uppercase block">Reputation Score</span>
-                  <span className="text-lg font-black text-amber-500 mt-0.5 block">{reportData.metrics?.avg_rating ?? 0} ★ Rating</span>
+                  <span className="text-lg font-black text-amber-500 mt-0.5 block">
+                    {reportData.metrics?.avg_rating !== null && reportData.metrics?.avg_rating !== undefined
+                      ? `${reportData.metrics.avg_rating} ★ Rating`
+                      : '—'}
+                  </span>
                   <span className="text-[11px] text-slate-500 font-medium">{reportData.metrics?.total_reviews ?? 0} Verified Reviews</span>
                 </div>
 
@@ -153,7 +157,11 @@ export const ReportsView: React.FC = () => {
                 <div className="bg-slate-50 p-3 rounded-xl border border-slate-200">
                   <span className="text-slate-500 text-[10px] font-bold uppercase block">Optimizations Completed</span>
                   <span className="text-lg font-black text-slate-900 mt-0.5 block">{reportData.metrics?.completed_tasks_count ?? 0} Tasks</span>
-                  <span className="text-[11px] text-emerald-700 font-bold">Zero Critical Blockers</span>
+                  <span className="text-[11px] font-bold text-slate-600">
+                    {(reportData.metrics?.open_issues_count ?? 0) === 0
+                      ? 'Zero Critical Blockers'
+                      : `${reportData.metrics?.open_issues_count} Open Issues`}
+                  </span>
                 </div>
               </div>
             </div>
