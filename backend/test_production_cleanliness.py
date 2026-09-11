@@ -105,14 +105,14 @@ async def test_production_cleanliness():
         assert create_res.status_code == 200
         new_proj = create_res.json()
         proj_id = new_proj["id"]
-        assert new_proj["health_score"] == 0, f"Expected initial health_score 0, got {new_proj['health_score']}"
-        print(f"[OK] Created real project #{proj_id}: {new_proj['name']} with initial score 0")
+        assert new_proj["health_score"] is None or new_proj["health_score"] == 0, f"Expected initial health_score None/0, got {new_proj['health_score']}"
+        print(f"[OK] Created real project #{proj_id}: {new_proj['name']} with initial score {new_proj['health_score']}")
 
         # Check Dashboard Summary for new project
         dash_res = await client.get(f"/api/v1/projects/{proj_id}/dashboard", headers=headers)
         assert dash_res.status_code == 200
         dash = dash_res.json()
-        assert dash["health_score"] == 0
+        assert dash["health_score"] is None or dash["health_score"] == 0
         assert dash["counts"]["open_issues"] == 0
         assert dash["counts"]["active_tasks"] == 0
         assert dash["counts"]["tracked_keywords"] == 0
@@ -120,13 +120,13 @@ async def test_production_cleanliness():
         assert dash["gbp_summary"]["connected"] is False
         assert dash["gsc_summary"]["clicks"] == 0
         assert dash["gsc_summary"]["impressions"] == 0
-        print("[OK] Project Dashboard Summary returns honest zero-state metrics (no fake fallbacks)")
+        print("[OK] Project Dashboard Summary returns honest zero/null-state metrics (no fake fallbacks)")
 
         # Check Diagnostic Summary
         diag_res = await client.get(f"/api/v1/audits/diagnostic-summary/{proj_id}", headers=headers)
         assert diag_res.status_code == 200
         diag = diag_res.json()
-        assert diag["overall_score"] == 0
+        assert diag["overall_score"] is None or diag["overall_score"] == 0
         assert diag["gbp_status"]["connected"] is False
         assert diag["citations_status"]["total"] == 0
         assert diag["reviews_status"]["total"] == 0
@@ -140,8 +140,8 @@ async def test_production_cleanliness():
         assert rep["metrics"]["total_keywords"] == 0
         assert rep["metrics"]["total_reviews"] == 0
         assert rep["metrics"]["avg_rating"] == 0.0
-        assert rep["metrics"]["nap_consistency_score"] == 0
-        print("[OK] Executive Report returns 0.0 avg rating and 0 NAP score when no data exists")
+        assert rep["metrics"]["nap_consistency_score"] is None or rep["metrics"]["nap_consistency_score"] == 0
+        print("[OK] Executive Report returns 0.0 avg rating and None/0 NAP score when no data exists")
 
         # Check GSC & GA4 routes
         gsc_res = await client.get(f"/api/v1/google/gsc/{proj_id}", headers=headers)

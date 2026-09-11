@@ -100,7 +100,7 @@ export const OnboardingWizard: React.FC = () => {
   };
 
   return (
-    <div className="max-w-3xl mx-auto py-6 space-y-8 select-none">
+    <div className="max-w-3xl mx-auto py-6 space-y-8">
       {/* Stepper */}
       <div className="flex items-center justify-between relative">
         <div className="absolute left-0 top-1/2 -translate-y-1/2 w-full h-0.5 bg-slate-200 -z-0" />
@@ -178,9 +178,10 @@ export const OnboardingWizard: React.FC = () => {
             <button
               onClick={() => {
                 if (!category.trim()) {
-                  alert('Please select a Primary Business Category to continue.');
+                  setErrorMessage('Please select a Primary Business Category to continue.');
                   return;
                 }
+                setErrorMessage(null);
                 setStep(2);
               }}
               className="flex items-center space-x-2 px-6 py-2.5 btn-vibrant-primary rounded-xl font-bold text-xs shadow-md"

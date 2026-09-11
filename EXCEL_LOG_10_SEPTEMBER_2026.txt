@@ -1,0 +1,1396 @@
+Date	Feature / Module	Summary of Work	1. CRITICAL SECURITY HARDENING & VULNERABILITY REMEDIATIONS	2. MASTER REPORTING & MULTI-FORMAT AI EXPORT PIPELINE	3. SEO AUDIT ENGINE & HEALTH SCORE TRUTHFULNESS	4. AI INTELLIGENCE & INTEGRATIONS ENGINE	5. FRONTEND & WORKFLOW STANDARDIZATION
+10 September 2026	SEO Audit & Data Integrity Engine	Eliminated all fabricated/fallback metrics across frontend and backend; enforced strict data truthfulness	Hardened project access validation across audit, report, and project routes; prevented unauthorized metric leakage; eliminated arbitrary fallback vulnerabilities in API responses	Updated Executive Summary generation to dynamically report un-audited state instead of 'None/100'; updated NAP consistency score computation to use real audit data without fallback heuristics (removed fake 85% default)	Removed all fake fallback defaults (78, 85, 80, 75, 70, 88, 72, 100) from SQLAlchemy DB models (Project, NAPRecord, Competitor, Citation) and Pydantic schemas; implemented 6-state metric model (Loading, Null/Awaiting Audit, Real Zero, Real Value, Disconnected, API Error); preserved genuine zero scores without coercion	Fixed LLM diagnostic context in ai.py to pass raw health_score (preventing false 0-score hallucinations on un-audited projects); verified Google Business Profile, GSC, and GA4 connections status handling for unlinked accounts	Created frontend metrics utility (metrics.ts) with strict zero vs null distinction (isMetricAvailable, formatScore, formatScoreOutOf100, formatPercentage); updated Dashboard, WebsiteAuditView, NAPConsistencyView, ReportsView, MyProjectsView, HealthScoreRing, Header, SchemaGeneratorView, GSCView, GA4View, CompetitorsView
+10 September 2026	Dashboard & Overview Page	Audited and refactored core dashboard gauges, score cards, and pillar breakdown components	Sanitized project summary data pipeline and ensured API error states do not populate fallback metrics or hide network failures	Connected dynamic health status indicators to report generator; ensured multi-tenant score integrity across organizations	Replaced hardcoded pillar defaults (technical: 80, onpage: 80, local: 75, citations: 70, reviews: 85, gbp: 70) with genuine null/zero handling; rendered 'Awaiting audit' with neutral 0% bar when uncalculated; overall gauge renders '—' and 'Awaiting Audit' badge instead of fake average	Synced real-time GBP insight counts (calls, website clicks, search impressions) to display real data or '—' when disconnected instead of fake percentages	Standardized dashboard cards to display honest data states; preserved all responsive CSS, gradients, typography, and card animations without layout distortion
+10 September 2026	Website & Local SEO Audit Page	Refactored 6-pillar scoring grid, issue remediation cards, and local signal analyzers	Enforced strict project ownership checks on manual crawl triggers and audit report exports	Structured audit findings to supply truthful evidence, why-it-matters explanations, and solution steps for export pipelines	Removed 'summary?.overall_score || activeProject.health_score || 72' fallback; updated all 6 pillar cards (Crawl Health, On-Page, Schema JSON-LD, GBP Alignment, Citations NAP, Reviews) to display 'Awaiting audit' when scores are uncalculated; preserved genuine 0/100	Integrated live discrepancy matrix (Website vs GBP vs Citations) for NAP verification without synthetic score inflation	Added neutral progress bar tracks and honest badge states across all audit view sub-components
+10 September 2026	NAP Consistency & Citations Module	Fixed citation directory consistency scoring, mismatch detection, and canonical NAP handling	Hardened custom citation creation endpoint; prevented auto-populating unverified domain authority scores (removed fake 50 DA default)	Unified NAP score serialization with client report generator; ensured accurate mismatch listing in audit exports	Removed 'activeProject?.citations_score || 85' fallback; rendered 'Not yet checked' badge and '—' for consistency percentage when un-audited; preserved real 0% consistency on severe mismatch cases	Updated citation status synchronizer and verified NAP alignment against Google Business Profile and local directory listings	Refactored NAP consistency progress bars and directory tables to handle null/zero metrics seamlessly
+10 September 2026	Reports & Client Export Engine	Audited client-facing PDF/Web reporting engine and executive summaries for 100% data integrity	Secured report generation endpoints and ensured client-shared reports only expose verified data records	Eliminated 'nap_consistency_score || 100% Uniform' fallback; added dynamic text interpolation explaining initial audit is pending when health score is null; formatted verified metrics truthfully	Synced report pillar metrics directly to backend audit database; prevented uncalculated projects from receiving arbitrary health grades	Integrated AI summary builder with live keyword rankings (Top 3, Top 10), review counts, average rating, and completed task tallies	Added honest 'Awaiting Audit' status badges and neutral visual placeholders in client report preview
+10 September 2026	Google Ecosystem & Analytics Hub (GBP/GSC/GA4)	Refactored Google Search Console, Google Analytics 4, and GBP integration views	Hardened OAuth token refresh lifecycles and secured Google API connection endpoints against unauthorized access	Provided structured data feeds from Google Search Console (clicks, impressions, CTR, position) and GA4 (users, sessions, conversions) for downstream reports	Replaced fake 0-traffic fallbacks on disconnected accounts with honest '—' and 'Not Connected' status badges; preserved genuine 0 clicks on verified connected accounts	Hardened Public Maps short-link parser (maps.app.goo.gl) and OAuth callback workflows; removed health_score=75 auto-creation defaults in connections_service.py	Updated GSCView and GA4View KPI cards, query tables, and landing page tables to clearly reflect connection status
+10 September 2026	Automated Test & Regression Suites	Built end-to-end regression suites for metric truthfulness and data integrity verification	Verified sandbox execution constraints and ensured test suites validate production integrity without mock leakage	Validated that reports and audit exports never serialize un-audited scores as non-null integers in export schemas	Built backend/test_data_integrity.py testing Project/NAP/Competitor/Citation models, Pydantic schemas, strict zero preservation, and null serialization	Verified AI prompt context in ai.py receives exact nullable health_score; tested GBP connection state verification	Created frontend/src/utils/metrics.test.ts testing isMetricAvailable, formatScore, formatScoreOutOf100, and formatPercentage across null, undefined, 0, 82, and 100
+ANTIGRAVITY — FIX MASTER AI CONTROLS, CUSTOMER AI ENFORCEMENT & ACCOUNT STATUS
+
+IMPORTANT:
+This is an implementation task.
+
+Do NOT just explain the problem.
+Do NOT make UI-only changes.
+Inspect the existing code first, then implement the fixes described below.
+
+The application has two sides:
+
+1. MASTER ADMIN
+2. CUSTOMER APPLICATION
+
+They share the same FastAPI backend.
+
+The Master side currently has controls for customer AI access, AI limits, credits, and global AI controls.
+
+The confirmed problem is that these Master controls are NOT actually enforced by the customer AI generation endpoints.
+
+============================================================
+PART 1 — INSPECT BEFORE CHANGING ANYTHING
+============================================================
+
+Before modifying code, inspect the actual repository.
+
+Relevant areas already identified include:
+
+Backend:
+
+    backend/app/routers/ai.py
+    backend/app/services/ai_solution_service.py
+    backend/app/services/master_service.py
+    backend/app/routers/master.py
+    backend/app/services/credit_service.py
+    backend/app/services/ai_usage_service.py
+    backend/app/config/auth.py
+
+Also inspect:
+
+    User model
+    Project model
+    AI wallet/credit model
+    Master AI control model
+    subscription/plan models
+    authentication/session system
+    migrations
+    all AI-related routers/services
+    all CreditService call sites
+    all AIUsageService call sites
+
+Do not assume the above file names are unchanged.
+
+Search the entire backend for:
+
+    CreditService
+    AIUsageService
+    can_consume_ai_page
+    wallet
+    daily_limit
+    monthly_limit
+    per_request_limit
+    is_enabled
+    kill switch
+    global AI control
+    AI control
+    AI usage
+    credits
+    /ai/chat
+    /ai/solve
+    /ai/problem-solution
+
+Also inspect every customer-facing AI endpoint.
+
+The goal is to understand the existing architecture before changing it.
+
+============================================================
+PART 2 — CONFIRMED CURRENT BUG
+============================================================
+
+The current architecture has Master controls such as:
+
+    PATCH /api/master/customers/{id}/ai-settings
+
+which can configure:
+
+    wallet.is_enabled
+    daily_limit
+    monthly_limit
+    per_request_limit
+
+There is also Master-level AI control:
+
+    PATCH /api/master/ai/control
+
+and credit allocation/revocation.
+
+However, customer AI generation endpoints currently call AI generation services without enforcing those Master controls.
+
+Known affected areas include:
+
+    POST /{project_id}/ai/chat
+    POST /{project_id}/ai/solve
+    POST /{project_id}/ai/problem-solution
+
+and any other customer AI generation endpoint discovered during the audit.
+
+The current AI generation path appears to rely primarily on:
+
+    AIUsageService.can_consume_ai_page
+
+and a lifetime request/page counter.
+
+That is NOT sufficient.
+
+The customer's actual Master-controlled AI permissions, wallet limits, credits, and global AI kill switch must be enforced before an AI generation request is sent to the provider.
+
+============================================================
+PART 3 — REQUIRED AI REQUEST FLOW
+============================================================
+
+Implement one centralized AI authorization/consumption gate.
+
+The architecture should conceptually become:
+
+    Customer AI Request
+            ↓
+    Authenticate Customer
+            ↓
+    Verify Project Ownership/Access
+            ↓
+    Verify Customer Account Status
+            ↓
+    Verify Global AI Control
+            ↓
+    Verify Customer AI Enabled
+            ↓
+    Verify Customer Daily Limit
+            ↓
+    Verify Customer Monthly Limit
+            ↓
+    Verify Per-Request Limit
+            ↓
+    Verify Available Credits / Wallet
+            ↓
+    Reserve or consume usage
+            ↓
+    Call AI Provider
+            ↓
+    Record actual usage
+            ↓
+    Deduct actual credits/cost
+            ↓
+    Return AI result
+
+Do NOT call the AI provider before the authorization/credit checks.
+
+============================================================
+PART 4 — CREATE ONE CENTRAL AI GATE
+============================================================
+
+Do not duplicate AI permission logic inside:
+
+    /ai/chat
+    /ai/solve
+    /ai/problem-solution
+
+and other endpoints.
+
+Create or extend a centralized service.
+
+Possible conceptual name:
+
+    AIAccessService
+
+or:
+
+    AIBillingService
+    AIRequestGate
+    AIConsumptionService
+
+Use the existing project architecture if an equivalent service already exists.
+
+The centralized service should determine whether an AI request is allowed.
+
+It should return structured information such as:
+
+    allowed
+    reason
+    remaining_daily
+    remaining_monthly
+    remaining_credits
+    estimated_cost
+    applicable_limit
+
+Do not expose internal implementation details unnecessarily to the frontend.
+
+============================================================
+PART 5 — GLOBAL MASTER AI KILL SWITCH
+============================================================
+
+The Master AI global control must actually affect customer AI generation.
+
+If Master disables global AI:
+
+    Customer AI generation = BLOCKED
+
+This must apply to all customer AI generation endpoints.
+
+Examples:
+
+    /ai/chat
+    /ai/solve
+    /ai/problem-solution
+    future AI generation endpoints
+
+Do not rely on the frontend showing:
+
+    AI unavailable
+
+The backend must reject the request.
+
+Expected HTTP behavior should use the application's existing conventions.
+
+Prefer a clear 403/402-style business response where appropriate rather than pretending it is a server error.
+
+The response should conceptually say:
+
+    AI services are currently unavailable.
+
+Do not expose internal Master control details.
+
+============================================================
+PART 6 — CUSTOMER AI ENABLE/DISABLE
+============================================================
+
+When Master disables AI for a specific customer:
+
+    wallet.is_enabled = false
+
+that customer's AI requests must be rejected.
+
+Other customers must remain unaffected.
+
+Example:
+
+    Customer A → AI disabled
+    Customer B → AI enabled
+
+Customer A:
+
+    POST /ai/solve
+    → rejected
+
+Customer B:
+
+    POST /ai/solve
+    → allowed
+
+Do not use a global flag for customer-specific settings.
+
+============================================================
+PART 7 — DAILY AI LIMIT
+============================================================
+
+The Master can configure:
+
+    daily_limit
+
+This must be enforced against real AI usage.
+
+Example:
+
+    daily_limit = 10
+
+After the customer consumes 10 allowed AI requests/pages according to the project's actual billing unit:
+
+    next request → rejected
+
+Do not merely display:
+
+    10 / 10
+
+in the UI.
+
+The backend must enforce it.
+
+Use the project's actual intended AI usage unit.
+
+Do not invent a new billing unit without first inspecting the existing implementation.
+
+============================================================
+PART 8 — MONTHLY AI LIMIT
+============================================================
+
+The Master can configure:
+
+    monthly_limit
+
+Enforce it using the project's actual monthly usage period.
+
+For example:
+
+    monthly_limit = 500
+
+Once the customer reaches the configured monthly limit:
+
+    AI generation → blocked
+
+Make sure the period calculation is correct.
+
+Use server-side time.
+
+Do not trust the browser's date.
+
+Handle month boundaries correctly.
+
+============================================================
+PART 9 — PER-REQUEST LIMIT
+============================================================
+
+The Master can configure:
+
+    per_request_limit
+
+This must be enforced for a single AI request.
+
+For example, if:
+
+    per_request_limit = X
+
+and the requested operation would exceed the allowed request budget:
+
+    reject before calling provider
+
+Do not allow a customer to bypass this by splitting requests through another AI endpoint.
+
+Apply the same centralized gate across all customer AI generation paths.
+
+============================================================
+PART 10 — CREDIT/WALLET ENFORCEMENT
+============================================================
+
+Master can allocate/revoke credits.
+
+Those credits must actually affect AI usage.
+
+Currently the system appears to expose wallet information but the generation path does not consistently debit the wallet.
+
+Fix this.
+
+The correct flow should be:
+
+    AI request
+        ↓
+    Check available credits
+        ↓
+    Reserve/authorize expected consumption
+        ↓
+    Provider request
+        ↓
+    Determine actual usage/cost
+        ↓
+    Finalize actual credit deduction
+
+Do NOT deduct credits if the AI provider request never happens.
+
+Do NOT deduct credits for authentication failures.
+
+Do NOT deduct credits for unauthorized project access.
+
+Do NOT deduct credits for requests rejected by Master controls before provider execution.
+
+If the provider request fails, follow the existing billing architecture, but do not silently charge a failed request unless the provider actually incurs billable usage.
+
+Inspect existing billing/usage logic before deciding exact accounting behavior.
+
+============================================================
+PART 11 — PREVENT RACE CONDITIONS
+============================================================
+
+The AI credit system must be safe when multiple requests arrive simultaneously.
+
+Example:
+
+Customer has:
+
+    1 credit
+
+Two requests arrive at exactly the same time.
+
+Do NOT allow both requests to see:
+
+    1 credit available
+
+and both spend it.
+
+Use an appropriate atomic transaction/locking/reservation mechanism supported by the current database architecture.
+
+Do not solve this with frontend button disabling.
+
+Frontend disabling is only UX.
+
+Backend must remain correct under concurrent requests.
+
+============================================================
+PART 12 — AI USAGE TRACKING
+============================================================
+
+Keep the existing AI usage tracking if possible.
+
+Track actual generation usage.
+
+Where available, record:
+
+    user
+    project
+    AI task
+    provider
+    model
+    input tokens
+    output tokens
+    cached tokens
+    total tokens
+    estimated cost
+    actual cost
+    timestamp
+    success/failure
+
+Do not fabricate token counts.
+
+Do not fabricate costs.
+
+If the provider does not return a value, store NULL/unknown rather than inventing one.
+
+============================================================
+PART 13 — EXISTING 500-LIMIT MUST BE REVIEWED
+============================================================
+
+There is currently an AI usage gate involving:
+
+    AIUsageService.can_consume_ai_page
+
+and a flat lifetime request/page counter.
+
+Do NOT blindly delete this.
+
+First determine what it is intended to represent.
+
+If it represents the product's AI page allowance:
+
+    preserve it
+
+but integrate it correctly with the new Master-controlled limits.
+
+The final authorization should account for all applicable restrictions.
+
+Conceptually:
+
+    Global AI enabled?
+          ↓
+    Customer AI enabled?
+          ↓
+    Product/plan allowance?
+          ↓
+    Master daily limit?
+          ↓
+    Master monthly limit?
+          ↓
+    Per-request limit?
+          ↓
+    Available credits?
+          ↓
+    ALLOW
+
+Do not accidentally remove an existing product-level safety limit.
+
+============================================================
+PART 14 — MASTER AI CONTROL UI
+============================================================
+
+Inspect the existing Master AI Control UI.
+
+Do not redesign it unnecessarily.
+
+Verify that controls such as:
+
+    Global AI Enabled
+    Customer AI Enabled
+    Daily Limit
+    Monthly Limit
+    Per Request Limit
+    Credits
+
+actually correspond to backend values.
+
+If the UI says:
+
+    AI Disabled
+
+the backend must enforce it.
+
+If the UI says:
+
+    Daily Limit: 10
+
+the backend must enforce it.
+
+If the UI says:
+
+    Credits: 100
+
+the backend must use the actual wallet balance.
+
+Do not allow UI/backend values to drift.
+
+============================================================
+PART 15 — CUSTOMER AI UI
+============================================================
+
+Inspect the customer AI UI.
+
+When AI is blocked because of Master controls, show a clear user-facing message.
+
+Examples:
+
+Global AI disabled:
+
+    AI services are temporarily unavailable.
+
+Customer AI disabled:
+
+    AI access is currently disabled for this account.
+
+Daily limit:
+
+    Your daily AI usage limit has been reached.
+
+Monthly limit:
+
+    Your monthly AI usage limit has been reached.
+
+Credits:
+
+    You do not have enough AI credits to complete this request.
+
+Per-request limit:
+
+    This AI request exceeds your allowed request limit.
+
+Do NOT show:
+
+    Python traceback
+    SQL error
+    internal service name
+    stack trace
+    raw exception
+    Master-only configuration details
+
+============================================================
+PART 16 — DO NOT EXPOSE MASTER CONTROLS TO CUSTOMERS
+============================================================
+
+Customer API responses must NOT expose sensitive Master configuration unnecessarily.
+
+Do not return:
+
+    Master internal settings
+    Master account identifiers
+    internal permission implementation
+    other customers' limits
+    other customers' credits
+    global internal budget configuration
+
+Only return the minimum information required for the customer UX.
+
+============================================================
+PART 17 — ACCOUNT STATUS STANDARDIZATION
+============================================================
+
+There is a second confirmed inconsistency.
+
+Master authentication currently recognizes statuses such as:
+
+    ACTIVE
+    SUSPENDED
+    DISABLED
+    INACTIVE
+
+But the customer authentication dependency currently only blocks:
+
+    SUSPENDED
+
+This must be standardized.
+
+First inspect every place where account status is created, changed, checked, and displayed.
+
+Do not invent additional statuses unless necessary.
+
+Create one canonical status definition.
+
+Prefer an enum or centralized constants.
+
+Use the project's existing naming convention.
+
+Possible statuses:
+
+    ACTIVE
+    SUSPENDED
+    DISABLED
+    INACTIVE
+
+Only keep statuses that are actually required by the existing application.
+
+============================================================
+PART 18 — CUSTOMER API STATUS CHECK
+============================================================
+
+The common customer authentication dependency must reject any status that should not have active access.
+
+Conceptually:
+
+    ACTIVE
+        → allowed
+
+    SUSPENDED
+        → blocked
+
+    DISABLED
+        → blocked
+
+    INACTIVE
+        → blocked
+
+Use the actual canonical status definitions discovered in the repository.
+
+Do not leave individual routers implementing different rules.
+
+============================================================
+PART 19 — LOGIN STATUS CHECK
+============================================================
+
+Customer login currently appears capable of issuing a token even when the account is suspended because status enforcement occurs later in the API dependency.
+
+Fix this.
+
+Authentication should not successfully establish an active customer session for an account that is not allowed to use the application.
+
+For:
+
+    SUSPENDED
+    DISABLED
+    INACTIVE
+
+where applicable:
+
+    login → rejected
+
+Do not issue an active authentication token/session.
+
+Use a clear authentication/authorization message.
+
+Do not expose unnecessary account internals.
+
+============================================================
+PART 20 — GOOGLE LOGIN STATUS CHECK
+============================================================
+
+Inspect:
+
+    POST /api/auth/google/login
+
+and any other OAuth login path.
+
+Apply the same account-status policy.
+
+A suspended/disabled/inactive Customer must not regain access simply by using Google login.
+
+Do NOT break normal Google login for active users.
+
+============================================================
+PART 21 — MASTER STATUS CHECK
+============================================================
+
+Do not break existing Master status enforcement.
+
+Master accounts should continue to enforce their canonical status rules.
+
+Ensure:
+
+    MASTER
+        ↓
+    account active
+        ↓
+    session valid
+        ↓
+    permission valid
+
+The customer and Master sides should use a consistent security model while retaining their separate role systems.
+
+============================================================
+PART 22 — MASTER CUSTOMER STATUS API
+============================================================
+
+Inspect:
+
+    POST/PATCH /api/master/customers/{id}/status
+
+or the actual endpoint.
+
+Do not allow arbitrary free-text account statuses.
+
+If the UI only supports:
+
+    ACTIVE
+    SUSPENDED
+
+the backend should not accept arbitrary strings such as:
+
+    BANNED
+    RANDOM
+    WHATEVER
+
+unless those are actual canonical statuses.
+
+Validate status input against the canonical status enum.
+
+============================================================
+PART 23 — MASTER → CUSTOMER AI RELATIONSHIP
+============================================================
+
+The final architecture must clearly separate:
+
+MASTER AUTHORITY
+
+from
+
+CUSTOMER DATA.
+
+Master controls:
+
+    Customer AI access
+    Customer AI limits
+    Customer credits
+    Global AI availability
+
+Customer requests:
+
+    must pass those controls
+
+But Customer must never gain access to Master APIs merely because it uses AI endpoints.
+
+Keep authorization directional:
+
+    MASTER
+        ↓
+    controls
+
+    CUSTOMER
+        ↓
+    consumes according to policy
+
+============================================================
+PART 24 — PROJECT AUTHORIZATION
+============================================================
+
+Do not accidentally weaken project authorization while modifying AI endpoints.
+
+Every AI endpoint must continue to verify:
+
+    authenticated customer
+        ↓
+    project belongs to / is accessible by customer
+        ↓
+    AI permission
+        ↓
+    AI consumption
+
+A customer must NOT be able to call:
+
+    /other-project-id/ai/...
+
+and consume or inspect another customer's AI data.
+
+Project-level authorization remains mandatory.
+
+============================================================
+PART 25 — AI SERVICE ARCHITECTURE
+============================================================
+
+Inspect:
+
+    SEOAnalystAgent
+    AISolutionService
+    any chat service
+    any AI problem-solving service
+    provider abstraction
+    Groq integration
+    Ollama integration
+    any future AI provider
+
+Do not put Master billing logic directly into the AI provider implementation.
+
+The provider should receive an already-authorized request.
+
+Conceptually:
+
+    Router
+      ↓
+    AI Access/Billing Gate
+      ↓
+    AI Service
+      ↓
+    Provider
+
+Not:
+
+    Router
+      ↓
+    Provider
+      ↓
+    Check credits
+
+The authorization decision must happen before provider execution.
+
+============================================================
+PART 26 — FAILED AI REQUEST HANDLING
+============================================================
+
+Handle failures correctly.
+
+If:
+
+    authorization fails
+
+then:
+
+    no provider call
+    no credit deduction
+    no AI usage increment
+
+If:
+
+    provider fails before billable generation
+
+follow the actual provider response/billing behavior and existing architecture.
+
+If:
+
+    provider succeeds
+
+record actual usage and finalize billing.
+
+Do not increment usage multiple times because of retries.
+
+============================================================
+PART 27 — IDEMPOTENCY / DUPLICATE REQUESTS
+============================================================
+
+Inspect whether frontend retries or users can submit the same AI request multiple times.
+
+Do not accidentally double-charge a request because of:
+
+    browser retry
+    API retry
+    network retry
+    frontend double click
+    provider retry
+
+Use the existing request/usage architecture if it supports idempotency.
+
+If necessary, introduce an appropriate request ID/idempotency mechanism.
+
+Do not make this overly complicated unless the existing system requires it.
+
+============================================================
+PART 28 — MASTER CREDIT UI ACCURACY
+============================================================
+
+After implementation, verify Master customer AI controls.
+
+For each customer, Master should be able to see actual:
+
+    AI enabled/disabled
+    Daily limit
+    Daily usage
+    Monthly limit
+    Monthly usage
+    Per-request limit
+    Credit balance
+    Usage/cost where supported
+
+These values must come from the backend/database.
+
+Do not use fake counters.
+
+============================================================
+PART 29 — CUSTOMER AI USAGE UI ACCURACY
+============================================================
+
+Customer AI UI should show actual relevant usage.
+
+For example:
+
+    AI Credits: 80 remaining
+
+    Daily AI:
+    4 / 10
+
+    Monthly AI:
+    83 / 500
+
+Only display values actually returned by the backend.
+
+Do not calculate authoritative usage entirely in React.
+
+============================================================
+PART 30 — DATABASE SAFETY
+============================================================
+
+If schema changes are required:
+
+- create proper migrations
+- do not drop existing production data
+- do not reset the database
+- preserve existing users
+- preserve existing projects
+- preserve existing AI usage
+- preserve existing credits
+- preserve existing Master settings
+
+Before modifying schema, inspect existing migration/version strategy.
+
+============================================================
+PART 31 — TESTING: MASTER AI CONTROLS
+============================================================
+
+Create and run real backend tests.
+
+TEST A — Global AI enabled
+
+Expected:
+
+    customer AI request succeeds if all other limits permit it.
+
+TEST B — Global AI disabled
+
+Expected:
+
+    customer AI request rejected.
+
+TEST C — Customer AI disabled
+
+Expected:
+
+    that customer AI request rejected.
+
+TEST D — Another customer still enabled
+
+Expected:
+
+    other customer's AI request remains unaffected.
+
+TEST E — Daily limit reached
+
+Expected:
+
+    next request rejected.
+
+TEST F — Monthly limit reached
+
+Expected:
+
+    next request rejected.
+
+TEST G — Per-request limit exceeded
+
+Expected:
+
+    request rejected before provider call.
+
+TEST H — No credits
+
+Expected:
+
+    request rejected before provider call.
+
+TEST I — Credits available
+
+Expected:
+
+    request allowed and actual usage charged according to billing architecture.
+
+TEST J — Failed provider request
+
+Expected:
+
+    usage/credits handled according to actual provider/billing behavior.
+
+TEST K — Concurrent requests
+
+Expected:
+
+    credits and limits cannot be overspent because of race conditions.
+
+============================================================
+PART 32 — TESTING: CUSTOMER ACCOUNT STATUS
+============================================================
+
+TEST L:
+
+ACTIVE customer logs in.
+
+Expected:
+
+    login succeeds.
+
+TEST M:
+
+SUSPENDED customer logs in.
+
+Expected:
+
+    login rejected.
+
+TEST N:
+
+DISABLED customer logs in.
+
+Expected:
+
+    login rejected.
+
+TEST O:
+
+INACTIVE customer logs in.
+
+Expected:
+
+    login rejected if this status is part of the canonical blocked states.
+
+TEST P:
+
+Suspended customer tries existing token.
+
+Expected:
+
+    protected API access rejected.
+
+TEST Q:
+
+Disabled customer tries existing token.
+
+Expected:
+
+    protected API access rejected.
+
+TEST R:
+
+Suspended customer attempts Google login.
+
+Expected:
+
+    access rejected.
+
+============================================================
+PART 33 — TESTING: MASTER SECURITY
+============================================================
+
+Verify that:
+
+    Customer → Master API = rejected
+
+    Limited Master → unauthorized AI-control API = rejected
+
+    Limited Master → unauthorized credit API = rejected
+
+    Limited Master → unauthorized customer settings API = rejected
+
+Do not weaken Master permission checks while fixing Customer AI.
+
+============================================================
+PART 34 — TESTING: PROJECT ISOLATION
+============================================================
+
+TEST:
+
+Customer A attempts:
+
+    Customer B project → AI endpoint
+
+Expected:
+
+    rejected.
+
+Customer A must not be able to consume Customer B's AI credits or access Customer B's AI data.
+
+============================================================
+PART 35 — TESTING: NO UNAUTHORIZED PROVIDER CALL
+============================================================
+
+This is important.
+
+For requests rejected by:
+
+    global AI disabled
+    customer AI disabled
+    daily limit
+    monthly limit
+    per-request limit
+    insufficient credits
+    invalid account status
+    invalid project access
+
+verify that the AI provider is NOT called.
+
+Use mocks/fakes in tests where appropriate.
+
+============================================================
+PART 36 — TESTING: NO DOUBLE BILLING
+============================================================
+
+Verify that one successful AI request creates only one appropriate usage/billing record.
+
+Test:
+
+    normal request
+    frontend retry
+    provider retry if applicable
+    concurrent requests
+
+Do not allow duplicate credit deductions.
+
+============================================================
+PART 37 — PERFORMANCE
+============================================================
+
+The AI access gate must be efficient.
+
+Do not perform unnecessary:
+
+    full database scans
+    repeated wallet queries
+    repeated user queries
+    repeated project queries
+
+Use appropriate indexes.
+
+If the current architecture supports caching for static Master AI configuration, use it carefully.
+
+Do not cache account status/credits in a way that allows stale security decisions.
+
+Security-sensitive authorization must remain reliable.
+
+============================================================
+PART 38 — FINAL CODE AUDIT
+============================================================
+
+After implementation, search the entire backend again.
+
+Find every customer AI generation endpoint.
+
+For each endpoint answer:
+
+    Does it authenticate?
+    Does it verify project access?
+    Does it check account status?
+    Does it check global AI?
+    Does it check customer AI enabled?
+    Does it check applicable limits?
+    Does it check credits?
+    Does it prevent unauthorized provider calls?
+    Does it record usage correctly?
+    Does it avoid double charging?
+
+Do not leave one AI endpoint outside the centralized gate.
+
+============================================================
+PART 39 — FINAL MANUAL TEST
+============================================================
+
+After automated tests:
+
+1. Start backend.
+2. Start frontend.
+3. Login as active Customer.
+4. Run an AI operation.
+5. Verify it succeeds.
+6. Disable that customer's AI from Master.
+7. Attempt the same AI operation.
+8. Verify it is rejected.
+9. Re-enable AI.
+10. Set daily limit extremely low for testing.
+11. Consume the allowed amount.
+12. Verify the next request is rejected.
+13. Allocate credits.
+14. Run an AI operation.
+15. Verify actual credit/usage changes.
+16. Disable global AI from Master.
+17. Verify Customer AI is rejected.
+18. Re-enable global AI.
+19. Suspend the Customer.
+20. Verify login/API access is rejected according to the final status architecture.
+21. Re-enable Customer.
+22. Verify access works again.
+
+Only report tests that were actually executed.
+
+============================================================
+PART 40 — DO NOT CHANGE UNRELATED SYSTEMS
+============================================================
+
+Do NOT:
+
+- rewrite authentication
+- redesign the Customer application
+- redesign the Master application
+- replace Google OAuth
+- replace Groq
+- replace Ollama
+- replace the database
+- delete migrations
+- reset database
+- remove existing AI functionality
+- remove existing AIUsageService without understanding it
+- remove existing Master controls
+- bypass project authorization
+- create a second unrelated billing system
+
+Extend the existing architecture cleanly.
+
+============================================================
+FINAL SECURITY REQUIREMENTS
+============================================================
+
+The final system must enforce:
+
+    MASTER
+       │
+       ├── Global AI Control
+       │
+       ├── Customer AI Enable/Disable
+       │
+       ├── Daily Limits
+       │
+       ├── Monthly Limits
+       │
+       ├── Per Request Limits
+       │
+       └── Credits
+              │
+              ▼
+         CUSTOMER AI REQUEST
+              │
+              ▼
+        CENTRAL AI GATE
+              │
+       ┌──────┴────────┐
+       │               │
+    REJECT            ALLOW
+       │               │
+       ▼               ▼
+    No AI call      AI Provider
+                    │
+                    ▼
+              Actual Usage
+                    │
+                    ▼
+             Actual Billing
+
+And account access:
+
+    Customer Login
+         ↓
+    Account Status
+         ↓
+    ACTIVE?
+      /    \
+    NO      YES
+    ↓        ↓
+ Reject    Session
+             ↓
+       Project Access
+             ↓
+        AI Authorization
+             ↓
+         AI Generation
+
+============================================================
+FINAL REPORT
+============================================================
+
+When complete, report:
+
+### Root Cause Fixed
+
+Explain exactly why Master AI controls were previously not reaching Customer AI endpoints.
+
+### AI Gate
+
+State where the centralized AI authorization/consumption logic now lives.
+
+### Master Controls
+
+List which controls are now actually enforced:
+
+- Global AI
+- Customer AI enabled
+- Daily limit
+- Monthly limit
+- Per-request limit
+- Credits
+- Existing product/plan AI allowance
+
+### Billing
+
+Explain how actual AI usage affects credits/wallet.
+
+### Account Status
+
+Explain the canonical account statuses and how they are enforced.
+
+### Login
+
+Explain how normal login and Google login handle blocked accounts.
+
+### Security
+
+Confirm:
+
+- Customer cannot access Master
+- Customer cannot bypass AI controls
+- Customer cannot consume another customer's credits
+- Project authorization remains enforced
+- Limited Masters cannot bypass permissions
+- Unauthorized AI requests do not reach providers
+
+### Database
+
+List actual models/tables/migrations changed.
+
+### Backend
+
+List actual services/routers changed.
+
+### Frontend
+
+List actual UI changes made.
+
+### Tests
+
+Report ONLY tests that were actually executed.
+
+For each test include:
+
+    Test
+    Result
+    Important observation
+
+Do NOT claim "all tests pass" unless you actually ran them.
+
+============================================================
+STOP CONDITION
+============================================================
+
+Do not stop after changing the UI.
+
+Do not stop after adding a service that is never called.
+
+Trace the complete path:
+
+    Master Control
+        ↓
+    Database
+        ↓
+    Customer Request
+        ↓
+    AI Gate
+        ↓
+    Provider
+        ↓
+    Usage
+        ↓
+    Credits
+
+The Master controls must demonstrably affect real Customer AI behavior.
+
+Implement, test, audit, report actual results, and then STOP.

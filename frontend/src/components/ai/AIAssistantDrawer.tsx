@@ -59,7 +59,7 @@ export const AIAssistantDrawer: React.FC<AIAssistantDrawerProps> = ({ isOpen, on
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 overflow-hidden select-none">
+    <div className="fixed inset-0 z-50 overflow-hidden">
       <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm transition-opacity" onClick={onClose} />
 
       <div className="fixed inset-y-0 right-0 pl-10 max-w-full flex">
@@ -78,6 +78,7 @@ export const AIAssistantDrawer: React.FC<AIAssistantDrawerProps> = ({ isOpen, on
 
             <button
               onClick={onClose}
+              aria-label="Close AI Diagnostic Studio"
               className="p-1.5 text-slate-400 hover:text-slate-900 rounded-lg hover:bg-slate-100 transition-colors"
             >
               <X className="w-5 h-5" />

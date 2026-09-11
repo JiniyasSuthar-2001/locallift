@@ -338,7 +338,8 @@ export const WebsiteAuditView: React.FC = () => {
 
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3.5">
           {pillarCards.map((p) => {
-            const isScoreAvailable = p.score !== null && p.score !== undefined;
+            const score = p.score;
+            const isScoreAvailable = score !== null && score !== undefined;
             return (
               <div key={p.id} className="card-vibrant p-4 space-y-3 bg-white">
                 <div className="flex items-start justify-between">
@@ -352,13 +353,13 @@ export const WebsiteAuditView: React.FC = () => {
                     <span className={`text-xl font-black ${
                       !isScoreAvailable
                         ? 'text-slate-400'
-                        : p.score >= 80
+                        : score >= 80
                         ? 'text-emerald-600'
-                        : p.score >= 60
+                        : score >= 60
                         ? 'text-amber-600'
                         : 'text-rose-600'
                     }`}>
-                      {isScoreAvailable ? p.score : '—'}
+                      {isScoreAvailable ? score : '—'}
                     </span>
                     <span className="text-[10px] font-bold text-slate-400 block">
                       {isScoreAvailable ? '/ 100' : 'Awaiting audit'}
@@ -372,13 +373,13 @@ export const WebsiteAuditView: React.FC = () => {
                     className={`h-2 rounded-full ${
                       !isScoreAvailable
                         ? 'bg-slate-200'
-                        : p.score >= 80
+                        : score >= 80
                         ? 'bg-emerald-500'
-                        : p.score >= 60
+                        : score >= 60
                         ? 'bg-amber-500'
                         : 'bg-rose-500'
                     } transition-all duration-500`}
-                    style={{ width: isScoreAvailable ? `${Math.min(100, p.score)}%` : '0%' }}
+                    style={{ width: isScoreAvailable ? `${Math.min(100, score)}%` : '0%' }}
                   />
                 </div>
 

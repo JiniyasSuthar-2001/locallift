@@ -10,7 +10,7 @@ import {
   Plus
 } from 'lucide-react';
 import { useProject } from '../../context/ProjectContext';
-import { useLocation, useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate, Link } from 'react-router-dom';
 
 interface HeaderProps {
   onOpenAI: () => void;
@@ -73,7 +73,7 @@ export const Header: React.FC<HeaderProps> = ({ onOpenAI }) => {
   };
 
   return (
-    <header className="h-16 bg-white border-b border-slate-200 px-6 flex items-center justify-between sticky top-0 z-10 select-none">
+    <header className="h-16 bg-white border-b border-slate-200 px-6 flex items-center justify-between sticky top-0 z-10">
       {/* Left: Page Title */}
       <div className="flex items-center space-x-3">
         <h1 className="text-xl font-black text-slate-900 tracking-tight">
@@ -103,16 +103,14 @@ export const Header: React.FC<HeaderProps> = ({ onOpenAI }) => {
             <div className="absolute right-0 mt-2 w-64 bg-white border border-slate-200 rounded-xl shadow-xl py-2 z-50">
               <div className="px-3 py-1 text-[10px] font-bold text-slate-400 uppercase tracking-wider flex items-center justify-between">
                 <span>Select Project</span>
-                <button
-                  onClick={() => {
-                    setIsProjectDropdownOpen(false);
-                    navigate('/onboarding');
-                  }}
+                <Link
+                  to="/onboarding"
+                  onClick={() => setIsProjectDropdownOpen(false)}
                   className="text-purple-600 hover:text-purple-700 font-bold flex items-center space-x-0.5"
                 >
                   <Plus className="w-3 h-3" />
                   <span>New</span>
-                </button>
+                </Link>
               </div>
 
               <div className="max-h-56 overflow-y-auto mt-1">
@@ -160,6 +158,7 @@ export const Header: React.FC<HeaderProps> = ({ onOpenAI }) => {
         <button
           onClick={handleSync}
           disabled={isSyncing}
+          aria-label="Refresh Data"
           className="p-2 text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded-xl transition-all border border-slate-200 bg-slate-50 shadow-sm"
           title="Refresh Data"
         >

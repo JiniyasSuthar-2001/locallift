@@ -181,7 +181,7 @@ export const ProjectTeamSection: React.FC<ProjectTeamSectionProps> = ({ projectI
         <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl flex items-center space-x-2 text-xs text-rose-700">
           <AlertCircle className="w-4 h-4 shrink-0 text-rose-600" />
           <span className="flex-1">{errorMsg}</span>
-          <button onClick={() => setErrorMsg(null)} className="text-rose-400 hover:text-rose-600 font-bold">
+          <button onClick={() => setErrorMsg(null)} aria-label="Dismiss error notification" className="text-rose-400 hover:text-rose-600 font-bold">
             ✕
           </button>
         </div>
@@ -190,7 +190,7 @@ export const ProjectTeamSection: React.FC<ProjectTeamSectionProps> = ({ projectI
         <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl flex items-center space-x-2 text-xs text-emerald-800">
           <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-600" />
           <span className="flex-1">{successMsg}</span>
-          <button onClick={() => setSuccessMsg(null)} className="text-emerald-500 hover:text-emerald-700 font-bold">
+          <button onClick={() => setSuccessMsg(null)} aria-label="Dismiss notification" className="text-emerald-500 hover:text-emerald-700 font-bold">
             ✕
           </button>
         </div>
@@ -308,6 +308,7 @@ export const ProjectTeamSection: React.FC<ProjectTeamSectionProps> = ({ projectI
                     setEditPermissions(member.permissions);
                   }}
                   className="p-1.5 text-slate-400 hover:text-purple-600 hover:bg-purple-50 rounded-lg transition-all"
+                  aria-label={`Edit permissions for ${member.name}`}
                   title="Edit Permissions"
                 >
                   <Edit2 className="w-3.5 h-3.5" />
@@ -316,6 +317,7 @@ export const ProjectTeamSection: React.FC<ProjectTeamSectionProps> = ({ projectI
                 <button
                   onClick={() => setRemovingMember(member)}
                   className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-all"
+                  aria-label={`Remove ${member.name} from project`}
                   title="Remove from project"
                 >
                   <Trash2 className="w-3.5 h-3.5" />
@@ -375,6 +377,7 @@ export const ProjectTeamSection: React.FC<ProjectTeamSectionProps> = ({ projectI
               </h3>
               <button
                 onClick={() => setShowInviteModal(false)}
+                aria-label="Close invite modal"
                 className="text-slate-400 hover:text-slate-600 text-sm font-bold"
               >
                 ✕
@@ -474,6 +477,7 @@ export const ProjectTeamSection: React.FC<ProjectTeamSectionProps> = ({ projectI
               </h3>
               <button
                 onClick={() => setEditingMember(null)}
+                aria-label="Close edit access modal"
                 className="text-slate-400 hover:text-slate-600 text-sm font-bold"
               >
                 ✕

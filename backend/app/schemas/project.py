@@ -76,9 +76,9 @@ class DashboardSummaryOut(BaseModel):
     health_score: Optional[int] = None
     scores: dict
     counts: dict
-    recent_issues: List[Any]
-    recent_tasks: List[Any]
-    recent_reviews: List[Any]
-    top_keywords: List[Any]
-    gbp_summary: Optional[dict]
-    gsc_summary: Optional[dict]
+    recent_issues: List[Any] = []
+    recent_tasks: List[Any] = []
+    recent_reviews: List[Any] = []
+    top_keywords: List[Any] = []
+    gbp_summary: Optional[dict] = None
+    gsc_summary: Optional[dict] = None

@@ -80,7 +80,7 @@ export const GBPView: React.FC = () => {
     if (authUrl) {
       window.location.href = authUrl;
     } else {
-      alert('Google OAuth credentials not configured in settings. Set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET in .env.');
+      setSyncFeedback('Google OAuth credentials are not configured in settings. Set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET in your backend environment configuration.');
     }
   };
 

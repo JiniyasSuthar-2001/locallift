@@ -12,6 +12,7 @@ import {
 import { useProject } from '../context/ProjectContext';
 import { Competitor } from '../types';
 import { EmptyState } from '../components/ui/EmptyState';
+import { normalizeExternalUrl } from '../utils/url';
 import api from '../api/client';
 
 export const CompetitorsView: React.FC = () => {
@@ -113,17 +114,19 @@ export const CompetitorsView: React.FC = () => {
               <div className="flex items-start justify-between">
                 <div>
                   <h3 className="font-extrabold text-slate-900 text-sm">{comp.name}</h3>
-                  {comp.domain && (
+                  {comp.domain && normalizeExternalUrl(comp.domain) ? (
                     <a
-                      href={`https://${comp.domain}`}
+                      href={normalizeExternalUrl(comp.domain)!}
                       target="_blank"
-                      rel="noreferrer"
+                      rel="noopener noreferrer"
                       className="text-xs text-purple-700 hover:underline flex items-center space-x-1 font-mono mt-0.5"
                     >
                       <span>{comp.domain}</span>
                       <ExternalLink className="w-2.5 h-2.5" />
                     </a>
-                  )}
+                  ) : comp.domain ? (
+                    <span className="text-xs text-slate-600 font-mono mt-0.5 block">{comp.domain}</span>
+                  ) : null}
                 </div>
                 <div className="flex items-center space-x-1.5">
                   <span className="px-2 py-0.5 rounded bg-purple-50 text-purple-800 text-[10px] font-bold border border-purple-200">
@@ -131,6 +134,7 @@ export const CompetitorsView: React.FC = () => {
                   </span>
                   <button
                     onClick={() => handleDeleteCompetitor(comp.id)}
+                    aria-label="Remove competitor"
                     title="Remove competitor"
                     className="p-1 rounded-md text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors opacity-0 group-hover:opacity-100"
                   >

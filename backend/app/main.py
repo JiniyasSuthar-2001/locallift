@@ -1,7 +1,12 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+from fastapi.exceptions import RequestValidationError
+from starlette.exceptions import HTTPException as StarletteHTTPException
 from datetime import datetime, timezone
 import asyncio
+import uuid
+import logging
 
 from app.config import settings
 from app.database import engine, Base, AsyncSessionLocal
@@ -20,7 +25,7 @@ from app.api.v1.categories import router as categories_router
 from app.api.v1.connections import router as connections_router
 from app.api.v1.team import router as team_router
 
-
+logger = logging.getLogger("locallift")
 
 app = FastAPI(
     title=settings.PROJECT_NAME,
@@ -28,16 +33,26 @@ app = FastAPI(
     description="LocalLift — Local SEO Management & Automation Operating System"
 )
 
-# CORS
+# CORS Configuration
 origins = [str(origin).rstrip("/") for origin in settings.BACKEND_CORS_ORIGINS] if settings.BACKEND_CORS_ORIGINS else []
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=origins,
-    allow_origin_regex=r"https?://(localhost|127\.0\.0\.1)(:\d+)?",
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+
+if settings.ENVIRONMENT.lower() == "production":
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=origins,
+        allow_credentials=True,
+        allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+        allow_headers=["*"],
+    )
+else:
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=origins,
+        allow_origin_regex=r"https?://(localhost|127\.0\.0\.1)(:\d+)?",
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
 
 # Include API Routers
 app.include_router(auth_router, prefix=settings.API_V1_STR)
@@ -56,24 +71,13 @@ app.include_router(templates_router, prefix=settings.API_V1_STR)
 app.include_router(connections_router, prefix=settings.API_V1_STR)
 app.include_router(team_router, prefix=settings.API_V1_STR)
 
-
-
-import uuid
-import logging
-from fastapi import Request
-from fastapi.responses import JSONResponse
-from fastapi.exceptions import RequestValidationError
-from starlette.exceptions import HTTPException as StarletteHTTPException
-
-logger = logging.getLogger("locallift")
-
 def _add_cors_headers(request: Request, headers: dict = None) -> dict:
     h = dict(headers or {})
     origin = request.headers.get("origin")
-    if origin and ("localhost" in origin or "127.0.0.1" in origin):
+    if origin and (origin in origins or ("localhost" in origin or "127.0.0.1" in origin)):
         h["Access-Control-Allow-Origin"] = origin
         h["Access-Control-Allow-Credentials"] = "true"
-        h["Access-Control-Allow-Methods"] = "*"
+        h["Access-Control-Allow-Methods"] = "GET, POST, PUT, PATCH, DELETE, OPTIONS"
         h["Access-Control-Allow-Headers"] = "*"
     return h
 
@@ -111,20 +115,26 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
 async def global_exception_handler(request: Request, exc: Exception):
     req_id = str(uuid.uuid4())[:8]
     logger.exception(f"Unhandled server error [ReqID: {req_id}]: {exc}")
+    
+    is_prod = settings.ENVIRONMENT.lower() == "production"
+    safe_detail = "Internal server error." if is_prod else str(exc)
+    
     return JSONResponse(
         status_code=500,
         content={
             "error": True,
             "code": "INTERNAL_SERVER_ERROR",
             "message": "An unexpected error occurred. Please contact support or check server logs.",
-            "detail": str(exc),
+            "detail": safe_detail,
             "request_id": req_id
         },
         headers=_add_cors_headers(request)
     )
 
 def _sync_sqlite_schema(sync_conn):
-    """Auto-migrate SQLite database by adding any missing table columns."""
+    """Auto-migrate SQLite development database by adding any missing table columns."""
+    if sync_conn.dialect.name != "sqlite":
+        return
     from sqlalchemy import inspect, text
     inspector = inspect(sync_conn)
     tables = inspector.get_table_names()
@@ -137,12 +147,11 @@ def _sync_sqlite_schema(sync_conn):
                     try:
                         sync_conn.execute(text(f"ALTER TABLE {table_name} ADD COLUMN {col.name} {col_type}"))
                     except Exception as e:
-                        print(f"Warning: Failed to auto-add column {col.name} to {table_name}: {e}")
+                        logger.warning(f"Failed to auto-add column {col.name} to {table_name}: {e}")
 
 @app.on_event("startup")
 async def startup_event():
     import app.models  # noqa: F401
-    # Create DB tables
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
         await conn.run_sync(_sync_sqlite_schema)
@@ -163,4 +172,3 @@ async def health_check():
         "timestamp": datetime.now(timezone.utc).isoformat(),
         "database": "connected"
     }
-

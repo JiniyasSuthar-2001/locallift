@@ -29,6 +29,9 @@ export const ProjectProvider: React.FC<{ children: React.ReactNode }> = ({ child
   activeProjectRef.current = activeProject;
 
   const setActiveProject = useCallback((proj: Project | null) => {
+    if (activeProjectRef.current?.id !== proj?.id) {
+      setDashboard(null);
+    }
     activeProjectRef.current = proj;
     setActiveProjectState(proj);
   }, []);
@@ -47,7 +50,9 @@ export const ProjectProvider: React.FC<{ children: React.ReactNode }> = ({ child
         console.error(`Failed to load dashboard for project ${projectId}:`, e);
       }
     } finally {
-      setIsDashboardLoading(false);
+      if (activeProjectRef.current?.id === projectId) {
+        setIsDashboardLoading(false);
+      }
     }
   }, []);
 

@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useRef } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useNavigate, useSearchParams, Link } from 'react-router-dom';
 import { RotateCw, CheckCircle2, AlertCircle, Store } from 'lucide-react';
 import { useProject } from '../context/ProjectContext';
 import { getErrorMessage } from '../utils/error';
@@ -79,12 +79,12 @@ export const GoogleCallbackView: React.FC = () => {
         </div>
 
         {status === 'error' && (
-          <button
-            onClick={() => navigate('/google/gbp')}
+          <Link
+            to="/google/gbp"
             className="px-5 py-2.5 btn-vibrant-primary rounded-xl text-xs font-bold transition-all inline-block"
           >
             Back to GBP Hub
-          </button>
+          </Link>
         )}
       </div>
     </div>

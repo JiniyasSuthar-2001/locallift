@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Users2, Plus, Building2, ExternalLink, Mail, Phone, Sparkles } from 'lucide-react';
+import { Link } from 'react-router-dom';
 import { useProject } from '../context/ProjectContext';
 import { EmptyState } from '../components/ui/EmptyState';
 import api from '../api/client';
@@ -113,13 +114,16 @@ export const ClientsView: React.FC = () => {
                     Associated SEO Projects
                   </span>
                   {c.projects.map((p: any) => (
-                    <div
+                    <Link
                       key={p.id}
-                      className="p-2.5 rounded-xl bg-slate-50 border border-slate-200 flex items-center justify-between text-xs"
+                      to={`/projects/${p.id}`}
+                      className="p-2.5 rounded-xl bg-slate-50 hover:bg-purple-50/60 border border-slate-200 hover:border-purple-300 flex items-center justify-between text-xs transition-colors"
                     >
-                      <span className="text-slate-900 font-bold">{p.name}</span>
-                      <span className="font-black text-purple-700">{p.health_score} / 100</span>
-                    </div>
+                      <span className="text-slate-900 font-bold hover:text-purple-700">{p.name}</span>
+                      <span className="font-black text-purple-700">
+                        {p.health_score !== null && p.health_score !== undefined ? `${p.health_score} / 100` : '—'}
+                      </span>
+                    </Link>
                   ))}
                 </div>
               )}

@@ -1,16 +1,28 @@
 import os
+import logging
 from pathlib import Path
 from pydantic_settings import BaseSettings
 from typing import List
 
+logger = logging.getLogger("locallift.config")
+
 ROOT_DIR = Path(__file__).resolve().parent.parent.parent
 BACKEND_DIR = Path(__file__).resolve().parent.parent
+
+INSECURE_DEFAULT_KEYS = {
+    "locallift-super-secret-key-production-change-me-12345",
+    "change-me",
+    "secret",
+    "change-this-to-a-secure-random-secret-key",
+    "replace-with-a-secure-random-secret-key-for-production",
+    "default-secret-key-12345"
+}
 
 class Settings(BaseSettings):
     PROJECT_NAME: str = "LocalLift"
     VERSION: str = "1.0.0"
     API_V1_STR: str = "/api/v1"
-    ENVIRONMENT: str = "production"  # production, development, testing
+    ENVIRONMENT: str = "development"  # production, development, testing
     ALLOW_DEV_SEEDING: bool = False
     
     # Security
@@ -39,20 +51,40 @@ class Settings(BaseSettings):
     GOOGLE_REDIRECT_URI: str = "http://localhost:5173/integrations/google/callback"
     
     # Integrations - SERP / Rank Tracking
-    SERP_PROVIDER: str = "serpapi"  # serpapi, mock
+    SERP_PROVIDER: str = "mock"  # serpapi, mock
     SERPAPI_KEY: str = ""
     
     # AI Engine
+    AI_PROVIDER: str = "rule_based"  # rule_based, gemini, openai
     AI_API_KEY: str = ""
-    AI_MODEL: str = "gemini-1.5-pro"
+    AI_MODEL: str = "gemini-1.5-flash"
     
     def validate_production_security(self) -> None:
-        """Fails fast if production uses insecure defaults."""
-        if self.ENVIRONMENT.lower() == "production":
-            if not self.SECRET_KEY or self.SECRET_KEY == "locallift-super-secret-key-production-change-me-12345":
+        """Fails fast if production uses insecure or default credentials."""
+        env = self.ENVIRONMENT.strip().lower()
+        if env == "production":
+            if (
+                not self.SECRET_KEY
+                or self.SECRET_KEY in INSECURE_DEFAULT_KEYS
+                or len(self.SECRET_KEY) < 32
+            ):
                 raise RuntimeError(
                     "CRITICAL SECURITY CONFIGURATION ERROR: "
-                    "SECRET_KEY must be explicitly set to a secure, non-default value in production environments."
+                    "In production environment, SECRET_KEY must be explicitly set to a strong, "
+                    "secure secret (at least 32 characters). Startup aborted."
+                )
+            # Ensure CORS origins are not wildcard in production
+            for origin in self.BACKEND_CORS_ORIGINS:
+                if origin == "*":
+                    raise RuntimeError(
+                        "CRITICAL SECURITY CONFIGURATION ERROR: "
+                        "Wildcard '*' in BACKEND_CORS_ORIGINS is prohibited when allow_credentials=True in production."
+                    )
+        elif env == "development":
+            if self.SECRET_KEY in INSECURE_DEFAULT_KEYS:
+                logger.warning(
+                    "SECURITY NOTICE: LocalLift is using a default development SECRET_KEY. "
+                    "Set a unique SECRET_KEY before deploying to production."
                 )
 
     class Config:
@@ -69,10 +101,4 @@ def validate_production_security(custom_settings: Settings = None) -> None:
     s.validate_production_security()
 
 settings = Settings()
-try:
-    settings.validate_production_security()
-except RuntimeError:
-    # In local development default env, allow startup with warning if ENVIRONMENT is not explicitly production
-    if settings.ENVIRONMENT.lower() == "production" and os.environ.get("STRICT_PROD_SECURITY") == "1":
-        raise
-
+settings.validate_production_security()

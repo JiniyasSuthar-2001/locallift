@@ -42,14 +42,17 @@ def test_local_seo_model_defaults():
         canonical_name="Test",
         canonical_address="123 Main St",
         canonical_phone="555-1234",
-        canonical_website="test.com"
+        canonical_website="test.com",
+        total_checked=0,
+        consistent_count=0,
+        mismatches_count=0
     )
     assert nap.nap_score is None, f"Expected nap_score to be None, got {nap.nap_score}"
     assert nap.total_checked == 0, f"Expected total_checked to be 0, got {nap.total_checked}"
     assert nap.consistent_count == 0, f"Expected consistent_count to be 0, got {nap.consistent_count}"
     assert nap.mismatches_count == 0, f"Expected mismatches_count to be 0, got {nap.mismatches_count}"
 
-    comp = Competitor(project_id=1, name="Comp A", domain="compa.com")
+    comp = Competitor(project_id=1, name="Comp A", domain="compa.com", reviews_count=0)
     assert comp.rating is None, f"Expected competitor rating to be None, got {comp.rating}"
     assert comp.local_visibility_score is None, f"Expected local_visibility_score to be None, got {comp.local_visibility_score}"
     assert comp.reviews_count == 0, f"Expected reviews_count to be 0, got {comp.reviews_count}"

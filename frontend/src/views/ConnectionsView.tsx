@@ -33,6 +33,7 @@ import {
   PublicBusinessListingItem,
   DiscoveredGBPLocation
 } from '../types';
+import { normalizeExternalUrl } from '../utils/url';
 
 export const ConnectionsView: React.FC = () => {
   const { user } = useAuth();
@@ -452,12 +453,13 @@ export const ConnectionsView: React.FC = () => {
                     <td className="py-2.5 px-3 font-bold text-slate-900">
                       <div className="flex items-center space-x-2">
                         <span>{loc.location_name}</span>
-                        {loc.maps_uri && (
+                        {loc.maps_uri && normalizeExternalUrl(loc.maps_uri) && (
                           <a
-                            href={loc.maps_uri}
+                            href={normalizeExternalUrl(loc.maps_uri)!}
                             target="_blank"
                             rel="noopener noreferrer"
                             className="text-slate-400 hover:text-purple-600"
+                            aria-label="View on Google Maps"
                           >
                             <ExternalLink className="w-3 h-3" />
                           </a>
@@ -467,9 +469,9 @@ export const ConnectionsView: React.FC = () => {
                     <td className="py-2.5 px-3 text-slate-600">{loc.category || 'Local Business'}</td>
                     <td className="py-2.5 px-3 text-slate-600">{loc.address || `${loc.city || ''}, ${loc.state || ''}`}</td>
                     <td className="py-2.5 px-3">
-                      {loc.website_url ? (
+                      {loc.website_url && normalizeExternalUrl(loc.website_url) ? (
                         <a
-                          href={loc.website_url}
+                          href={normalizeExternalUrl(loc.website_url)!}
                           target="_blank"
                           rel="noopener noreferrer"
                           className="text-purple-600 hover:underline flex items-center space-x-1"
@@ -557,12 +559,13 @@ export const ConnectionsView: React.FC = () => {
                     <td className="py-2.5 px-3 font-bold text-slate-900">
                       <div className="flex items-center space-x-2">
                         <span>{pub.name}</span>
-                        {pub.maps_url && (
+                        {pub.maps_url && normalizeExternalUrl(pub.maps_url) && (
                           <a
-                            href={pub.maps_url}
+                            href={normalizeExternalUrl(pub.maps_url)!}
                             target="_blank"
                             rel="noopener noreferrer"
                             className="text-slate-400 hover:text-blue-600"
+                            aria-label="Open in Google Maps"
                             title="Open in Google Maps"
                           >
                             <ExternalLink className="w-3 h-3" />

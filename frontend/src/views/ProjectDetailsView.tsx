@@ -24,6 +24,7 @@ import { useProject } from '../context/ProjectContext';
 import { getErrorMessage } from '../utils/error';
 import { Project } from '../types';
 import { ProjectTeamSection } from '../components/team/ProjectTeamSection';
+import { normalizeExternalUrl } from '../utils/url';
 
 export const ProjectDetailsView: React.FC = () => {
   const { projectId } = useParams<{ projectId: string }>();
@@ -135,13 +136,14 @@ export const ProjectDetailsView: React.FC = () => {
       {/* Top Back Link & Action Bar */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div className="flex items-center space-x-3">
-          <button
-            onClick={() => navigate('/projects')}
+          <Link
+            to="/projects"
             className="p-2 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-xl transition-all"
+            aria-label="Back to My Projects"
             title="Back to My Projects"
           >
             <ArrowLeft className="w-4 h-4" />
-          </button>
+          </Link>
           <div>
             <div className="flex items-center space-x-2">
               <h1 className="text-xl font-black text-slate-900 tracking-tight">{project.name}</h1>
@@ -249,15 +251,19 @@ export const ProjectDetailsView: React.FC = () => {
               </div>
               <div>
                 <span className="text-slate-400 font-medium block">Website Domain</span>
-                <a
-                  href={`https://${project.domain}`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="font-bold text-purple-600 hover:underline flex items-center space-x-1"
-                >
-                  <span>{project.domain}</span>
-                  <ExternalLink className="w-3 h-3 text-slate-400" />
-                </a>
+                {normalizeExternalUrl(project.domain) ? (
+                  <a
+                    href={normalizeExternalUrl(project.domain)!}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="font-bold text-purple-600 hover:underline flex items-center space-x-1"
+                  >
+                    <span>{project.domain}</span>
+                    <ExternalLink className="w-3 h-3 text-slate-400" />
+                  </a>
+                ) : (
+                  <span className="font-bold text-slate-800">{project.domain}</span>
+                )}
               </div>
               <div>
                 <span className="text-slate-400 font-medium block">Primary Business Category</span>

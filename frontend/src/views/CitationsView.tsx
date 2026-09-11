@@ -13,6 +13,7 @@ import { useProject } from '../context/ProjectContext';
 import { Citation } from '../types';
 import { StatusBadge } from '../components/ui/StatusBadge';
 import { EmptyState } from '../components/ui/EmptyState';
+import { normalizeExternalUrl } from '../utils/url';
 import api from '../api/client';
 
 export const CitationsView: React.FC = () => {
@@ -147,16 +148,18 @@ export const CitationsView: React.FC = () => {
                       <StatusBadge status={c.nap_status || 'missing'} />
                     </td>
                     <td className="p-3.5 max-w-xs truncate">
-                      {c.listing_url ? (
+                      {c.listing_url && normalizeExternalUrl(c.listing_url) ? (
                         <a
-                          href={c.listing_url}
+                          href={normalizeExternalUrl(c.listing_url)!}
                           target="_blank"
-                          rel="noreferrer"
+                          rel="noopener noreferrer"
                           className="text-purple-700 hover:underline flex items-center font-mono font-medium truncate"
                         >
                           <span className="truncate">{c.listing_url}</span>
                           <ExternalLink className="w-2.5 h-2.5 ml-1 shrink-0" />
                         </a>
+                      ) : c.listing_url ? (
+                        <span className="font-mono text-slate-600 truncate block">{c.listing_url}</span>
                       ) : (
                         <span className="text-slate-400 font-medium">Unclaimed / Missing</span>
                       )}

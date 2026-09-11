@@ -29,6 +29,7 @@ import { useProject } from '../context/ProjectContext';
 import { Template, TemplateApplyResponse, TemplateValidateResponse } from '../types';
 import { StatusBadge } from '../components/ui/StatusBadge';
 import { EmptyState } from '../components/ui/EmptyState';
+import { getErrorMessage } from '../utils/error';
 import api from '../api/client';
 
 export const TemplatesView: React.FC = () => {
@@ -40,6 +41,7 @@ export const TemplatesView: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('all');
   const [selectedType, setSelectedType] = useState('all');
+  const [notification, setNotification] = useState<{ type: 'success' | 'error' | 'warning'; message: string } | null>(null);
 
   // Modals
   const [isCreateOpen, setIsCreateOpen] = useState(false);
@@ -134,19 +136,20 @@ export const TemplatesView: React.FC = () => {
       setIsCreateOpen(false);
       setIsEditOpen(false);
       resetForm();
+      setNotification({ type: 'success', message: `Template "${formName.trim()}" saved successfully!` });
       await fetchTemplates();
     } catch (err: any) {
-      const msg = err.response?.data?.detail?.message || 'Failed to save template.';
-      alert(msg);
+      setNotification({ type: 'error', message: getErrorMessage(err, 'Failed to save template.') });
     }
   };
 
   const handleDuplicate = async (templateId: number) => {
     try {
       await api.post(`/templates/${templateId}/duplicate`);
+      setNotification({ type: 'success', message: 'Template duplicated into a custom user copy.' });
       await fetchTemplates();
-    } catch (e) {
-      console.error('Duplicate failed:', e);
+    } catch (e: any) {
+      setNotification({ type: 'error', message: getErrorMessage(e, 'Failed to duplicate template.') });
     }
   };
 
@@ -154,15 +157,16 @@ export const TemplatesView: React.FC = () => {
     if (!confirm('Are you sure you want to delete this custom template?')) return;
     try {
       await api.delete(`/templates/${templateId}`);
+      setNotification({ type: 'success', message: 'Template deleted successfully.' });
       await fetchTemplates();
-    } catch (e) {
-      console.error('Delete failed:', e);
+    } catch (e: any) {
+      setNotification({ type: 'error', message: getErrorMessage(e, 'Failed to delete template.') });
     }
   };
 
   const handleApply = async (tmpl: Template) => {
     if (!activeProject) {
-      alert('Please select an active project first.');
+      setNotification({ type: 'warning', message: 'Please select an active project first from the top project selector.' });
       return;
     }
     try {
@@ -173,8 +177,8 @@ export const TemplatesView: React.FC = () => {
         project_id: activeProject.id
       });
       setAppliedResult(resp.data);
-    } catch (e) {
-      console.error('Apply template failed:', e);
+    } catch (e: any) {
+      setNotification({ type: 'error', message: getErrorMessage(e, 'Apply template failed.') });
     } finally {
       setIsApplying(false);
     }
@@ -205,6 +209,7 @@ export const TemplatesView: React.FC = () => {
       setIsImportOpen(false);
       setImportContent('');
       setImportName('');
+      setNotification({ type: 'success', message: 'Structured template imported successfully!' });
       await fetchTemplates();
     } catch (err: any) {
       const errors = err.response?.data?.detail?.errors || [err.response?.data?.detail || 'Import failed.'];
@@ -224,10 +229,10 @@ export const TemplatesView: React.FC = () => {
         status: 'open'
       });
       await refreshDashboard();
-      alert('Task created successfully in your SEO Task Board!');
+      setNotification({ type: 'success', message: 'Task created successfully in your SEO Task Board!' });
       setIsApplyOpen(false);
-    } catch (e) {
-      console.error('Failed to create task:', e);
+    } catch (e: any) {
+      setNotification({ type: 'error', message: getErrorMessage(e, 'Failed to create task.') });
     }
   };
 
@@ -313,6 +318,35 @@ export const TemplatesView: React.FC = () => {
           </button>
         </div>
       </div>
+
+      {/* Dismissible Notification Banner */}
+      {notification && (
+        <div
+          className={`p-3.5 rounded-xl border text-xs flex items-center justify-between space-x-3 animate-fade-in ${
+            notification.type === 'success'
+              ? 'bg-emerald-50 border-emerald-200 text-emerald-900'
+              : notification.type === 'warning'
+              ? 'bg-amber-50 border-amber-200 text-amber-900'
+              : 'bg-rose-50 border-rose-200 text-rose-900'
+          }`}
+        >
+          <div className="flex items-center space-x-2 font-medium">
+            {notification.type === 'success' ? (
+              <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+            ) : (
+              <AlertCircle className={`w-4 h-4 shrink-0 ${notification.type === 'warning' ? 'text-amber-600' : 'text-rose-600'}`} />
+            )}
+            <span>{notification.message}</span>
+          </div>
+          <button
+            onClick={() => setNotification(null)}
+            aria-label="Dismiss notification"
+            className="text-slate-400 hover:text-slate-700 font-bold text-xs"
+          >
+            ✕
+          </button>
+        </div>
+      )}
 
       {/* Category Tabs */}
       <div className="flex items-center space-x-2 overflow-x-auto pb-2 border-b border-slate-200 text-xs">
@@ -431,6 +465,7 @@ export const TemplatesView: React.FC = () => {
                       setActiveTemplate(tmpl);
                       setIsPreviewOpen(true);
                     }}
+                    aria-label="Preview template content"
                     title="Preview Content"
                     className="p-1.5 hover:text-slate-900 hover:bg-slate-100 rounded-lg transition-colors"
                   >
@@ -439,6 +474,7 @@ export const TemplatesView: React.FC = () => {
 
                   <button
                     onClick={() => handleDuplicate(tmpl.id)}
+                    aria-label="Duplicate template"
                     title="Duplicate into User Copy"
                     className="p-1.5 hover:text-slate-900 hover:bg-slate-100 rounded-lg transition-colors"
                   >
@@ -447,6 +483,7 @@ export const TemplatesView: React.FC = () => {
 
                   <button
                     onClick={() => handleExport(tmpl)}
+                    aria-label="Export template JSON"
                     title="Export JSON"
                     className="p-1.5 hover:text-slate-900 hover:bg-slate-100 rounded-lg transition-colors"
                   >
@@ -457,6 +494,7 @@ export const TemplatesView: React.FC = () => {
                     <>
                       <button
                         onClick={() => openEditModal(tmpl)}
+                        aria-label="Edit template"
                         title="Edit Template"
                         className="p-1.5 hover:text-purple-700 hover:bg-purple-50 rounded-lg transition-colors"
                       >
@@ -465,6 +503,7 @@ export const TemplatesView: React.FC = () => {
 
                       <button
                         onClick={() => handleDelete(tmpl.id)}
+                        aria-label="Delete template"
                         title="Delete Template"
                         className="p-1.5 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors"
                       >
@@ -507,6 +546,7 @@ export const TemplatesView: React.FC = () => {
               </div>
               <button
                 onClick={() => setIsApplyOpen(false)}
+                aria-label="Close runner modal"
                 className="text-slate-400 hover:text-slate-800 text-xs font-bold px-2 py-1"
               >
                 ✕ Close
@@ -589,6 +629,7 @@ export const TemplatesView: React.FC = () => {
               </div>
               <button
                 onClick={() => setIsPreviewOpen(false)}
+                aria-label="Close preview modal"
                 className="text-slate-400 hover:text-slate-800 text-xs font-bold px-2 py-1"
               >
                 ✕ Close

@@ -4,7 +4,7 @@ const readline = require('readline');
 
 // Banner formatting
 console.log('\x1b[36m╔══════════════════════════════════════════════╗\x1b[0m');
-console.log('\x1b[36m║          LocalScope Development              ║\x1b[0m');
+console.log('\x1b[36m║          LocalLift Development               ║\x1b[0m');
 console.log('\x1b[36m╚══════════════════════════════════════════════╝\x1b[0m\n');
 console.log('\x1b[90mStarting services...\x1b[0m\n');
 console.log('\x1b[36m[FRONTEND]\x1b[0m Starting Vite Dev Server...');
@@ -50,7 +50,7 @@ let backendReady = false;
 
 function checkReady() {
   if (frontendReady && backendReady) {
-    console.log('\n\x1b[32m✓ LocalScope development environment ready\x1b[0m\n');
+    console.log('\n\x1b[32m✓ LocalLift development environment ready\x1b[0m\n');
     console.log('\x1b[36m[FRONTEND]\x1b[0m \x1b[32m✓ Running at http://localhost:5173\x1b[0m');
     console.log('\x1b[32m[BACKEND]\x1b[0m  \x1b[32m✓ Running at http://localhost:8000\x1b[0m (API Docs: http://localhost:8000/docs)\n');
     console.log('\x1b[90mPress Ctrl+C to stop all services.\x1b[0m\n');
@@ -102,7 +102,7 @@ let isCleaningUp = false;
 function cleanup() {
   if (isCleaningUp) return;
   isCleaningUp = true;
-  console.log('\n\x1b[90mShutting down all LocalScope services...\x1b[0m');
+  console.log('\n\x1b[90mShutting down all LocalLift services...\x1b[0m');
   
   const killProc = (proc) => {
     if (!proc || !proc.pid) return;

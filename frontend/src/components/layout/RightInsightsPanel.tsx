@@ -64,7 +64,7 @@ export const RightInsightsPanel: React.FC = () => {
   const totalIssues = issuesList.length;
 
   return (
-    <aside className="w-[290px] xl:w-[315px] bg-white border-l border-slate-200 flex flex-col shrink-0 h-screen sticky top-0 z-10 overflow-y-auto p-4 space-y-5 select-none">
+    <aside className="w-[290px] xl:w-[315px] bg-white border-l border-slate-200 flex flex-col shrink-0 h-screen sticky top-0 z-10 overflow-y-auto p-4 space-y-5">
       {/* 1. Google Business Profile Real Insights */}
       <div className="card-vibrant p-4 space-y-3">
         <div className="flex items-center justify-between">
@@ -264,8 +264,8 @@ export const RightInsightsPanel: React.FC = () => {
           </button>
 
           {/* Action 2: Check Rankings */}
-          <button
-            onClick={() => navigate('/rankings/grid')}
+          <Link
+            to="/rankings/grid"
             className="w-full text-left p-2.5 rounded-xl bg-white hover:bg-slate-50 border border-slate-200 hover:border-purple-300 flex items-center justify-between text-xs font-bold text-slate-800 transition-all shadow-sm group"
           >
             <div className="flex items-center space-x-2.5">
@@ -275,7 +275,7 @@ export const RightInsightsPanel: React.FC = () => {
               <span>Check 5x5 Geo-Grid</span>
             </div>
             <ArrowRight className="w-3.5 h-3.5 text-slate-400 group-hover:text-purple-600 transition-colors" />
-          </button>
+          </Link>
 
           {/* Action 3: Sync GBP Data */}
           <button
@@ -293,8 +293,8 @@ export const RightInsightsPanel: React.FC = () => {
           </button>
 
           {/* Action 4: Generate Report */}
-          <button
-            onClick={() => navigate('/reports')}
+          <Link
+            to="/reports"
             className="w-full text-left p-2.5 rounded-xl bg-white hover:bg-slate-50 border border-slate-200 hover:border-purple-300 flex items-center justify-between text-xs font-bold text-slate-800 transition-all shadow-sm group"
           >
             <div className="flex items-center space-x-2.5">
@@ -304,7 +304,7 @@ export const RightInsightsPanel: React.FC = () => {
               <span>Executive Report</span>
             </div>
             <ArrowRight className="w-3.5 h-3.5 text-slate-400 group-hover:text-purple-600 transition-colors" />
-          </button>
+          </Link>
         </div>
       </div>
     </aside>

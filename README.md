@@ -1,8 +1,8 @@
-# LocalScope — Local SEO, Rankings & Reputation Operating System
+# LocalLift — Local SEO, Rankings & Reputation Operating System
 
-> **Local SEO, Rankings & Reputation in One Place**
+> **Local SEO, Rankings & Reputation SaaS Operating System**
 
-LocalScope is an enterprise-grade Local SEO management and automation SaaS platform built for local businesses, franchises, and marketing agencies.
+LocalLift is an enterprise-grade Local SEO management and automation SaaS platform built for local businesses, franchises, and marketing agencies.
 
 ---
 
@@ -18,7 +18,7 @@ npm run dev
 
 ```text
 ╔══════════════════════════════════════════════╗
-║          LocalScope Development              ║
+║          LocalLift Development               ║
 ╚══════════════════════════════════════════════╝
 
 Starting services...
@@ -29,7 +29,7 @@ Starting services...
 [FRONTEND] ✓ Running at http://localhost:5173
 [BACKEND]  ✓ Running at http://localhost:8000 (API Docs: http://localhost:8000/docs)
 
-✓ LocalScope development environment ready
+✓ LocalLift development environment ready
 ```
 
 ---
@@ -38,96 +38,74 @@ Starting services...
 
 | Service | Local URL | Description |
 | :--- | :--- | :--- |
-| **Frontend UI** | [http://localhost:5173](http://localhost:5173) | React 18 + Vite SaaS Dashboard |
+| **Frontend UI** | [http://localhost:5173](http://localhost:5173) | React 18 + TypeScript + Vite Dashboard |
 | **Backend API** | [http://localhost:8000](http://localhost:8000) | FastAPI REST API |
 | **API Docs (Swagger)** | [http://localhost:8000/docs](http://localhost:8000/docs) | Interactive OpenAPI Documentation |
 | **Health Check** | [http://localhost:8000/health](http://localhost:8000/health) | Backend status health check |
 
 ---
 
-## Available Development Commands
+## Available Development & Test Commands
 
 Run from the root directory:
 
 - `npm run dev`: Starts **both** Frontend and Backend concurrently with prefixed logs.
 - `npm run dev:frontend`: Starts **only** the frontend Vite development server.
 - `npm run dev:backend`: Starts **only** the backend FastAPI server.
-- `npm run install:all`: Installs all root, frontend, and backend virtual environment dependencies.
-- `npm run build:frontend`: Builds the production bundle for the frontend.
+- `npm test --prefix frontend`: Executes frontend Vitest test suite.
+- `npm run build --prefix frontend`: Compiles TypeScript and builds the frontend production bundle.
 
 ---
 
-## Backend Environment Setup
+## Testing & Quality Assurance
 
-### Supported Python Versions
-- **Recommended**: Python 3.12 / 3.13
-- **Supported Range**: Python 3.10 – 3.13
-- *Note: Python 3.14 is a preview release with ecosystem wheel limitations; use Python 3.12/3.13 for stability.*
+### Frontend Tests & Type Checking
+```bash
+# In frontend/ directory:
+npm test            # Runs Vitest unit & regression suites
+npm run build       # Compiles TypeScript and builds Vite bundle
+```
 
-### Manual Backend Setup (Optional)
-If running outside the root `npm run dev` orchestrator:
-
-```powershell
-# 1. Navigate to backend directory
-cd backend
-
-# 2. Create virtual environment with supported Python
-py -3.13 -m venv venv
-
-# 3. Activate the virtual environment
-.\venv\Scripts\Activate.ps1  # Windows
-# source venv/bin/activate   # Linux/macOS
-
-# 4. Install dependencies
-python -m pip install --upgrade pip
-python -m pip install -r requirements.txt
-
-# 5. Run test suite or start the server
-python test_api.py
-python run.py
+### Backend Automated Test Suites
+```bash
+# In backend/ directory:
+python test_data_integrity.py
+python test_production_cleanliness.py
+python test_category_system.py
+python test_connections_and_auth_hardening.py
+python test_team_and_my_projects.py
+python test_schema_intelligence.py
+python test_geogrid_location_fixes.py
+python test_ai_and_final_verification.py
 ```
 
 ---
 
-## Production Integrations Setup
+## Environment & Security Configuration
 
-LocalLift connects to real production APIs for search ranking intelligence and business profile synchronization. The application runs smoothly in development mode without credentials; add credentials to your `.env` file to enable live sync.
+Copy `.env.example` to `.env` to configure your environment. **Never commit `.env` or production secrets to source control.**
 
-### 1. SERP & Rank Tracking (SerpApi)
-LocalLift uses a pluggable SERP Provider architecture (`app.services.serp`) supporting Google Search, Local Pack, and 5x5 Geo-Grid rankings:
+```bash
+cp .env.example .env
+```
 
-- **Supported Providers**: `serpapi` (default), `mock` (automated testing)
-- **Environment Variables**:
-  ```env
-  SERP_PROVIDER=serpapi
-  SERPAPI_KEY=your_serpapi_private_key_here
-  ```
-- **How to obtain**: Create an account at [SerpApi.com](https://serpapi.com) and retrieve your API key from your dashboard.
-- **Features**: Real organic top 100 lookup, Local Pack place matching, anti-hijack domain validation, discrete GPS 5x5 geo-grid scans with rate-limiting and in-memory TTL caching.
+### Key Configuration Variables
 
-### 2. Google Business Profile (OAuth 2.0 & APIs)
-LocalLift communicates with Google Business Profile APIs to discover verified locations, track changes, and synchronize performance metrics:
-
-- **Google Cloud Console Setup**:
-  1. Create a project in [Google Cloud Console](https://console.cloud.google.com/).
-  2. Enable **My Business Account Management API**, **My Business Business Information API**, and **Business Profile Performance API**.
-  3. Configure OAuth consent screen with scopes:
-     - `https://www.googleapis.com/auth/business.manage`
-     - `https://www.googleapis.com/auth/userinfo.email`
-  4. Create OAuth 2.0 Web Client credentials with Authorized Redirect URI:
-     `http://localhost:5173/integrations/google/callback`
-- **Environment Variables**:
-  ```env
-  GOOGLE_CLIENT_ID=your_google_client_id.apps.googleusercontent.com
-  GOOGLE_CLIENT_SECRET=your_google_client_secret
-  GOOGLE_REDIRECT_URI=http://localhost:5173/integrations/google/callback
-  ```
-- **Features**: OAuth 2.0 consent flow, auto-refreshing access tokens, idempotent profile synchronization, automatic `GBPChange` audit log tracking, and search/maps performance metrics aggregation.
+| Variable | Default / Example | Purpose |
+| :--- | :--- | :--- |
+| `ENVIRONMENT` | `development` | Set to `production` in live deployments (enforces strict security). |
+| `SECRET_KEY` | *(Set a 32+ char random string)* | JWT signing key. Mandatory in production mode. |
+| `DATABASE_URL` | `sqlite+aiosqlite:///./locallift.db` | Database connection string. Use PostgreSQL in production. |
+| `BACKEND_CORS_ORIGINS` | `["http://localhost:5173"]` | Allowed CORS origins for authenticated API requests. |
+| `SERP_PROVIDER` | `mock` or `serpapi` | Rank tracking provider (`serpapi` requires `SERPAPI_KEY`). |
+| `AI_PROVIDER` | `rule_based` | AI engine (`gemini`, `openai`, or deterministic `rule_based`). |
+| `GOOGLE_CLIENT_ID` | `...` | Google OAuth Client ID for GBP integration. |
+| `GOOGLE_CLIENT_SECRET`| `...` | Google OAuth Client Secret. |
 
 ---
 
 ## Technology Stack
 
-- **Frontend**: React 18, TypeScript, Vite, TailwindCSS, Recharts, Lucide Icons.
-- **Backend**: Python 3.10-3.13, FastAPI, SQLAlchemy 2.0 (Async), Pydantic v2, Uvicorn, SQLite/PostgreSQL.
-- **Process Orchestration**: Node.js centralized runner with `tree-kill` clean process termination.
+- **Frontend**: React 18, TypeScript, Vite, TailwindCSS, Recharts, Lucide Icons, Vitest.
+- **Backend**: Python 3.10–3.13, FastAPI, SQLAlchemy 2.0 (Async), Pydantic v2, Uvicorn, SQLite / PostgreSQL.
+- **Process Orchestration**: Centralized runner with `tree-kill` clean process lifecycle management.

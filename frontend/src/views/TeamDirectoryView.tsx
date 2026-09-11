@@ -146,7 +146,7 @@ export const TeamDirectoryView: React.FC = () => {
         <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl flex items-center space-x-2 text-xs text-emerald-800 animate-fade-in">
           <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-600" />
           <span className="flex-1 font-medium">{successMsg}</span>
-          <button onClick={() => setSuccessMsg(null)} className="text-emerald-500 hover:text-emerald-800 text-xs font-bold">✕</button>
+          <button onClick={() => setSuccessMsg(null)} aria-label="Dismiss notification" className="text-emerald-500 hover:text-emerald-800 text-xs font-bold">✕</button>
         </div>
       )}
 
@@ -154,7 +154,7 @@ export const TeamDirectoryView: React.FC = () => {
         <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl flex items-center space-x-2 text-xs text-rose-700 animate-fade-in">
           <AlertCircle className="w-4 h-4 shrink-0 text-rose-600" />
           <span className="flex-1">{errorMsg}</span>
-          <button onClick={() => setErrorMsg(null)} className="text-rose-500 hover:text-rose-800 text-xs font-bold">✕</button>
+          <button onClick={() => setErrorMsg(null)} aria-label="Dismiss error notification" className="text-rose-500 hover:text-rose-800 text-xs font-bold">✕</button>
         </div>
       )}
 
@@ -254,6 +254,7 @@ export const TeamDirectoryView: React.FC = () => {
               </h3>
               <button
                 onClick={() => setShowInviteModal(false)}
+                aria-label="Close invite modal"
                 className="text-slate-400 hover:text-slate-600 text-sm font-bold"
               >
                 ✕

@@ -23,6 +23,7 @@ import api from '../api/client';
 import { useProject } from '../context/ProjectContext';
 import { getErrorMessage } from '../utils/error';
 import { Project, BusinessCategory } from '../types';
+import { normalizeExternalUrl } from '../utils/url';
 
 export const MyProjectsView: React.FC = () => {
   const navigate = useNavigate();
@@ -285,16 +286,23 @@ export const MyProjectsView: React.FC = () => {
                           </span>
                         )}
                       </div>
-                      <a
-                        href={`https://${project.domain}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-xs text-purple-600 hover:underline flex items-center space-x-1 mt-0.5 truncate"
-                      >
-                        <Globe className="w-3 h-3 text-slate-400 shrink-0" />
-                        <span className="truncate">{project.domain}</span>
-                        <ExternalLink className="w-2.5 h-2.5 shrink-0 opacity-60" />
-                      </a>
+                      {normalizeExternalUrl(project.domain) ? (
+                        <a
+                          href={normalizeExternalUrl(project.domain)!}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-xs text-purple-600 hover:underline flex items-center space-x-1 mt-0.5 truncate"
+                        >
+                          <Globe className="w-3 h-3 text-slate-400 shrink-0" />
+                          <span className="truncate">{project.domain}</span>
+                          <ExternalLink className="w-2.5 h-2.5 shrink-0 opacity-60" />
+                        </a>
+                      ) : (
+                        <div className="text-xs text-slate-600 flex items-center space-x-1 mt-0.5 truncate">
+                          <Globe className="w-3 h-3 text-slate-400 shrink-0" />
+                          <span className="truncate">{project.domain}</span>
+                        </div>
+                      )}
                     </div>
 
                     <span
