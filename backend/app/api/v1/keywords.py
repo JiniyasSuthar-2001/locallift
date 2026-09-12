@@ -340,8 +340,21 @@ async def trigger_grid_scan(
     )
     project = proj_res.scalars().first()
 
-    # 2. Determine center coordinates from location or request
-    loc = project.locations[0] if project.locations else None
+    # 2. Determine center coordinates from location_id, manual coordinates, or project locations
+    loc = None
+    if scan_req.location_id is not None:
+        loc_res = await db.execute(
+            select(Location).where(Location.id == scan_req.location_id, Location.project_id == project.id)
+        )
+        loc = loc_res.scalars().first()
+        if not loc:
+            raise HTTPException(
+                status_code=400,
+                detail=f"INVALID_LOCATION_ID: Location ID {scan_req.location_id} does not exist or does not belong to project {project.id}."
+            )
+    else:
+        loc = project.locations[0] if project.locations else None
+
     lat_center = scan_req.center_lat if scan_req.center_lat is not None else (loc.latitude if loc else None)
     lng_center = scan_req.center_lng if scan_req.center_lng is not None else (loc.longitude if loc else None)
 
@@ -351,9 +364,14 @@ async def trigger_grid_scan(
             detail="LOCATION_COORDINATES_REQUIRED: Valid geographic coordinates (latitude and longitude) are required for a Geo-Grid scan. Please configure your business location address or coordinates."
         )
 
+    if not (-90.0 <= lat_center <= 90.0):
+        raise HTTPException(status_code=400, detail="INVALID_LATITUDE: Latitude must be between -90 and 90 degrees.")
+    if not (-180.0 <= lng_center <= 180.0):
+        raise HTTPException(status_code=400, detail="INVALID_LONGITUDE: Longitude must be between -180 and 180 degrees.")
+
     radius = scan_req.radius_km or 10.0
     grid_size = scan_req.grid_size or 5
-    center_name = scan_req.center_name or (loc.name if loc and loc.name else "Business Location")
+    center_name = (loc.name if loc and loc.name else None) or scan_req.center_name or "Business Location"
 
     # 3. Execute real GeoGrid scan via GeoGridScanner
     provider = get_serp_provider()

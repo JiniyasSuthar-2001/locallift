@@ -415,3 +415,69 @@ async def get_dashboard_summary(
         gbp_summary=gbp_summary,
         gsc_summary=gsc_summary
     )
+
+
+@router.get("/{project_id}/locations", response_model=List[LocationOut])
+async def list_project_locations(
+    project_id: int,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    List all locations belonging to an authorized project.
+    """
+    await verify_project_access(project_id, current_user, db)
+    stmt = select(Location).where(Location.project_id == project_id).order_by(Location.id.asc())
+    res = await db.execute(stmt)
+    return res.scalars().all()
+
+
+@router.post("/{project_id}/locations", response_model=LocationOut)
+async def create_project_location(
+    project_id: int,
+    location_in: LocationCreate,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Create a new location for an authorized project with strict coordinate bounds validation (-90 to 90 lat, -180 to 180 lng).
+    """
+    await verify_project_access(project_id, current_user, db)
+
+    lat = location_in.latitude
+    lng = location_in.longitude
+
+    if lat is not None and not (-90.0 <= lat <= 90.0):
+        raise HTTPException(status_code=400, detail="INVALID_LATITUDE: Latitude must be between -90 and 90 degrees.")
+    if lng is not None and not (-180.0 <= lng <= 180.0):
+        raise HTTPException(status_code=400, detail="INVALID_LONGITUDE: Longitude must be between -180 and 180 degrees.")
+
+    if (lat is None or lng is None) and (location_in.address or location_in.city):
+        from app.services.geocoding import GeocodingService
+        coords = await GeocodingService.geocode_address(
+            address=location_in.address,
+            city=location_in.city,
+            state=location_in.state,
+            postal_code=location_in.postal_code,
+            country=location_in.country
+        )
+        if coords:
+            lat, lng = coords
+
+    loc = Location(
+        project_id=project_id,
+        name=location_in.name,
+        address=location_in.address,
+        city=location_in.city,
+        state=location_in.state,
+        postal_code=location_in.postal_code,
+        country=location_in.country or "United States",
+        phone=location_in.phone,
+        latitude=lat,
+        longitude=lng,
+        place_id=location_in.place_id
+    )
+    db.add(loc)
+    await db.commit()
+    await db.refresh(loc)
+    return loc

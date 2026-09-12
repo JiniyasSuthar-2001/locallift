@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 from typing import Optional, List, Any
 from datetime import datetime
 
@@ -13,6 +13,18 @@ class LocationBase(BaseModel):
     latitude: Optional[float] = None
     longitude: Optional[float] = None
     place_id: Optional[str] = None
+
+    @field_validator("latitude")
+    def validate_latitude(cls, v):
+        if v is not None and not (-90.0 <= v <= 90.0):
+            raise ValueError("Latitude must be between -90 and 90 degrees")
+        return v
+
+    @field_validator("longitude")
+    def validate_longitude(cls, v):
+        if v is not None and not (-180.0 <= v <= 180.0):
+            raise ValueError("Longitude must be between -180 and 180 degrees")
+        return v
 
 class LocationCreate(LocationBase):
     pass

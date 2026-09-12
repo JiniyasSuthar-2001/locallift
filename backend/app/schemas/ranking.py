@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 from typing import Optional, List, Any
 from datetime import datetime
 
@@ -75,8 +75,21 @@ class GeoGridScanOut(BaseModel):
 class GeoGridScanRequest(BaseModel):
     keyword_id: Optional[int] = None
     keyword: Optional[str] = None
+    location_id: Optional[int] = None
     center_name: Optional[str] = "City Center"
     center_lat: Optional[float] = None
     center_lng: Optional[float] = None
     radius_km: Optional[float] = 10.0
     grid_size: Optional[int] = 5
+
+    @field_validator("center_lat")
+    def validate_center_lat(cls, v):
+        if v is not None and not (-90.0 <= v <= 90.0):
+            raise ValueError("Latitude must be between -90 and 90 degrees")
+        return v
+
+    @field_validator("center_lng")
+    def validate_center_lng(cls, v):
+        if v is not None and not (-180.0 <= v <= 180.0):
+            raise ValueError("Longitude must be between -180 and 180 degrees")
+        return v

@@ -3,6 +3,7 @@ import { MapPin, Navigation, Sparkles, Filter, RotateCw } from 'lucide-react';
 import { useProject } from '../context/ProjectContext';
 import { GeoGridScan } from '../types';
 import { LocalGridMap } from '../components/rankings/LocalGridMap';
+import { LocationPickerModal } from '../components/rankings/LocationPickerModal';
 import { EmptyState } from '../components/ui/EmptyState';
 import api from '../api/client';
 import { getErrorMessage } from '../utils/error';
@@ -13,6 +14,7 @@ export const LocalGridRankingsView: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [isScanning, setIsScanning] = useState(false);
   const [scanError, setScanError] = useState<string | null>(null);
+  const [isPickerOpen, setIsPickerOpen] = useState(false);
 
   const fetchScan = async () => {
     if (!activeProject) return;
@@ -32,21 +34,40 @@ export const LocalGridRankingsView: React.FC = () => {
     fetchScan();
   }, [activeProject?.id]);
 
-  const handleRunScan = async () => {
+  const handleOpenPicker = () => {
+    setIsPickerOpen(true);
+  };
+
+  const handleStartScanWithLocation = async (params: {
+    location_id?: number;
+    center_lat?: number;
+    center_lng?: number;
+    center_name?: string;
+    keyword?: string;
+    radius_km?: number;
+    grid_size?: number;
+  }) => {
     if (!activeProject) return;
     try {
       setIsScanning(true);
       setScanError(null);
+
       const fallbackKeyword = activeProject.primary_category
         ? `${activeProject.primary_category.toLowerCase()} near me`
         : `${activeProject.name} near me`;
 
       await api.post(`/keywords/${activeProject.id}/grid/rescan`, {
         keyword_id: scan?.keyword_id,
-        keyword: scan?.center_name || fallbackKeyword,
-        radius_km: scan?.radius_km || 7.5,
-        grid_size: scan?.grid_size || 5
+        keyword: params.keyword || scan?.center_name || fallbackKeyword,
+        location_id: params.location_id,
+        center_lat: params.center_lat,
+        center_lng: params.center_lng,
+        center_name: params.center_name,
+        radius_km: params.radius_km || 7.5,
+        grid_size: params.grid_size || 5
       });
+
+      setIsPickerOpen(false);
       await fetchScan();
     } catch (e: any) {
       console.error('Grid rescan failed:', e);
@@ -66,6 +87,8 @@ export const LocalGridRankingsView: React.FC = () => {
       />
     );
   }
+
+  const initialKeyword = scan?.center_name || (activeProject.primary_category ? `${activeProject.primary_category.toLowerCase()} near me` : `${activeProject.name} near me`);
 
   return (
     <div className="space-y-6">
@@ -89,7 +112,7 @@ export const LocalGridRankingsView: React.FC = () => {
             <div className="font-semibold">{scanError}</div>
             {scanError.includes('LOCATION_COORDINATES_REQUIRED') && (
               <div className="mt-1 text-slate-600">
-                Please go to Project Settings and add a physical address or exact GPS coordinates (latitude / longitude) to enable 5x5 Geo-Grid map scanning.
+                Please go to Project Settings or click <strong>Re-scan Grid</strong> to select a location or enter manual GPS coordinates.
               </div>
             )}
           </div>
@@ -97,7 +120,19 @@ export const LocalGridRankingsView: React.FC = () => {
       )}
 
       {/* Main Grid Component */}
-      <LocalGridMap scan={scan} onRescan={handleRunScan} isScanning={isScanning} />
+      <LocalGridMap scan={scan} onRescan={handleOpenPicker} isScanning={isScanning} />
+
+      {/* Location Picker Modal */}
+      <LocationPickerModal
+        isOpen={isPickerOpen}
+        onClose={() => setIsPickerOpen(false)}
+        projectId={activeProject.id}
+        onStartScan={handleStartScanWithLocation}
+        isScanning={isScanning}
+        initialKeyword={initialKeyword}
+        initialRadius={scan?.radius_km || 7.5}
+        initialGridSize={scan?.grid_size || 5}
+      />
     </div>
   );
 };
