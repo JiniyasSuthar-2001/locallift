@@ -4,6 +4,8 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, or_, and_
 from app.database import get_db
+from app.core.deps import get_current_user, get_user_organization_ids, verify_project_access, verify_organization_membership
+from app.models.user import User, OrganizationMember
 from app.models.template import Template, TemplateUsage
 from app.schemas.template import (
     TemplateOut,
@@ -19,20 +21,52 @@ from app.services.template_service import TemplateEngine
 
 router = APIRouter(prefix="/templates", tags=["Templates"])
 
+async def _get_user_primary_org_id(user: User, db: AsyncSession, requested_org_id: Optional[int] = None) -> int:
+    """Helper to resolve and validate a user's target organization ID."""
+    org_ids = await get_user_organization_ids(user.id, db)
+    if not org_ids and not user.is_superuser:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="User has no associated organization."
+        )
+
+    if requested_org_id:
+        if not user.is_superuser and requested_org_id not in org_ids:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Access denied: You do not belong to the requested organization."
+            )
+        return requested_org_id
+
+    if org_ids:
+        return org_ids[0]
+    return 1
+
+
 @router.get("", response_model=List[TemplateOut])
 async def list_templates(
     category: Optional[str] = None,
     template_type: Optional[str] = None,
     is_system: Optional[bool] = None,
     search: Optional[str] = None,
+    current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
-    """List templates with optional category, type, and search filters."""
+    """List templates with multi-tenant isolation: returns system templates + current user's organization templates."""
     # Ensure system templates are seeded
     await TemplateEngine.seed_system_templates(db)
 
     query = select(Template)
     conditions = []
+
+    # Tenant scoping
+    if not current_user.is_superuser:
+        org_ids = await get_user_organization_ids(current_user.id, db)
+        tenant_filter = or_(
+            Template.is_system == True,
+            Template.organization_id.in_(org_ids)
+        )
+        conditions.append(tenant_filter)
 
     if category and category != "all":
         conditions.append(Template.category == category)
@@ -59,20 +93,44 @@ async def list_templates(
 
 
 @router.get("/{template_id}", response_model=TemplateOut)
-async def get_template(template_id: int, db: AsyncSession = Depends(get_db)):
-    """Retrieve single template by ID."""
+async def get_template(
+    template_id: int,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Retrieve single template by ID with tenant access verification."""
     stmt = select(Template).where(Template.id == template_id)
     res = await db.execute(stmt)
     template = res.scalar_one_or_none()
     if not template:
         raise HTTPException(status_code=404, detail="Template not found")
+
+    if not template.is_system and not current_user.is_superuser:
+        org_ids = await get_user_organization_ids(current_user.id, db)
+        if template.organization_id not in org_ids:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Access denied: You do not have permission to view this template."
+            )
+
     return template
 
 
 @router.post("", response_model=TemplateOut, status_code=status.HTTP_201_CREATED)
-async def create_template(data: TemplateCreate, db: AsyncSession = Depends(get_db)):
-    """Create a new custom user template with syntax validation."""
-    # Validate content
+async def create_template(
+    data: TemplateCreate,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Create a new custom user template with tenant validation."""
+    # Resolve organization ID
+    if data.project_id:
+        proj = await verify_project_access(data.project_id, current_user, db)
+        org_id = proj.organization_id
+    else:
+        org_id = await _get_user_primary_org_id(current_user, db, data.organization_id)
+
+    # Validate content syntax
     is_valid, errors, warnings, detected_vars = TemplateEngine.validate_template(
         data.content, data.template_type, data.required_fields
     )
@@ -81,7 +139,6 @@ async def create_template(data: TemplateCreate, db: AsyncSession = Depends(get_d
 
     slug = re.sub(r"[^a-zA-Z0-9]+", "-", data.name.lower()).strip("-")
     
-    # Auto-populate variables if none provided
     vars_list = data.variables or []
     if not vars_list:
         vars_list = [{"name": v, "label": v.replace("_", " ").title(), "required": False} for v in detected_vars]
@@ -98,8 +155,8 @@ async def create_template(data: TemplateCreate, db: AsyncSession = Depends(get_d
         required_fields=data.required_fields or [],
         is_system=False,
         project_id=data.project_id,
-        organization_id=data.organization_id,
-        created_by="User",
+        organization_id=org_id,
+        created_by=current_user.full_name or current_user.email,
         version=1,
         usage_count=0
     )
@@ -110,8 +167,13 @@ async def create_template(data: TemplateCreate, db: AsyncSession = Depends(get_d
 
 
 @router.put("/{template_id}", response_model=TemplateOut)
-async def update_template(template_id: int, data: TemplateUpdate, db: AsyncSession = Depends(get_db)):
-    """Update custom user template."""
+async def update_template(
+    template_id: int,
+    data: TemplateUpdate,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Update custom user template with tenant verification."""
     stmt = select(Template).where(Template.id == template_id)
     res = await db.execute(stmt)
     template = res.scalar_one_or_none()
@@ -120,9 +182,17 @@ async def update_template(template_id: int, data: TemplateUpdate, db: AsyncSessi
 
     if template.is_system:
         raise HTTPException(
-            status_code=403,
+            status_code=status.HTTP_403_FORBIDDEN,
             detail="System templates are read-only to preserve standards compliance. Please duplicate the template to customize it."
         )
+
+    if not current_user.is_superuser:
+        org_ids = await get_user_organization_ids(current_user.id, db)
+        if template.organization_id not in org_ids:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Access denied: You do not have permission to modify this template."
+            )
 
     # Validate if content changed
     if data.content is not None:
@@ -155,16 +225,29 @@ async def update_template(template_id: int, data: TemplateUpdate, db: AsyncSessi
 
 
 @router.post("/{template_id}/duplicate", response_model=TemplateOut)
-async def duplicate_template(template_id: int, db: AsyncSession = Depends(get_db)):
-    """Duplicate a system or user template into a new editable user copy."""
+async def duplicate_template(
+    template_id: int,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Duplicate a template into the user's organization."""
     stmt = select(Template).where(Template.id == template_id)
     res = await db.execute(stmt)
     original = res.scalar_one_or_none()
     if not original:
         raise HTTPException(status_code=404, detail="Template not found")
 
+    if not original.is_system and not current_user.is_superuser:
+        org_ids = await get_user_organization_ids(current_user.id, db)
+        if original.organization_id not in org_ids:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Access denied: You do not have permission to duplicate this template."
+            )
+
+    user_org_id = await _get_user_primary_org_id(current_user, db)
     copy_name = f"{original.name} (Copy)"
-    copy_slug = f"{original.slug}-copy-{int(db.bind.url.database and 1 or 1)}"
+    copy_slug = f"{original.slug}-copy-{int(original.id)}"
 
     duplicate = Template(
         name=copy_name,
@@ -177,7 +260,8 @@ async def duplicate_template(template_id: int, db: AsyncSession = Depends(get_db
         variables=original.variables,
         required_fields=original.required_fields,
         is_system=False,
-        created_by="User",
+        organization_id=user_org_id,
+        created_by=current_user.full_name or current_user.email,
         version=1,
         usage_count=0
     )
@@ -188,8 +272,12 @@ async def duplicate_template(template_id: int, db: AsyncSession = Depends(get_db
 
 
 @router.delete("/{template_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_template(template_id: int, db: AsyncSession = Depends(get_db)):
-    """Delete a user-created template."""
+async def delete_template(
+    template_id: int,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Delete a user-created template within tenant boundaries."""
     stmt = select(Template).where(Template.id == template_id)
     res = await db.execute(stmt)
     template = res.scalar_one_or_none()
@@ -197,7 +285,15 @@ async def delete_template(template_id: int, db: AsyncSession = Depends(get_db)):
         raise HTTPException(status_code=404, detail="Template not found")
 
     if template.is_system:
-        raise HTTPException(status_code=403, detail="System templates cannot be deleted.")
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="System templates cannot be deleted.")
+
+    if not current_user.is_superuser:
+        org_ids = await get_user_organization_ids(current_user.id, db)
+        if template.organization_id not in org_ids:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Access denied: You do not have permission to delete this template."
+            )
 
     await db.delete(template)
     await db.commit()
@@ -205,13 +301,29 @@ async def delete_template(template_id: int, db: AsyncSession = Depends(get_db)):
 
 
 @router.post("/{template_id}/apply", response_model=TemplateApplyResponse)
-async def apply_template(template_id: int, data: TemplateApplyRequest, db: AsyncSession = Depends(get_db)):
-    """Apply and render a template using real Project, Location, and GBP data."""
+async def apply_template(
+    template_id: int,
+    data: TemplateApplyRequest,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Apply and render a template after validating project and template access."""
+    # Verify project access for target project
+    await verify_project_access(data.project_id, current_user, db)
+
     stmt = select(Template).where(Template.id == template_id)
     res = await db.execute(stmt)
     template = res.scalar_one_or_none()
     if not template:
         raise HTTPException(status_code=404, detail="Template not found")
+
+    if not template.is_system and not current_user.is_superuser:
+        org_ids = await get_user_organization_ids(current_user.id, db)
+        if template.organization_id not in org_ids:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Access denied: You do not have permission to use this template."
+            )
 
     rendered, used_vars, missing_vars = await TemplateEngine.render_template(
         db=db,
@@ -226,7 +338,7 @@ async def apply_template(template_id: int, data: TemplateApplyRequest, db: Async
     usage = TemplateUsage(
         template_id=template.id,
         project_id=data.project_id,
-        applied_by="User",
+        applied_by=current_user.full_name or current_user.email,
         rendered_content=rendered
     )
     db.add(usage)
@@ -242,7 +354,10 @@ async def apply_template(template_id: int, data: TemplateApplyRequest, db: Async
 
 
 @router.post("/validate", response_model=TemplateValidateResponse)
-async def validate_template_syntax(data: TemplateValidateRequest):
+async def validate_template_syntax(
+    data: TemplateValidateRequest,
+    current_user: User = Depends(get_current_user)
+):
     """Validate template syntax, variables, and JSON structure without saving."""
     req_fields = [v.get("name") for v in (data.variables or []) if v.get("required")]
     is_valid, errors, warnings, detected_vars = TemplateEngine.validate_template(
@@ -257,13 +372,18 @@ async def validate_template_syntax(data: TemplateValidateRequest):
 
 
 @router.post("/import", response_model=TemplateOut)
-async def import_template(data: TemplateImportRequest, db: AsyncSession = Depends(get_db)):
-    """Import and validate a structured template from text/JSON."""
+async def import_template(
+    data: TemplateImportRequest,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Import and validate a structured template assigned to the user's organization."""
     content = data.file_content.strip()
     if not content:
         raise HTTPException(status_code=400, detail="Import content cannot be empty")
 
-    # Detect if JSON-LD or Markdown
+    user_org_id = await _get_user_primary_org_id(current_user, db)
+
     is_json = content.startswith("{") and content.endswith("}")
     template_type = data.template_type or ("schema_jsonld" if is_json else "content_markdown")
     category = data.category or ("schema" if is_json else "local_content")
@@ -290,7 +410,8 @@ async def import_template(data: TemplateImportRequest, db: AsyncSession = Depend
         variables=vars_list,
         required_fields=[],
         is_system=False,
-        created_by="Imported",
+        organization_id=user_org_id,
+        created_by=current_user.full_name or current_user.email,
         version=1,
         usage_count=0
     )

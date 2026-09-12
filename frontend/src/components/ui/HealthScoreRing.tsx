@@ -1,6 +1,6 @@
 import React from 'react';
 
-interface HealthScoreRingProps {
+export interface HealthScoreRingProps {
   score?: number | null;
   size?: number;
   strokeWidth?: number;
@@ -21,72 +21,100 @@ export const HealthScoreRing: React.FC<HealthScoreRingProps> = ({
   const safeScore = isAvailable ? Math.min(100, Math.max(0, score)) : 0;
   const strokeDashoffset = isAvailable ? circumference - (safeScore / 100) * circumference : circumference;
 
-  let strokeColor = '#64748b'; // Slate fallback
-  let glowColor = 'transparent';
+  let strokeColor = '#8DAAA0'; // Botanical slate fallback
+  let gradientId = 'score-neutral-gradient';
 
   if (isAvailable) {
     if (safeScore >= 80) {
-      strokeColor = '#10b981'; // Emerald
-      glowColor = 'rgba(16, 185, 129, 0.4)';
-    } else if (safeScore >= 75) {
-      strokeColor = '#eab308'; // Yellow
-      glowColor = 'rgba(234, 179, 8, 0.4)';
-    } else if (safeScore >= 60) {
-      strokeColor = '#f97316'; // Orange
-      glowColor = 'rgba(249, 115, 22, 0.4)';
+      strokeColor = '#236B4F'; // Forest Green
+      gradientId = 'score-forest-gradient';
+    } else if (safeScore >= 65) {
+      strokeColor = '#D97706'; // Warm Amber
+      gradientId = 'score-amber-gradient';
     } else {
-      strokeColor = '#f43f5e'; // Rose
-      glowColor = 'rgba(244, 63, 94, 0.4)';
+      strokeColor = '#DC2626'; // Red
+      gradientId = 'score-red-gradient';
     }
   }
 
   return (
-    <div className="flex flex-col items-center justify-center p-4">
+    <div className="flex flex-col items-center justify-center p-2">
       <div className="relative flex items-center justify-center" style={{ width: size, height: size }}>
         <svg width={size} height={size} className="transform -rotate-90">
-          {/* Background circle */}
+          <defs>
+            <linearGradient id="score-forest-gradient" x1="0%" y1="0%" x2="100%" y2="100%">
+              <stop offset="0%" stopColor="#236B4F" />
+              <stop offset="50%" stopColor="#2FA878" />
+              <stop offset="100%" stopColor="#62C9A0" />
+            </linearGradient>
+            <linearGradient id="score-amber-gradient" x1="0%" y1="0%" x2="100%" y2="100%">
+              <stop offset="0%" stopColor="#B45309" />
+              <stop offset="100%" stopColor="#F59E0B" />
+            </linearGradient>
+            <linearGradient id="score-red-gradient" x1="0%" y1="0%" x2="100%" y2="100%">
+              <stop offset="0%" stopColor="#991B1B" />
+              <stop offset="100%" stopColor="#EF4444" />
+            </linearGradient>
+            <linearGradient id="score-neutral-gradient" x1="0%" y1="0%" x2="100%" y2="100%">
+              <stop offset="0%" stopColor="#B8DFC9" />
+              <stop offset="100%" stopColor="#DCE8DC" />
+            </linearGradient>
+          </defs>
+
+          {/* Background circle track */}
           <circle
             cx={size / 2}
             cy={size / 2}
             r={radius}
-            stroke="#1F293D"
+            stroke="#EAF2EA"
             strokeWidth={strokeWidth}
             fill="transparent"
           />
+
           {/* Animated score circle */}
           {isAvailable && (
             <circle
               cx={size / 2}
               cy={size / 2}
               r={radius}
-              stroke={strokeColor}
+              stroke={`url(#${gradientId})`}
               strokeWidth={strokeWidth}
               strokeDasharray={circumference}
               strokeDashoffset={strokeDashoffset}
               strokeLinecap="round"
               fill="transparent"
               style={{
-                transition: 'stroke-dashoffset 1s ease-in-out, stroke 0.5s ease',
-                filter: `drop-shadow(0 0 8px ${glowColor})`
+                transition: 'stroke-dashoffset 1s ease-in-out',
               }}
             />
           )}
         </svg>
-        <div className="absolute flex flex-col items-center justify-center text-center">
-          <span className="text-3xl font-extrabold tracking-tight text-white font-sans">
-            {isAvailable ? safeScore : '—'}
-          </span>
-          <span className="text-[10px] font-semibold text-gray-400 tracking-wider uppercase">
-            {isAvailable ? '/ 100' : 'No Data'}
-          </span>
+
+        {/* Center content */}
+        <div className="absolute inset-0 flex flex-col items-center justify-center text-center px-2">
+          {isAvailable ? (
+            <>
+              <span className="text-3xl font-extrabold tracking-tight text-[#142820]">
+                {Math.round(safeScore)}
+              </span>
+              <span className="text-[10px] font-bold uppercase tracking-wider text-[#587568] mt-0.5">
+                / 100
+              </span>
+            </>
+          ) : (
+            <span className="text-xs font-semibold text-[#587568] uppercase tracking-wider">
+              Not Audited
+            </span>
+          )}
         </div>
       </div>
-      <div className="mt-3 text-center">
-        <div className="text-xs font-bold tracking-widest text-emerald-400 uppercase">{label}</div>
-        <div className="text-[11px] text-gray-400 mt-0.5">
-          {isAvailable ? sublabel : 'Awaiting Audit'}
+
+      {(label || sublabel) && (
+        <div className="mt-3 text-center">
+          {label && <p className="text-xs font-bold text-[#142820] uppercase tracking-wider">{label}</p>}
+          {sublabel && <p className="text-[11px] text-[#587568] mt-0.5">{sublabel}</p>}
         </div>
-      </div>
+      )}
     </div>
   );
 };

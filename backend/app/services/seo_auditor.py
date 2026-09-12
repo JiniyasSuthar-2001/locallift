@@ -485,24 +485,64 @@ class SEOAuditor:
                 })
 
         # =====================================================================
-        # Calculate Real Local SEO Pillar Scores & Overall Score
+        # Calculate Evidence-Based Local SEO Pillar Scores & Overall Score
         # =====================================================================
-        crawl_score = max(30, min(100, 100 - (critical_count * 15)))
-        onpage_score = max(35, min(100, 100 - (warning_count * 8)))
-        schema_score = 95 if has_valid_local_schema else 45
-        gbp_score = 85 if (gbp_context and gbp_context.get("connected")) else 50
-        cit_score = 80 if citation_context else 60
-        rev_score = 88 if (review_context and review_context.get("unanswered_count", 0) == 0) else 65
+        # 1. Crawl Health: based strictly on status codes and critical page crawl failures
+        crawl_score = max(0, min(100, 100 - (critical_count * 20)))
 
-        # Weighted composite score
-        composite_score = int(
-            (crawl_score * 0.20) +
-            (onpage_score * 0.20) +
-            (schema_score * 0.25) +
-            (gbp_score * 0.15) +
-            (cit_score * 0.10) +
-            (rev_score * 0.10)
-        )
+        # 2. On-Page Content: based on title, h1, body content, and NAP presence
+        onpage_score = max(0, min(100, 100 - (warning_count * 10)))
+
+        # 3. Schema Structured Data: based on detected JSON-LD LocalBusiness markup
+        schema_score = 100 if has_valid_local_schema else 0
+
+        # 4. GBP Alignment: calculated only if GBP account is linked and context available
+        gbp_score: Optional[int] = None
+        if gbp_context and gbp_context.get("connected"):
+            gbp_pts = 100
+            if not (gbp_context.get("business_name") and canonical_name and gbp_context["business_name"].strip().lower() == canonical_name.strip().lower()):
+                gbp_pts -= 30
+            if not (gbp_context.get("phone") and norm_canonical_phone and _normalize_phone(gbp_context["phone"]) == norm_canonical_phone):
+                gbp_pts -= 30
+            if not gbp_context.get("address"):
+                gbp_pts -= 20
+            gbp_score = max(0, min(100, gbp_pts))
+
+        # 5. Citations & NAP: calculated only from actual directory citation records
+        cit_score: Optional[int] = None
+        if citation_context and len(citation_context) > 0:
+            total_cits = len(citation_context)
+            consistent_cits = sum(1 for c in citation_context if c.get("nap_status") in ("consistent", "match") and c.get("status") in ("listed", "active"))
+            cit_score = max(0, min(100, int((consistent_cits / total_cits) * 100)))
+
+        # 6. Reviews & Reputation: calculated only if reviews exist
+        rev_score: Optional[int] = None
+        if review_context and review_context.get("total_reviews", 0) > 0:
+            total_r = review_context["total_reviews"]
+            unanswered_r = review_context.get("unanswered_count", 0)
+            avg_r = review_context.get("average_rating", 0.0)
+            rating_pts = (avg_r / 5.0) * 70.0
+            response_pts = ((total_r - unanswered_r) / total_r) * 30.0
+            rev_score = max(0, min(100, int(rating_pts + response_pts)))
+
+        # Composite score: dynamically normalize across measured pillars only
+        pillar_weights = {
+            "crawl_health": (crawl_score, 0.25),
+            "onpage_content": (onpage_score, 0.25),
+            "schema_structured_data": (schema_score, 0.25),
+            "gbp_alignment": (gbp_score, 0.15),
+            "citations_nap": (cit_score, 0.10),
+            "reviews_reputation": (rev_score, 0.10)
+        }
+
+        total_weight = 0.0
+        weighted_sum = 0.0
+        for pillar_name, (score_val, weight) in pillar_weights.items():
+            if score_val is not None:
+                total_weight += weight
+                weighted_sum += (score_val * weight)
+
+        composite_score = int(weighted_sum / total_weight) if total_weight > 0 else 0
 
         return {
             "score": composite_score,

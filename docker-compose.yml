@@ -1,0 +1,44 @@
+version: '3.8'
+
+services:
+  # Self-Hosted OpenSERP Engine (Official Image)
+  # No API key required. Runs local SERP scraping and normalization.
+  openserp:
+    image: karust/openserp:latest
+    container_name: locallift-openserp
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:7000:7000"
+    command:
+      - serve
+      - -a
+      - "0.0.0.0"
+      - -p
+      - "7000"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://127.0.0.1:7000/ready || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+    environment:
+      - LOG_LEVEL=info
+
+  # LocalLift Backend Service (Optional containerized mode)
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: locallift-backend
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8000:8000"
+    environment:
+      - ENVIRONMENT=development
+      - DATABASE_URL=sqlite+aiosqlite:///./locallift.db
+      - SERP_PROVIDER=openserp
+      - OPENSERP_BASE_URL=http://openserp:7000
+      - OPENSERP_TIMEOUT=30
+      - OPENSERP_DEFAULT_ENGINE=google
+      - SERP_FALLBACK_PROVIDER=serpapi
+    depends_on:
+      - openserp

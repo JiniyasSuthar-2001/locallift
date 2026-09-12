@@ -11,17 +11,17 @@ class Keyword(Base):
     
     keyword = Column(String(255), nullable=False)
     search_intent = Column(String(50), default="Commercial")  # Informational, Commercial, Navigational, Transactional
-    search_volume = Column(Integer, default=0)
-    difficulty = Column(Integer, default=30)
+    search_volume = Column(Integer, nullable=True, default=None)
+    difficulty = Column(Integer, nullable=True, default=None)
     target_location = Column(String(255), nullable=True)
     
     current_rank = Column(Integer, nullable=True)
     previous_rank = Column(Integer, nullable=True)
-    target_rank = Column(Integer, default=3)
+    target_rank = Column(Integer, nullable=True, default=None)
     ranking_url = Column(String(1000), nullable=True)
     serp_type = Column(String(50), default="Local Pack")  # Local Pack, Organic, Featured Snippet
     
-    opportunity_score = Column(String(20), default="HIGH")  # HIGH, MEDIUM, LOW
+    opportunity_score = Column(String(20), nullable=True, default=None)  # HIGH, MEDIUM, LOW
     business_relevance = Column(String(20), default="High")
     
     last_checked_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))

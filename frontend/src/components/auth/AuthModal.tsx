@@ -25,20 +25,14 @@ export const AuthModal: React.FC = () => {
           setLoading(false);
           return;
         }
-        const success = await register(email.trim(), password.trim(), fullName.trim(), orgName.trim());
-        if (!success) {
-          setError('Registration failed. Please try a different email.');
-        }
+        await register(email.trim(), password.trim(), fullName.trim(), orgName.trim());
       } else {
         if (!email.trim() || !password.trim()) {
           setError('Please enter your email and password.');
           setLoading(false);
           return;
         }
-        const success = await login(email.trim(), password.trim());
-        if (!success) {
-          setError('Invalid email or password.');
-        }
+        await login(email.trim(), password.trim());
       }
     } catch (err: any) {
       setError(getErrorMessage(err, 'Authentication error. Please try again.'));

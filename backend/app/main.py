@@ -7,6 +7,7 @@ from datetime import datetime, timezone
 import asyncio
 import uuid
 import logging
+from typing import Optional, Dict, Any, List
 
 from app.config import settings
 from app.database import engine, Base, AsyncSessionLocal
@@ -24,6 +25,7 @@ from app.api.v1.templates import router as templates_router
 from app.api.v1.categories import router as categories_router
 from app.api.v1.connections import router as connections_router
 from app.api.v1.team import router as team_router
+from app.api.v1.serp import router as serp_router
 
 logger = logging.getLogger("locallift")
 
@@ -70,11 +72,24 @@ app.include_router(organizations_router, prefix=settings.API_V1_STR)
 app.include_router(templates_router, prefix=settings.API_V1_STR)
 app.include_router(connections_router, prefix=settings.API_V1_STR)
 app.include_router(team_router, prefix=settings.API_V1_STR)
+app.include_router(serp_router, prefix=settings.API_V1_STR)
+
+def _is_allowed_origin(origin: Optional[str]) -> bool:
+    if not origin:
+        return False
+    clean_origin = origin.rstrip("/")
+    if clean_origin in origins:
+        return True
+    if settings.ENVIRONMENT.lower() != "production":
+        import re
+        if re.match(r"^https?://(localhost|127\.0\.0\.1)(:\d+)?$", clean_origin):
+            return True
+    return False
 
 def _add_cors_headers(request: Request, headers: dict = None) -> dict:
     h = dict(headers or {})
     origin = request.headers.get("origin")
-    if origin and (origin in origins or ("localhost" in origin or "127.0.0.1" in origin)):
+    if origin and _is_allowed_origin(origin):
         h["Access-Control-Allow-Origin"] = origin
         h["Access-Control-Allow-Credentials"] = "true"
         h["Access-Control-Allow-Methods"] = "GET, POST, PUT, PATCH, DELETE, OPTIONS"

@@ -78,22 +78,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, [token]);
 
   const login = async (email: string, password: string): Promise<boolean> => {
-    try {
-      const formData = new URLSearchParams();
-      formData.append('username', email);
-      formData.append('password', password);
-      const resp = await api.post('/auth/login', formData, {
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
-      });
-      const newToken = resp.data.access_token;
-      localStorage.setItem('locallift_token', newToken);
-      setToken(newToken);
-      setUser(resp.data.user);
-      return true;
-    } catch (e) {
-      console.error('Login error:', e);
-      return false;
-    }
+    const formData = new URLSearchParams();
+    formData.append('username', email);
+    formData.append('password', password);
+    const resp = await api.post('/auth/login', formData, {
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
+    });
+    const newToken = resp.data.access_token;
+    localStorage.setItem('locallift_token', newToken);
+    setToken(newToken);
+    setUser(resp.data.user);
+    return true;
   };
 
   const register = async (
@@ -102,22 +97,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     fullName: string,
     orgName?: string
   ): Promise<boolean> => {
-    try {
-      const resp = await api.post('/auth/register', {
-        email,
-        password,
-        full_name: fullName,
-        organization_name: orgName || undefined
-      });
-      const newToken = resp.data.access_token;
-      localStorage.setItem('locallift_token', newToken);
-      setToken(newToken);
-      setUser(resp.data.user);
-      return true;
-    } catch (e) {
-      console.error('Registration error:', e);
-      return false;
-    }
+    const resp = await api.post('/auth/register', {
+      email,
+      password,
+      full_name: fullName,
+      organization_name: orgName || undefined
+    });
+    const newToken = resp.data.access_token;
+    localStorage.setItem('locallift_token', newToken);
+    setToken(newToken);
+    setUser(resp.data.user);
+    return true;
   };
 
   const isAuthenticated = Boolean(user && token);

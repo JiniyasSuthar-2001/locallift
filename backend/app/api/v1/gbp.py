@@ -89,6 +89,8 @@ async def get_gbp_status(
         message="Connected to Google Business Profile."
     )
 
+from app.core.security import encrypt_token, decrypt_token
+
 @router.get("/{project_id}/auth-url", response_model=GBPOAuthURLResponse)
 async def get_google_auth_url(
     project_id: int,
@@ -96,13 +98,14 @@ async def get_google_auth_url(
     db: AsyncSession = Depends(get_db)
 ):
     """
-    Generates the official Google OAuth 2.0 authorization URL.
+    Generates the official Google OAuth 2.0 authorization URL with cryptographically signed state.
     """
     project = await verify_project_access(project_id, current_user, db)
 
     auth_url = GoogleOAuthService.get_authorization_url(
         project_id=project.id,
-        user_id=current_user.id
+        user_id=current_user.id,
+        organization_id=project.organization_id
     )
 
     return GBPOAuthURLResponse(
@@ -118,58 +121,63 @@ async def handle_google_oauth_callback(
     db: AsyncSession = Depends(get_db)
 ):
     """
-    Handles Google OAuth callback code exchange and triggers initial synchronization.
+    Handles Google OAuth callback code exchange with cryptographic state verification and token encryption.
     """
     if not cb_req.code:
         raise HTTPException(status_code=400, detail="Missing authorization code from Google")
 
-    # 1. Decode state if provided
-    project_id = cb_req.project_id
-    if cb_req.state and not project_id:
+    # 1. Cryptographically decode and validate state
+    target_project_id = cb_req.project_id
+    if cb_req.state:
         try:
-            state_data = json.loads(urllib.parse.unquote(cb_req.state))
-            project_id = state_data.get("project_id")
-        except Exception as e:
-            logger.warning(f"Could not decode OAuth state: {e}")
+            state_data = GoogleOAuthService.decode_and_validate_oauth_state(cb_req.state)
+            if state_data.get("user_id") and state_data["user_id"] != current_user.id and not current_user.is_superuser:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="OAuth state mismatch: Initiated by a different user."
+                )
+            if not target_project_id and state_data.get("project_id"):
+                target_project_id = state_data.get("project_id")
+        except ValueError as ve:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"OAuth state validation failed: {str(ve)}"
+            )
 
-    if not project_id:
-        # Fallback to current user's active organization project
-        org_id = current_user.active_organization_id
-        if org_id:
-            proj_res = await db.execute(select(Project).where(Project.organization_id == org_id))
-            first_proj = proj_res.scalars().first()
-            if first_proj:
-                project_id = first_proj.id
-        if not project_id:
-            proj_any = await db.execute(select(Project).order_by(Project.id.asc()))
-            first_any = proj_any.scalars().first()
-            if first_any:
-                project_id = first_any.id
-            else:
-                raise HTTPException(status_code=400, detail="Project ID missing from OAuth flow. Create a project first.")
+    if not target_project_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Project context cannot be securely established for OAuth connection."
+        )
 
-    # 2. Exchange code for tokens
+    # 2. Verify project access
+    project = await verify_project_access(target_project_id, current_user, db)
+
+    # 3. Exchange code for tokens
     try:
         token_info = await GoogleOAuthService.exchange_code_for_tokens(cb_req.code)
     except Exception as e:
         logger.error(f"Google OAuth token exchange failed: {e}")
         raise HTTPException(status_code=400, detail=f"OAuth token exchange failed: {str(e)}")
 
-    # 3. Retrieve user info / email
+    # 4. Retrieve user info / email
     email = await GoogleOAuthService.get_user_email(token_info["access_token"])
     if not email:
-        email = f"google-user-{project_id}@gmail.com"
+        email = f"google-user-{project.id}@gmail.com"
 
-    # 4. Create or update GoogleAccount record for this project
-    acc_res = await db.execute(select(GoogleAccount).where(GoogleAccount.project_id == project_id))
+    # 5. Create or update GoogleAccount record with encrypted tokens
+    enc_access_token = encrypt_token(token_info["access_token"])
+    enc_refresh_token = encrypt_token(token_info.get("refresh_token"))
+
+    acc_res = await db.execute(select(GoogleAccount).where(GoogleAccount.project_id == project.id))
     account = acc_res.scalars().first()
 
     if not account:
         account = GoogleAccount(
-            project_id=project_id,
+            project_id=project.id,
             account_email=email,
-            access_token=token_info["access_token"],
-            refresh_token=token_info.get("refresh_token"),
+            access_token=enc_access_token,
+            refresh_token=enc_refresh_token,
             token_expiry=token_info.get("token_expiry"),
             scopes=token_info.get("scope", []),
             is_connected=True
@@ -177,9 +185,9 @@ async def handle_google_oauth_callback(
         db.add(account)
     else:
         account.account_email = email
-        account.access_token = token_info["access_token"]
-        if token_info.get("refresh_token"):
-            account.refresh_token = token_info["refresh_token"]
+        account.access_token = enc_access_token
+        if enc_refresh_token:
+            account.refresh_token = enc_refresh_token
         account.token_expiry = token_info.get("token_expiry")
         account.scopes = token_info.get("scope", [])
         account.is_connected = True

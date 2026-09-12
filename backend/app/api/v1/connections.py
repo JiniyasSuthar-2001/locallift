@@ -141,7 +141,7 @@ async def get_google_auth_url(
     auth_url = GoogleOAuthService.get_authorization_url(
         project_id=project_id or 0,
         user_id=current_user.id,
-        custom_state=json.dumps({"org_id": org_id, "user_id": current_user.id})
+        organization_id=org_id
     )
 
     return {
@@ -161,8 +161,8 @@ async def handle_google_callback(
     db: AsyncSession = Depends(get_db)
 ):
     """
-    Exchanges Google authorization code for tokens, securely persists the connection,
-    and runs initial resource discovery. Supports both JSON POST body and URL Query params.
+    Exchanges Google authorization code for tokens after cryptographic state validation,
+    securely persists the connection, and runs initial resource discovery.
     """
     actual_code = (req.code if req and req.code else code)
     actual_state = (req.state if req and req.state else state)
@@ -174,7 +174,31 @@ async def handle_google_callback(
             detail="Missing authorization code from Google."
         )
 
-    org_id = await get_active_org_id(current_user, db, actual_project_id)
+    target_project_id = actual_project_id
+    target_org_id = None
+
+    if actual_state:
+        try:
+            state_data = GoogleOAuthService.decode_and_validate_oauth_state(actual_state)
+            if state_data.get("user_id") and state_data["user_id"] != current_user.id and not current_user.is_superuser:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="OAuth state mismatch: Initiated by a different user."
+                )
+            target_org_id = state_data.get("organization_id")
+            if not target_project_id and state_data.get("project_id"):
+                target_project_id = state_data.get("project_id")
+        except ValueError as ve:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"OAuth state validation failed: {str(ve)}"
+            )
+
+    if target_project_id and target_project_id > 0:
+        proj = await verify_project_access(target_project_id, current_user, db)
+        org_id = proj.organization_id
+    else:
+        org_id = target_org_id or await get_active_org_id(current_user, db)
 
     try:
         token_data = await GoogleOAuthService.exchange_code_for_tokens(actual_code)
@@ -185,13 +209,13 @@ async def handle_google_callback(
             detail=f"Google token exchange failed: {str(e)}"
         )
 
-    # Save connection tokens securely
+    # Save connection tokens with token-at-rest encryption
     conn = await GoogleConnectionsService.save_connection_tokens(
         organization_id=org_id,
         user_id=current_user.id,
         token_data=token_data,
         db=db,
-        project_id=actual_project_id
+        project_id=target_project_id if (target_project_id and target_project_id > 0) else None
     )
 
     # Run initial multi-service discovery

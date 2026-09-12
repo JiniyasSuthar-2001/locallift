@@ -5,12 +5,46 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 
 from app.database import get_db
-from app.core.deps import get_current_user, verify_project_access
-from app.models.user import User
+from app.core.deps import get_current_user, verify_project_access, get_user_organization_ids
+from app.models.user import User, OrganizationMember
 from app.models.audit import SEOIssue, SEOTask, TaskStatus, TaskPriority, IssueStatus
+from app.models.team import ProjectMembership
 from app.schemas.tasks import TaskCreate, TaskUpdate, TaskOut, ConvertIssueToTaskRequest
 
 router = APIRouter(prefix="/tasks", tags=["SEO Tasks"])
+
+async def _verify_assigned_user(assigned_to_id: int, project_id: int, db: AsyncSession):
+    """Verify that an assigned user exists and has valid organization or project access."""
+    # Check if assigned user has project membership
+    mem_res = await db.execute(
+        select(ProjectMembership).where(
+            ProjectMembership.project_id == project_id,
+            ProjectMembership.user_id == assigned_to_id,
+            ProjectMembership.status == "active"
+        )
+    )
+    if mem_res.scalars().first():
+        return
+
+    # Check if assigned user is an org member
+    from app.models.project import Project
+    proj_res = await db.execute(select(Project.organization_id).where(Project.id == project_id))
+    org_id = proj_res.scalar()
+    if org_id:
+        org_mem_res = await db.execute(
+            select(OrganizationMember).where(
+                OrganizationMember.organization_id == org_id,
+                OrganizationMember.user_id == assigned_to_id
+            )
+        )
+        if org_mem_res.scalars().first():
+            return
+
+    raise HTTPException(
+        status_code=status.HTTP_400_BAD_REQUEST,
+        detail="Invalid assigned_to_id: User is not a collaborator on this project or organization."
+    )
+
 
 @router.get("/{project_id}", response_model=List[TaskOut])
 async def list_project_tasks(
@@ -36,6 +70,7 @@ async def list_project_tasks(
     result = await db.execute(query.order_by(SEOTask.id.desc()))
     return result.scalars().all()
 
+
 @router.post("", response_model=TaskOut)
 async def create_task(
     task_in: TaskCreate,
@@ -43,10 +78,29 @@ async def create_task(
     db: AsyncSession = Depends(get_db)
 ):
     await verify_project_access(task_in.project_id, current_user, db)
+
+    # Validate issue_id belongs to the same project
+    if task_in.issue_id:
+        iss_res = await db.execute(
+            select(SEOIssue).where(
+                SEOIssue.id == task_in.issue_id,
+                SEOIssue.project_id == task_in.project_id
+            )
+        )
+        if not iss_res.scalars().first():
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid issue_id: Issue does not exist or does not belong to this project."
+            )
+
+    # Validate assigned user
+    if task_in.assigned_to_id:
+        await _verify_assigned_user(task_in.assigned_to_id, task_in.project_id, db)
+
     task = SEOTask(
         project_id=task_in.project_id,
         issue_id=task_in.issue_id,
-        assigned_to_id=task_in.assigned_to_id,
+        assigned_to_id=task_in.assigned_to_id or current_user.id,
         title=task_in.title,
         description=task_in.description,
         priority=TaskPriority(task_in.priority),
@@ -60,6 +114,7 @@ async def create_task(
     await db.commit()
     await db.refresh(task)
     return task
+
 
 @router.post("/convert-issue/{issue_id}", response_model=TaskOut)
 async def convert_issue_to_task(
@@ -75,6 +130,11 @@ async def convert_issue_to_task(
         raise HTTPException(status_code=404, detail="SEO Issue not found")
 
     await verify_project_access(issue.project_id, current_user, db)
+
+    # Validate assignee if provided
+    assigned_user_id = req.assigned_to_id or current_user.id
+    if req.assigned_to_id:
+        await _verify_assigned_user(req.assigned_to_id, issue.project_id, db)
 
     # Check if a task already exists for this issue (idempotent conversion)
     existing_task_res = await db.execute(
@@ -96,7 +156,7 @@ async def convert_issue_to_task(
     task = SEOTask(
         project_id=issue.project_id,
         issue_id=issue.id,
-        assigned_to_id=req.assigned_to_id or current_user.id,
+        assigned_to_id=assigned_user_id,
         title=f"Resolve: {issue.title}",
         description=f"**Recommended Solution**:\n{issue.recommended_solution}\n\n**Why It Matters**:\n{issue.why_it_matters}",
         priority=TaskPriority(req.priority) if req.priority else TaskPriority.MEDIUM,
@@ -109,6 +169,7 @@ async def convert_issue_to_task(
     await db.commit()
     await db.refresh(task)
     return task
+
 
 @router.patch("/{task_id}", response_model=TaskOut)
 async def update_task(
@@ -123,6 +184,10 @@ async def update_task(
         raise HTTPException(status_code=404, detail="Task not found")
 
     await verify_project_access(task.project_id, current_user, db)
+
+    if task_in.assigned_to_id is not None:
+        await _verify_assigned_user(task_in.assigned_to_id, task.project_id, db)
+        task.assigned_to_id = task_in.assigned_to_id
 
     if task_in.title is not None:
         task.title = task_in.title
@@ -148,12 +213,11 @@ async def update_task(
         task.notes = task_in.notes
     if task_in.due_date is not None:
         task.due_date = task_in.due_date
-    if task_in.assigned_to_id is not None:
-        task.assigned_to_id = task_in.assigned_to_id
 
     await db.commit()
     await db.refresh(task)
     return task
+
 
 @router.delete("/{task_id}")
 async def delete_task(

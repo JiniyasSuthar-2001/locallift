@@ -57,6 +57,58 @@ async def get_user_organization_ids(
     )
     return list(result.scalars().all())
 
+async def verify_organization_membership(
+    organization_id: int,
+    current_user: User,
+    db: AsyncSession,
+    required_roles: Optional[list[OrgRole]] = None
+) -> OrganizationMember:
+    """Verifies that the current user belongs to the requested organization with sufficient role."""
+    if current_user.is_superuser:
+        mem_res = await db.execute(
+            select(OrganizationMember).where(OrganizationMember.organization_id == organization_id)
+        )
+        mem = mem_res.scalars().first()
+        if mem:
+            return mem
+        return OrganizationMember(organization_id=organization_id, user_id=current_user.id, role=OrgRole.OWNER)
+
+    stmt = select(OrganizationMember).where(
+        OrganizationMember.organization_id == organization_id,
+        OrganizationMember.user_id == current_user.id
+    )
+    result = await db.execute(stmt)
+    membership = result.scalars().first()
+    if not membership:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied: You do not belong to this organization."
+        )
+
+    if required_roles and membership.role not in required_roles:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"Access denied: Requires role in {[r.value for r in required_roles]}."
+        )
+    return membership
+
+async def verify_client_access(
+    client_id: int,
+    organization_id: int,
+    db: AsyncSession
+):
+    """Verifies that a client belongs to the specified organization."""
+    from app.models.user import Client
+    res = await db.execute(select(Client).where(Client.id == client_id, Client.organization_id == organization_id))
+    client = res.scalars().first()
+    if not client:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid client_id: Client does not exist or does not belong to this organization."
+        )
+    return client
+
+
 async def verify_project_access(
     project_id: int,
     current_user: User,

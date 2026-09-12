@@ -281,9 +281,9 @@ export const SchemaGeneratorView: React.FC = () => {
               <FileCode2 className="w-5 h-5" />
             </div>
             <div>
-              <h1 className="text-xl font-black text-slate-900 tracking-tight flex items-center space-x-2">
+              <h1 className="text-xl font-black text-[#142820] tracking-tight flex items-center space-x-2">
                 <span>Schema Intelligence & Validator</span>
-                <span className="text-[11px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-purple-100 text-purple-700">
+                <span className="text-[11px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-[#EAF2EA] text-[#174A38] border border-[#B8DFC9]">
                   Schema.org v28.0
                 </span>
               </h1>
@@ -1023,7 +1023,7 @@ export const SchemaGeneratorView: React.FC = () => {
 
                   <button
                     onClick={() => copyToClipboard(generatedHtml)}
-                    className="flex items-center space-x-1 px-3 py-1 bg-purple-600 hover:bg-purple-700 text-white rounded-lg text-xs font-bold shadow-sm transition-colors"
+                    className="flex items-center space-x-1 px-3 py-1 btn-primary-gradient text-white rounded-lg text-xs font-bold shadow-2xs transition-colors"
                   >
                     {isCopied ? <Check className="w-3.5 h-3.5 text-white" /> : <Copy className="w-3.5 h-3.5" />}
                     <span>{isCopied ? 'Copied Tag' : 'Copy HTML Tag'}</span>

@@ -4,58 +4,68 @@
 
 @layer base {
   :root {
-    /* Backgrounds & Surfaces */
-    --bg-page: #F8FAFC;
+    /* Nature-Inspired Backgrounds & Surfaces (70-80% of UI) */
+    --background: #F7FAF7;
+    --bg-page: #F7FAF7;
+    --surface: #FFFFFF;
     --surface-card: #FFFFFF;
-    --surface-subtle: #F1F5F9;
-    --surface-hover: #F8FAFC;
-    --border-main: #E2E8F0;
-    --border-focus: #8B5CF6;
-
-    /* Primary Gradient Brand Tokens (Gradient Vibrant) */
-    --primary-gradient-start: #7C3AED;
-    --primary-gradient-end: #EC4899;
-    --primary-purple: #7C3AED;
-    --primary-purple-hover: #6D28D9;
-    --primary-purple-light: #F5F3FF;
-    --primary-purple-border: #DDD6FE;
-
-    /* Secondary Gradient Tokens */
-    --accent-pink: #EC4899;
-    --accent-orange: #F97316;
-    --accent-blue: #2563EB;
-    --accent-cyan: #06B6D4;
-    --accent-emerald: #059669;
-
-    /* Typography / High Contrast Text Hierarchy */
-    --text-primary: #0F172A;
-    --text-secondary: #334155;
-    --text-muted: #64748B;
-    --text-disabled: #94A3B8;
-    --text-inverse: #FFFFFF;
+    --surface-soft: #F1F7F1;
+    --surface-muted: #EAF2EA;
+    --surface-hover: #F3F8F3;
     
-    /* Semantic Status Tokens */
+    --border-main: #DCE8DC;
+    --border-subtle: #EBF2EB;
+    --border-focus: #236B4F;
+
+    /* Primary Botanical Brand Tokens (15-20% of UI) */
+    --primary: #236B4F;
+    --primary-dark: #174A38;
+    --primary-light: #DDEFE5;
+    --primary-border: #B8DFC9;
+    --primary-hover: #1D5A42;
+
+    /* Secondary Accent Tokens */
+    --accent: #39B982;
+    --accent-dark: #2A9567;
+    --accent-light: #E6F8F0;
+    --accent-mint: #62C9A0;
+    --accent-teal: #0D9488;
+
+    /* Semantic Text Tokens with Guaranteed Contrast */
+    --text-primary: #142820;       /* High contrast dark botanical charcoal on light surfaces */
+    --text-secondary: #2E4E40;     /* Medium dark botanical */
+    --text-muted: #587568;         /* High readability muted green-gray */
+    --text-disabled: #8DAAA0;
+    --text-on-primary: #FFFFFF;    /* Crisp white text on primary botanical green */
+    --text-on-gradient: #FFFFFF;   /* Crisp white text on gradient surfaces */
+    --text-on-dark: #FFFFFF;       /* Crisp white text on dark surfaces */
+    
+    /* Semantic Status Tokens (Contrast verified) */
     --status-success-bg: #ECFDF5;
-    --status-success-text: #047857;
+    --status-success-text: #065F46;
     --status-success-border: #A7F3D0;
 
     --status-warning-bg: #FFFBEB;
-    --status-warning-text: #B45309;
+    --status-warning-text: #92400E;
     --status-warning-border: #FDE68A;
 
-    --status-error-bg: #FFF1F2;
-    --status-error-text: #BE123C;
-    --status-error-border: #FECDD3;
+    --status-error-bg: #FEF2F2;
+    --status-error-text: #991B1B;
+    --status-error-border: #FECACA;
 
     --status-info-bg: #EFF6FF;
-    --status-info-text: #1D4ED8;
+    --status-info-text: #1E40AF;
     --status-info-border: #BFDBFE;
+
+    --status-neutral-bg: #F1F5F1;
+    --status-neutral-text: #3D5A4E;
+    --status-neutral-border: #DCE8DC;
   }
 
   body {
-    background-color: var(--bg-page);
+    background-color: var(--background);
     color: var(--text-primary);
-    font-family: 'Outfit', 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
     overflow-x: hidden;
@@ -68,98 +78,157 @@
   }
 }
 
-/* Gradient Vibrant Interactive Utilities */
+/* Modern Gradient Accents (Controlled 5-10% of UI) */
 .gradient-brand {
-  background: linear-gradient(135deg, #7C3AED 0%, #EC4899 100%);
+  background: linear-gradient(135deg, #236B4F 0%, #2FA878 50%, #62C9A0 100%);
+  color: #FFFFFF;
 }
 
 .gradient-brand-subtle {
-  background: linear-gradient(135deg, rgba(124, 58, 237, 0.08) 0%, rgba(236, 72, 153, 0.08) 100%);
+  background: linear-gradient(135deg, rgba(35, 107, 79, 0.08) 0%, rgba(57, 185, 130, 0.08) 100%);
 }
 
-.gradient-orange-pink {
-  background: linear-gradient(135deg, #F97316 0%, #EC4899 100%);
-}
-
-.gradient-blue-cyan {
-  background: linear-gradient(135deg, #2563EB 0%, #06B6D4 100%);
-}
-
-.gradient-purple-indigo {
-  background: linear-gradient(135deg, #7C3AED 0%, #6366F1 100%);
-}
-
-.gradient-emerald-cyan {
-  background: linear-gradient(135deg, #059669 0%, #0D9488 100%);
-}
-
-/* Vibrant Button Styling */
-.btn-vibrant-primary {
-  background: linear-gradient(135deg, #7C3AED 0%, #EC4899 100%);
+.gradient-forest-dark {
+  background: linear-gradient(135deg, #174A38 0%, #236B4F 100%);
   color: #FFFFFF;
-  font-weight: 700;
-  box-shadow: 0 4px 14px 0 rgba(124, 58, 237, 0.25);
+}
+
+.gradient-teal-mint {
+  background: linear-gradient(135deg, #2FA878 0%, #0D9488 100%);
+  color: #FFFFFF;
+}
+
+.gradient-ai-diagnostic {
+  background: linear-gradient(135deg, #236B4F 0%, #2FA878 40%, #39B982 80%, #62C9A0 100%);
+  color: #FFFFFF;
+  box-shadow: 0 4px 14px 0 rgba(35, 107, 79, 0.22);
+}
+
+/* Nature-Inspired Interactive Buttons */
+.btn-primary-gradient {
+  background: linear-gradient(135deg, #236B4F 0%, #2FA878 50%, #62C9A0 100%);
+  color: #FFFFFF !important;
+  font-weight: 600;
+  box-shadow: 0 2px 8px 0 rgba(35, 107, 79, 0.20);
   transition: all 0.2s ease-in-out;
 }
 
-.btn-vibrant-primary:hover {
-  background: linear-gradient(135deg, #6D28D9 0%, #DB2777 100%);
-  box-shadow: 0 6px 20px 0 rgba(124, 58, 237, 0.35);
+.btn-primary-gradient:hover {
+  background: linear-gradient(135deg, #1D5A42 0%, #268C64 50%, #52B58C 100%);
+  box-shadow: 0 4px 14px 0 rgba(35, 107, 79, 0.30);
   transform: translateY(-1px);
 }
 
-.btn-vibrant-secondary {
+.btn-primary-gradient:active {
+  transform: translateY(0);
+}
+
+.btn-secondary-nature {
   background: #FFFFFF;
-  border: 1px solid #E2E8F0;
-  color: #334155;
+  border: 1px solid #DCE8DC;
+  color: #2E4E40;
   font-weight: 600;
   transition: all 0.2s ease-in-out;
 }
 
-.btn-vibrant-secondary:hover {
-  background: #F8FAFC;
-  border-color: #CBD5E1;
-  color: #0F172A;
+.btn-secondary-nature:hover {
+  background: #F1F7F1;
+  border-color: #B8DFC9;
+  color: #142820;
 }
 
-/* Production-Ready Cards with Vibrant Touches */
-.card-vibrant {
+/* Standardized Clean Nature Cards */
+.card-nature {
   background: #FFFFFF;
-  border: 1px solid #E2E8F0;
-  border-radius: 1rem;
-  box-shadow: 0 1px 3px 0 rgba(15, 23, 42, 0.04), 0 1px 2px -1px rgba(15, 23, 42, 0.02);
+  border: 1px solid #DCE8DC;
+  border-radius: 0.875rem;
+  box-shadow: 0 1px 3px 0 rgba(20, 40, 32, 0.03), 0 1px 2px -1px rgba(20, 40, 32, 0.02);
   transition: all 0.2s ease-in-out;
 }
 
-.card-vibrant:hover {
-  border-color: #CBD5E1;
-  box-shadow: 0 6px 20px -4px rgba(124, 58, 237, 0.06), 0 2px 6px -2px rgba(15, 23, 42, 0.04);
+.card-nature:hover {
+  border-color: #B8DFC9;
+  box-shadow: 0 4px 16px -2px rgba(35, 107, 79, 0.06), 0 2px 6px -2px rgba(20, 40, 32, 0.03);
 }
 
-/* KPI Highlights */
-.kpi-vibrant-purple {
-  background: linear-gradient(135deg, #FAF5FF 0%, #F3E8FF 100%);
-  border: 1px solid #DDD6FE;
+/* KPI Highlights with Natural Tints */
+.kpi-forest {
+  background: linear-gradient(135deg, #F1F7F1 0%, #EAF2EA 100%);
+  border: 1px solid #B8DFC9;
 }
 
-.kpi-vibrant-pink {
-  background: linear-gradient(135deg, #FDF2F8 0%, #FCE7F3 100%);
-  border: 1px solid #FBCFE8;
+.kpi-accent {
+  background: linear-gradient(135deg, #E6F8F0 0%, #D8F3E5 100%);
+  border: 1px solid #8ACAA7;
 }
 
-.kpi-vibrant-orange {
-  background: linear-gradient(135deg, #FFF7ED 0%, #FFEDD5 100%);
-  border: 1px solid #FED7AA;
+.kpi-amber {
+  background: linear-gradient(135deg, #FFFBEB 0%, #FEF3C7 100%);
+  border: 1px solid #FDE68A;
 }
 
-.kpi-vibrant-blue {
+.kpi-blue {
   background: linear-gradient(135deg, #EFF6FF 0%, #DBEAFE 100%);
   border: 1px solid #BFDBFE;
 }
 
+/* Legacy Compatibility Aliases -> Remapped to Nature Design System */
+.btn-vibrant-primary {
+  background: linear-gradient(135deg, #236B4F 0%, #2FA878 50%, #62C9A0 100%) !important;
+  color: #FFFFFF !important;
+  font-weight: 600 !important;
+  box-shadow: 0 2px 8px 0 rgba(35, 107, 79, 0.20) !important;
+  transition: all 0.2s ease-in-out !important;
+}
+.btn-vibrant-primary:hover {
+  background: linear-gradient(135deg, #1D5A42 0%, #268C64 50%, #52B58C 100%) !important;
+  box-shadow: 0 4px 14px 0 rgba(35, 107, 79, 0.30) !important;
+}
+
+.btn-vibrant-secondary {
+  background: #FFFFFF !important;
+  border: 1px solid #DCE8DC !important;
+  color: #2E4E40 !important;
+  font-weight: 600 !important;
+  transition: all 0.2s ease-in-out !important;
+}
+.btn-vibrant-secondary:hover {
+  background: #F1F7F1 !important;
+  border-color: #B8DFC9 !important;
+  color: #142820 !important;
+}
+
+.card-vibrant {
+  background: #FFFFFF;
+  border: 1px solid #DCE8DC;
+  border-radius: 0.875rem;
+  box-shadow: 0 1px 3px 0 rgba(20, 40, 32, 0.03), 0 1px 2px -1px rgba(20, 40, 32, 0.02);
+  transition: all 0.2s ease-in-out;
+}
+.card-vibrant:hover {
+  border-color: #B8DFC9;
+  box-shadow: 0 4px 16px -2px rgba(35, 107, 79, 0.06);
+}
+
+.kpi-vibrant-purple {
+  background: linear-gradient(135deg, #F1F7F1 0%, #EAF2EA 100%);
+  border: 1px solid #B8DFC9;
+}
+.kpi-vibrant-pink {
+  background: linear-gradient(135deg, #E6F8F0 0%, #D8F3E5 100%);
+  border: 1px solid #8ACAA7;
+}
 .kpi-vibrant-emerald {
-  background: linear-gradient(135deg, #F0FDF4 0%, #DCFCE7 100%);
-  border: 1px solid #BBF7D0;
+  background: linear-gradient(135deg, #F1F7F1 0%, #E6F8F0 100%);
+  border: 1px solid #8ACAA7;
+}
+.kpi-vibrant-orange {
+  background: linear-gradient(135deg, #FFFBEB 0%, #FEF3C7 100%);
+  border: 1px solid #FDE68A;
+}
+.kpi-vibrant-blue {
+  background: linear-gradient(135deg, #EFF6FF 0%, #DBEAFE 100%);
+  border: 1px solid #BFDBFE;
 }
 
 /* Custom Scrollbars */
@@ -168,12 +237,12 @@
   height: 6px;
 }
 ::-webkit-scrollbar-track {
-  background: #F1F5F9;
+  background: #F1F7F1;
 }
 ::-webkit-scrollbar-thumb {
-  background: #CBD5E1;
+  background: #B8DFC9;
   border-radius: 9999px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: #94A3B8;
+  background: #8ACAA7;
 }

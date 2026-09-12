@@ -1,9 +1,9 @@
 import React from 'react';
-import { LucideIcon } from 'lucide-react';
+import { LucideIcon, TrendingUp, TrendingDown } from 'lucide-react';
 
-interface StatCardProps {
+export interface StatCardProps {
   title: string;
-  value: string | number;
+  value: string | number | null | undefined;
   subtitle?: string;
   trend?: {
     value: string;
@@ -12,6 +12,7 @@ interface StatCardProps {
   icon: LucideIcon;
   iconColor?: string;
   badge?: string;
+  accentGradient?: boolean;
 }
 
 export const StatCard: React.FC<StatCardProps> = ({
@@ -20,34 +21,46 @@ export const StatCard: React.FC<StatCardProps> = ({
   subtitle,
   trend,
   icon: Icon,
-  iconColor = 'text-emerald-400 bg-emerald-950/40 border-emerald-800/40',
-  badge
+  iconColor = 'text-[#236B4F] bg-[#F1F7F1] border-[#B8DFC9]',
+  badge,
+  accentGradient = false
 }) => {
+  const displayValue = value !== null && value !== undefined && value !== '' ? value : '—';
+
   return (
-    <div className="glass-panel p-5 rounded-xl flex flex-col justify-between hover:border-emerald-500/30 transition-all duration-200">
+    <div 
+      className={`card-nature p-5 flex flex-col justify-between ${
+        accentGradient ? 'relative overflow-hidden before:absolute before:top-0 before:left-0 before:right-0 before:h-1 before:bg-gradient-to-r before:from-[#236B4F] before:via-[#2FA878] before:to-[#62C9A0]' : ''
+      }`}
+    >
       <div className="flex items-center justify-between">
-        <span className="text-xs font-semibold uppercase tracking-wider text-gray-400">{title}</span>
-        <div className={`p-2 rounded-lg border ${iconColor}`}>
-          <Icon className="w-5 h-5" />
+        <span className="text-xs font-semibold uppercase tracking-wider text-[#587568]">{title}</span>
+        <div className={`p-2 rounded-lg border flex items-center justify-center ${iconColor}`}>
+          <Icon className="w-4 h-4" />
         </div>
       </div>
 
       <div className="mt-4">
         <div className="flex items-baseline space-x-2">
-          <span className="text-2xl font-bold tracking-tight text-white">{value}</span>
+          <span className="text-2xl font-bold tracking-tight text-[#142820]">{displayValue}</span>
           {badge && (
-            <span className="text-[11px] font-medium px-2 py-0.5 rounded bg-gray-800 text-gray-300 border border-gray-700">
+            <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-[#EAF2EA] text-[#236B4F] border border-[#B8DFC9]">
               {badge}
             </span>
           )}
         </div>
 
         {(subtitle || trend) && (
-          <div className="mt-2 flex items-center justify-between text-xs text-gray-400">
-            {subtitle && <span>{subtitle}</span>}
+          <div className="mt-2.5 flex items-center justify-between text-xs text-[#587568]">
+            {subtitle && <span className="truncate pr-2">{subtitle}</span>}
             {trend && (
-              <span className={`font-semibold ${trend.isPositive ? 'text-emerald-400' : 'text-rose-400'}`}>
-                {trend.isPositive ? '↑' : '↓'} {trend.value}
+              <span className={`inline-flex items-center font-bold px-1.5 py-0.5 rounded ${
+                trend.isPositive 
+                  ? 'text-[#065F46] bg-[#ECFDF5] border border-[#A7F3D0]' 
+                  : 'text-[#991B1B] bg-[#FEF2F2] border border-[#FECACA]'
+              }`}>
+                {trend.isPositive ? <TrendingUp className="w-3 h-3 mr-1 inline" /> : <TrendingDown className="w-3 h-3 mr-1 inline" />}
+                {trend.value}
               </span>
             )}
           </div>

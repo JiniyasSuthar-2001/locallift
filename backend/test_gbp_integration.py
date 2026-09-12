@@ -14,11 +14,11 @@ def test_google_oauth_url_generation():
     assert "prompt=consent" in url
     assert "business.manage" in url
 
-    # Verify state payload contains project_id
+    # Verify cryptographically signed state payload contains project_id and user_id
     parsed = urllib.parse.urlparse(url)
     query_params = urllib.parse.parse_qs(parsed.query)
     state_str = query_params["state"][0]
-    state_data = json.loads(state_str)
+    state_data = GoogleOAuthService.decode_and_validate_oauth_state(state_str)
     assert state_data["project_id"] == 1
     assert state_data["user_id"] == 42
 

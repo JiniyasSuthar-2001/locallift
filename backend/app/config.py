@@ -49,9 +49,14 @@ class Settings(BaseSettings):
     GOOGLE_CLIENT_ID: str = ""
     GOOGLE_CLIENT_SECRET: str = ""
     GOOGLE_REDIRECT_URI: str = "http://localhost:5173/integrations/google/callback"
+    GOOGLE_ADS_DEVELOPER_TOKEN: str = ""
     
     # Integrations - SERP / Rank Tracking
-    SERP_PROVIDER: str = "serpapi"  # serpapi (unconfigured until SERPAPI_KEY is supplied)
+    SERP_PROVIDER: str = "openserp"  # openserp (default self-hosted), serpapi, mock (testing only)
+    OPENSERP_BASE_URL: str = "http://127.0.0.1:7000"
+    OPENSERP_TIMEOUT: int = 30
+    OPENSERP_DEFAULT_ENGINE: str = "google"
+    SERP_FALLBACK_PROVIDER: str = "serpapi"  # serpapi fallback when enabled
     SERPAPI_KEY: str = ""
     
     # AI Engine

@@ -9,6 +9,7 @@ from sqlalchemy.future import select
 from sqlalchemy.orm import selectinload
 
 from app.config import settings
+from app.core.security import encrypt_token, decrypt_token
 from app.models.connections import (
     GoogleConnection,
     GoogleAdsAccount,
@@ -52,21 +53,24 @@ class GoogleConnectionsService:
         project_id: Optional[int] = None
     ) -> GoogleConnection:
         """
-        Saves or updates the organization's Google OAuth connection.
-        Ensures idempotency and updates access/refresh tokens securely.
+        Saves or updates the organization's Google OAuth connection with encrypted tokens.
         """
         existing = await cls.get_connection_for_org(organization_id, db)
         email = token_data.get("email") or "connected-user@gmail.com"
         scopes = token_data.get("scopes", [])
-        access_token = token_data.get("access_token")
-        refresh_token = token_data.get("refresh_token")
+        raw_access_token = token_data.get("access_token")
+        raw_refresh_token = token_data.get("refresh_token")
         token_expiry = token_data.get("token_expiry")
+
+        # Encrypt tokens before storing in database
+        enc_access_token = encrypt_token(raw_access_token)
+        enc_refresh_token = encrypt_token(raw_refresh_token)
 
         if existing:
             existing.account_email = email
-            existing.access_token = access_token
-            if refresh_token:
-                existing.refresh_token = refresh_token
+            existing.access_token = enc_access_token
+            if raw_refresh_token:
+                existing.refresh_token = enc_refresh_token
             existing.token_expiry = token_expiry
             existing.scopes = scopes
             existing.status = "connected"
@@ -80,8 +84,8 @@ class GoogleConnectionsService:
                 organization_id=organization_id,
                 project_id=project_id,
                 account_email=email,
-                access_token=access_token,
-                refresh_token=refresh_token,
+                access_token=enc_access_token,
+                refresh_token=enc_refresh_token,
                 token_expiry=token_expiry,
                 scopes=scopes,
                 status="connected",
@@ -91,7 +95,7 @@ class GoogleConnectionsService:
 
         await db.flush()
 
-        # If project_id is provided, also sync legacy GoogleAccount relation
+        # Sync project GoogleAccount relation with encrypted tokens
         if project_id:
             acc_res = await db.execute(
                 select(GoogleAccount).where(GoogleAccount.project_id == project_id)
@@ -99,9 +103,9 @@ class GoogleConnectionsService:
             g_acc = acc_res.scalars().first()
             if g_acc:
                 g_acc.account_email = email
-                g_acc.access_token = access_token
-                if refresh_token:
-                    g_acc.refresh_token = refresh_token
+                g_acc.access_token = enc_access_token
+                if raw_refresh_token:
+                    g_acc.refresh_token = enc_refresh_token
                 g_acc.token_expiry = token_expiry
                 g_acc.scopes = scopes
                 g_acc.is_connected = True
@@ -109,8 +113,8 @@ class GoogleConnectionsService:
                 db.add(GoogleAccount(
                     project_id=project_id,
                     account_email=email,
-                    access_token=access_token,
-                    refresh_token=refresh_token,
+                    access_token=enc_access_token,
+                    refresh_token=enc_refresh_token,
                     token_expiry=token_expiry,
                     scopes=scopes,
                     is_connected=True
@@ -126,116 +130,128 @@ class GoogleConnectionsService:
         db: AsyncSession
     ) -> Dict[str, Any]:
         """
-        Discovers all accessible Google services for the connected account:
+        Discovers all accessible Google services for the connected account using decrypted tokens:
         1. Google Business Profile locations
-        2. Google Ads accounts
-        3. Google Search Console verified sites
+        2. Google Search Console verified sites
+        3. Google Ads accounts (API v18)
         4. Google Analytics 4 properties
         """
         if not connection.access_token:
             return {"error": "No valid access token available for synchronization."}
 
-        access_token = connection.access_token
-        refresh_token = connection.refresh_token
+        plain_access_token = decrypt_token(connection.access_token)
+        plain_refresh_token = decrypt_token(connection.refresh_token)
         expiry = connection.token_expiry
+        granted_scopes = connection.scopes or []
 
-        # 1. Discover GBP Locations
-        gbp_client = GoogleBusinessProfileClient(access_token, refresh_token, expiry)
+        # 1. Discover GBP Locations (requires business.manage scope)
         discovered_gbp: List[Dict[str, Any]] = []
-        try:
-            accounts = await gbp_client.list_accounts()
-            for acc in accounts:
-                acc_name = acc.get("name")
-                if not acc_name:
-                    continue
-                locs = await gbp_client.list_locations(acc_name)
-                for l in locs:
-                    raw_addr = l.get("storefrontAddress", {})
-                    addr_lines = raw_addr.get("addressLines", [])
-                    city = raw_addr.get("locality", "")
-                    state = raw_addr.get("administrativeArea", "")
-                    full_addr = ", ".join(addr_lines + ([city] if city else []) + ([state] if state else []))
-                    
-                    cat = l.get("categories", {}).get("primaryCategory", {}).get("displayName", "Local Business")
-                    web = l.get("websiteUri")
-                    phone = l.get("phoneNumbers", {}).get("primaryPhone")
-                    
-                    discovered_gbp.append({
-                        "account_id": acc_name,
-                        "location_id": l.get("name", ""),
-                        "business_name": l.get("title") or "Unnamed Location",
-                        "primary_category": CategoryTaxonomy.normalize_category_name(cat),
-                        "address": full_addr or None,
-                        "phone": phone or None,
-                        "website_url": web or None,
-                        "is_verified": l.get("profile", {}).get("isVerified", True)
-                    })
-        except Exception as e:
-            logger.warning(f"GBP discovery error: {e}")
+        has_gbp_scope = any("business.manage" in s for s in granted_scopes) or not granted_scopes
+        if has_gbp_scope:
+            gbp_client = GoogleBusinessProfileClient(plain_access_token, plain_refresh_token, expiry)
+            try:
+                accounts = await gbp_client.list_accounts()
+                for acc in accounts:
+                    acc_name = acc.get("name")
+                    if not acc_name:
+                        continue
+                    locs = await gbp_client.list_locations(acc_name)
+                    for l in locs:
+                        raw_addr = l.get("storefrontAddress", {})
+                        addr_lines = raw_addr.get("addressLines", [])
+                        city = raw_addr.get("locality", "")
+                        state = raw_addr.get("administrativeArea", "")
+                        full_addr = ", ".join(addr_lines + ([city] if city else []) + ([state] if state else []))
+                        
+                        cat = l.get("categories", {}).get("primaryCategory", {}).get("displayName", "Local Business")
+                        web = l.get("websiteUri")
+                        phone = l.get("phoneNumbers", {}).get("primaryPhone")
+                        
+                        discovered_gbp.append({
+                            "account_id": acc_name,
+                            "location_id": l.get("name", ""),
+                            "business_name": l.get("title") or "Unnamed Location",
+                            "primary_category": CategoryTaxonomy.normalize_category_name(cat),
+                            "address": full_addr or None,
+                            "phone": phone or None,
+                            "website_url": web or None,
+                            "is_verified": l.get("profile", {}).get("isVerified", True)
+                        })
+            except Exception as e:
+                logger.warning(f"GBP discovery error: {e}")
 
         # 2. Discover Google Search Console Properties
         discovered_gsc: List[Dict[str, Any]] = []
-        try:
-            headers = {"Authorization": f"Bearer {access_token}"}
-            async with httpx.AsyncClient(timeout=10.0) as client:
-                gsc_resp = await client.get(
-                    "https://www.googleapis.com/webmasters/v3/sites",
-                    headers=headers
-                )
-                if gsc_resp.status_code == 200:
-                    entries = gsc_resp.json().get("siteEntry", [])
-                    for s in entries:
-                        url = s.get("siteUrl", "")
-                        perm = s.get("permissionLevel", "siteOwner")
-                        if url:
-                            discovered_gsc.append({"site_url": url, "permission_level": perm})
-        except Exception as e:
-            logger.warning(f"Search Console discovery error: {e}")
+        has_gsc_scope = any("webmasters" in s for s in granted_scopes) or not granted_scopes
+        if has_gsc_scope:
+            try:
+                headers = {"Authorization": f"Bearer {plain_access_token}"}
+                async with httpx.AsyncClient(timeout=10.0) as client:
+                    gsc_resp = await client.get(
+                        "https://www.googleapis.com/webmasters/v3/sites",
+                        headers=headers
+                    )
+                    if gsc_resp.status_code == 200:
+                        entries = gsc_resp.json().get("siteEntry", [])
+                        for s in entries:
+                            url = s.get("siteUrl", "")
+                            perm = s.get("permissionLevel", "siteOwner")
+                            if url:
+                                discovered_gsc.append({"site_url": url, "permission_level": perm})
+            except Exception as e:
+                logger.warning(f"Search Console discovery error: {e}")
 
-        # 3. Discover Google Ads Accounts
+        # 3. Discover Google Ads Accounts (API v18 with developer-token header)
         discovered_ads: List[Dict[str, Any]] = []
-        try:
-            headers = {"Authorization": f"Bearer {access_token}"}
-            async with httpx.AsyncClient(timeout=10.0) as client:
-                ads_resp = await client.get(
-                    "https://googleads.googleapis.com/v17/customers:listAccessibleCustomers",
-                    headers=headers
-                )
-                if ads_resp.status_code == 200:
-                    res_names = ads_resp.json().get("resourceNames", [])
-                    for rn in res_names:
-                        cid = rn.replace("customers/", "")
-                        discovered_ads.append({
-                            "customer_id": cid,
-                            "name": f"Google Ads ({cid})",
-                            "status": "ENABLED"
-                        })
-        except Exception as e:
-            logger.warning(f"Google Ads discovery error: {e}")
+        has_ads_scope = any("adwords" in s for s in granted_scopes) or not granted_scopes
+        if has_ads_scope and settings.GOOGLE_ADS_DEVELOPER_TOKEN:
+            try:
+                headers = {
+                    "Authorization": f"Bearer {plain_access_token}",
+                    "developer-token": settings.GOOGLE_ADS_DEVELOPER_TOKEN
+                }
+                async with httpx.AsyncClient(timeout=10.0) as client:
+                    ads_resp = await client.get(
+                        "https://googleads.googleapis.com/v18/customers:listAccessibleCustomers",
+                        headers=headers
+                    )
+                    if ads_resp.status_code == 200:
+                        res_names = ads_resp.json().get("resourceNames", [])
+                        for rn in res_names:
+                            cid = rn.replace("customers/", "")
+                            discovered_ads.append({
+                                "customer_id": cid,
+                                "name": f"Google Ads ({cid})",
+                                "status": "ENABLED"
+                            })
+            except Exception as e:
+                logger.warning(f"Google Ads discovery error: {e}")
 
         # 4. Discover GA4 Properties
         discovered_ga4: List[Dict[str, Any]] = []
-        try:
-            headers = {"Authorization": f"Bearer {access_token}"}
-            async with httpx.AsyncClient(timeout=10.0) as client:
-                ga_resp = await client.get(
-                    "https://analyticsadmin.googleapis.com/v1beta/accountSummaries",
-                    headers=headers
-                )
-                if ga_resp.status_code == 200:
-                    summaries = ga_resp.json().get("accountSummaries", [])
-                    for acc in summaries:
-                        acc_title = acc.get("displayName", "GA Account")
-                        for prop in acc.get("propertySummaries", []):
-                            p_id = prop.get("property", "").replace("properties/", "")
-                            p_name = prop.get("displayName", f"GA4 Property {p_id}")
-                            discovered_ga4.append({
-                                "property_id": p_id,
-                                "display_name": p_name,
-                                "account_name": acc_title
-                            })
-        except Exception as e:
-            logger.warning(f"Google Analytics discovery error: {e}")
+        has_ga4_scope = any("analytics" in s for s in granted_scopes) or not granted_scopes
+        if has_ga4_scope:
+            try:
+                headers = {"Authorization": f"Bearer {plain_access_token}"}
+                async with httpx.AsyncClient(timeout=10.0) as client:
+                    ga_resp = await client.get(
+                        "https://analyticsadmin.googleapis.com/v1beta/accountSummaries",
+                        headers=headers
+                    )
+                    if ga_resp.status_code == 200:
+                        summaries = ga_resp.json().get("accountSummaries", [])
+                        for acc in summaries:
+                            acc_title = acc.get("displayName", "GA Account")
+                            for prop in acc.get("propertySummaries", []):
+                                p_id = prop.get("property", "").replace("properties/", "")
+                                p_name = prop.get("displayName", f"GA4 Property {p_id}")
+                                discovered_ga4.append({
+                                    "property_id": p_id,
+                                    "display_name": p_name,
+                                    "account_name": acc_title
+                                })
+            except Exception as e:
+                logger.warning(f"Google Analytics discovery error: {e}")
 
         # Idempotent persistence of discovered properties
         # GSC
@@ -318,7 +334,6 @@ class GoogleConnectionsService:
             if not domain:
                 clean_slug = re.sub(r'[^a-zA-Z0-9-]', '', biz_name.lower().replace(' ', '-'))
                 domain = f"{clean_slug[:40]}.local"
-
 
             cat = CategoryTaxonomy.normalize_category_name(loc_data.get("primary_category"))
 

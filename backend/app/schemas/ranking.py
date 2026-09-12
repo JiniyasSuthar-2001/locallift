@@ -5,10 +5,10 @@ from datetime import datetime
 class KeywordBase(BaseModel):
     keyword: str
     search_intent: Optional[str] = "Commercial"
-    search_volume: Optional[int] = 0
-    difficulty: Optional[int] = 30
+    search_volume: Optional[int] = None
+    difficulty: Optional[int] = None
     target_location: Optional[str] = "City Center"
-    target_rank: Optional[int] = 3
+    target_rank: Optional[int] = None
     business_relevance: Optional[str] = "High"
 
 class KeywordCreate(KeywordBase):
@@ -21,7 +21,7 @@ class KeywordOut(KeywordBase):
     previous_rank: Optional[int] = None
     ranking_url: Optional[str] = None
     serp_type: str = "Local Pack"
-    opportunity_score: str = "HIGH"
+    opportunity_score: Optional[str] = None
     last_checked_at: datetime
     created_at: datetime
 

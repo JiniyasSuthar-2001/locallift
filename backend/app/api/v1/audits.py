@@ -276,16 +276,19 @@ async def run_crawler_and_audit_task(project_id: int, start_url: str, max_pages:
                 )
                 session.add(new_rec)
 
-        # Update Project Scores
+        # Update Project Scores with evidence-based pillar scores
         if proj:
             pillars = audit_result.get("pillar_scores", {})
             proj.health_score = audit_result["score"]
-            proj.technical_score = pillars.get("crawl_health", audit_result["score"])
-            proj.onpage_score = pillars.get("onpage_content", audit_result["score"])
-            proj.local_score = pillars.get("schema_structured_data", audit_result["score"])
-            proj.gbp_score = pillars.get("gbp_alignment", 70)
-            proj.citations_score = pillars.get("citations_nap", 75)
-            proj.reviews_score = pillars.get("reviews_reputation", 80)
+            proj.technical_score = pillars.get("crawl_health")
+            proj.onpage_score = pillars.get("onpage_content")
+            proj.local_score = pillars.get("schema_structured_data")
+            if pillars.get("gbp_alignment") is not None:
+                proj.gbp_score = pillars["gbp_alignment"]
+            if pillars.get("citations_nap") is not None:
+                proj.citations_score = pillars["citations_nap"]
+            if pillars.get("reviews_reputation") is not None:
+                proj.reviews_score = pillars["reviews_reputation"]
 
         await session.commit()
 

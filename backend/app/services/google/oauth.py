@@ -1,12 +1,17 @@
 import urllib.parse
 import json
 import logging
+import uuid
 import httpx
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
 from datetime import datetime, timezone, timedelta
+from jose import jwt, JWTError
 from app.config import settings
 
 logger = logging.getLogger("locallift.google.oauth")
+
+# In-memory nonce cache to prevent OAuth replay attacks (stores nonces with expiration)
+_USED_NONCES: Dict[str, datetime] = {}
 
 class GoogleOAuthService:
     AUTH_ENDPOINT = "https://accounts.google.com/o/oauth2/v2/auth"
@@ -15,6 +20,9 @@ class GoogleOAuthService:
 
     DEFAULT_SCOPES = [
         "https://www.googleapis.com/auth/business.manage",
+        "https://www.googleapis.com/auth/webmasters.readonly",
+        "https://www.googleapis.com/auth/analytics.readonly",
+        "https://www.googleapis.com/auth/adwords",
         "https://www.googleapis.com/auth/userinfo.email",
         "https://www.googleapis.com/auth/userinfo.profile",
         "openid"
@@ -25,20 +33,82 @@ class GoogleOAuthService:
         return bool(settings.GOOGLE_CLIENT_ID and settings.GOOGLE_CLIENT_SECRET)
 
     @classmethod
-    def get_authorization_url(cls, project_id: int, user_id: int, custom_state: Optional[str] = None) -> str:
+    def encode_oauth_state(
+        cls,
+        project_id: int,
+        user_id: int,
+        organization_id: int,
+        custom_state: Optional[str] = None
+    ) -> str:
         """
-        Builds the Google OAuth 2.0 consent URL for connecting a Google Business Profile.
-        Encodes project_id and user_id into the OAuth state for CSRF and context preservation.
+        Creates a cryptographically-signed JWT OAuth state to prevent CSRF and parameter tampering.
+        """
+        now = datetime.now(timezone.utc)
+        nonce = str(uuid.uuid4())
+        payload = {
+            "project_id": project_id,
+            "user_id": user_id,
+            "organization_id": organization_id,
+            "nonce": nonce,
+            "custom": custom_state,
+            "iat": now,
+            "exp": now + timedelta(minutes=15)
+        }
+        return jwt.encode(payload, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
+
+    @classmethod
+    def decode_and_validate_oauth_state(cls, state_str: str) -> Dict[str, Any]:
+        """
+        Decodes and verifies cryptographic signature, expiry, and one-time nonce of OAuth state.
+        """
+        if not state_str:
+            raise ValueError("OAuth state parameter is missing.")
+
+        # Clean up expired nonces
+        now = datetime.now(timezone.utc)
+        expired_keys = [k for k, exp in _USED_NONCES.items() if exp < now]
+        for k in expired_keys:
+            _USED_NONCES.pop(k, None)
+
+        try:
+            payload = jwt.decode(
+                state_str,
+                settings.SECRET_KEY,
+                algorithms=[settings.ALGORITHM]
+            )
+        except JWTError as e:
+            logger.warning(f"OAuth state signature validation failed: {e}")
+            raise ValueError(f"Invalid or tampered OAuth state: {str(e)}")
+
+        nonce = payload.get("nonce")
+        if not nonce or nonce in _USED_NONCES:
+            logger.warning(f"OAuth state replay attack detected for nonce: {nonce}")
+            raise ValueError("OAuth state has already been used or is invalid.")
+
+        # Mark nonce as used
+        _USED_NONCES[nonce] = now + timedelta(minutes=20)
+        return payload
+
+    @classmethod
+    def get_authorization_url(
+        cls,
+        project_id: int,
+        user_id: int,
+        organization_id: int = 1,
+        custom_state: Optional[str] = None
+    ) -> str:
+        """
+        Builds the Google OAuth 2.0 consent URL with signed state and multi-service scopes.
         """
         if not cls.is_configured():
             logger.warning("Google OAuth credentials are not configured in settings.")
 
-        state_payload = {
-            "project_id": project_id,
-            "user_id": user_id,
-            "nonce": custom_state or "locallift_oauth"
-        }
-        state_encoded = json.dumps(state_payload)
+        signed_state = cls.encode_oauth_state(
+            project_id=project_id,
+            user_id=user_id,
+            organization_id=organization_id,
+            custom_state=custom_state
+        )
 
         params = {
             "client_id": settings.GOOGLE_CLIENT_ID,
@@ -48,7 +118,7 @@ class GoogleOAuthService:
             "access_type": "offline",
             "prompt": "consent",
             "include_granted_scopes": "true",
-            "state": state_encoded
+            "state": signed_state
         }
 
         query_str = urllib.parse.urlencode(params)
@@ -85,7 +155,7 @@ class GoogleOAuthService:
                 "refresh_token": token_data.get("refresh_token"),
                 "expires_in": expires_in,
                 "token_expiry": token_expiry,
-                "scope": token_data.get("scope", "").split(" "),
+                "scope": token_data.get("scope", "").split(" ") if token_data.get("scope") else [],
                 "token_type": token_data.get("token_type", "Bearer")
             }
 

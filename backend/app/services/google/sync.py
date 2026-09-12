@@ -7,7 +7,7 @@ from sqlalchemy.future import select
 
 from app.models.gbp import GoogleAccount, GoogleBusinessProfile, GBPChange
 from app.models.project import Project, Location
-from app.services.google.gbp_client import GoogleBusinessProfileClient
+from app.core.security import decrypt_token
 
 logger = logging.getLogger("locallift.google.sync")
 
@@ -24,8 +24,8 @@ class GBPSyncService:
         detects profile modifications and logs GBPChange audit entries.
         """
         client = GoogleBusinessProfileClient(
-            access_token=google_account.access_token or "",
-            refresh_token=google_account.refresh_token,
+            access_token=decrypt_token(google_account.access_token) or "",
+            refresh_token=decrypt_token(google_account.refresh_token),
             token_expiry=google_account.token_expiry
         )
 

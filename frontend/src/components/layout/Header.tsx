@@ -4,10 +4,10 @@ import {
   ChevronDown,
   Calendar,
   RotateCw,
-  Bell,
   Sparkles,
   Bot,
-  Plus
+  Plus,
+  Check
 } from 'lucide-react';
 import { useProject } from '../../context/ProjectContext';
 import { useLocation, useNavigate, Link } from 'react-router-dom';
@@ -29,6 +29,8 @@ export const Header: React.FC<HeaderProps> = ({ onOpenAI }) => {
     switch (location.pathname) {
       case '/':
         return 'Overview Dashboard';
+      case '/projects':
+        return 'My Projects';
       case '/rankings/keywords':
         return 'Keyword Rank Tracker';
       case '/rankings/grid':
@@ -53,6 +55,10 @@ export const Header: React.FC<HeaderProps> = ({ onOpenAI }) => {
         return 'Content & Landing Page Opportunities';
       case '/tasks':
         return 'SEO Task Operations';
+      case '/team':
+        return 'Team Directory';
+      case '/templates':
+        return 'Templates Hub';
       case '/reports':
         return 'Executive Performance Reports';
       case '/ai-assistant':
@@ -73,105 +79,107 @@ export const Header: React.FC<HeaderProps> = ({ onOpenAI }) => {
   };
 
   return (
-    <header className="h-16 bg-white border-b border-slate-200 px-6 flex items-center justify-between sticky top-0 z-10">
+    <header className="h-16 bg-white border-b border-[#DCE8DC] px-6 flex items-center justify-between sticky top-0 z-10 shadow-2xs">
       {/* Left: Page Title */}
       <div className="flex items-center space-x-3">
-        <h1 className="text-xl font-black text-slate-900 tracking-tight">
+        <h1 className="text-xl font-black text-[#142820] tracking-tight">
           {getPageTitle()}
         </h1>
         {activeProject && (
-          <span className="hidden lg:inline-block text-[11px] font-bold px-2 py-0.5 rounded-full bg-slate-100 text-slate-700 border border-slate-200">
+          <span className="hidden lg:inline-block text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-[#EAF2EA] text-[#174A38] border border-[#B8DFC9]">
             {activeProject.domain}
           </span>
         )}
       </div>
 
-      {/* Right Controls: Business Selector, Date Range, Refresh, Notifications, AI */}
+      {/* Right Controls: Business Selector, Date Range, Refresh, AI Diagnostic */}
       <div className="flex items-center space-x-3">
         {/* Business / Client Selector */}
         <div className="relative">
           <button
             onClick={() => setIsProjectDropdownOpen(!isProjectDropdownOpen)}
-            className="flex items-center space-x-2 px-3 py-1.5 rounded-xl bg-slate-50 border border-slate-200 hover:border-purple-300 text-xs font-bold text-slate-800 transition-all shadow-sm"
+            className="flex items-center space-x-2 px-3 py-1.5 rounded-xl bg-[#F7FAF7] border border-[#DCE8DC] hover:border-[#B8DFC9] text-xs font-bold text-[#142820] transition-all shadow-2xs"
           >
-            <Building2 className="w-3.5 h-3.5 text-purple-600" />
+            <Building2 className="w-3.5 h-3.5 text-[#236B4F]" />
             <span className="max-w-[140px] truncate">{activeProject ? activeProject.name : 'Select Project'}</span>
-            <ChevronDown className="w-3 h-3 text-slate-400" />
+            <ChevronDown className="w-3 h-3 text-[#587568]" />
           </button>
 
           {isProjectDropdownOpen && (
-            <div className="absolute right-0 mt-2 w-64 bg-white border border-slate-200 rounded-xl shadow-xl py-2 z-50">
-              <div className="px-3 py-1 text-[10px] font-bold text-slate-400 uppercase tracking-wider flex items-center justify-between">
-                <span>Select Project</span>
-                <Link
-                  to="/onboarding"
-                  onClick={() => setIsProjectDropdownOpen(false)}
-                  className="text-purple-600 hover:text-purple-700 font-bold flex items-center space-x-0.5"
-                >
-                  <Plus className="w-3 h-3" />
-                  <span>New</span>
-                </Link>
+            <div className="absolute right-0 mt-2 w-64 rounded-xl bg-white border border-[#DCE8DC] shadow-xl py-2 z-50 animate-in fade-in slide-in-from-top-2 duration-150">
+              <div className="px-3 py-1.5 text-[10px] font-extrabold uppercase tracking-wider text-[#587568] border-b border-[#EBF2EB]">
+                Select Active Project
               </div>
-
-              <div className="max-h-56 overflow-y-auto mt-1">
-                {projects.map((p) => (
+              <div className="max-h-60 overflow-y-auto py-1">
+                {projects.map((proj) => (
                   <button
-                    key={p.id}
+                    key={proj.id}
                     onClick={() => {
-                      setActiveProject(p);
+                      setActiveProject(proj);
                       setIsProjectDropdownOpen(false);
                     }}
-                    className={`w-full text-left px-3 py-2 text-xs flex items-center justify-between hover:bg-slate-50 transition-colors ${
-                      activeProject?.id === p.id ? 'bg-purple-50 text-purple-900 font-bold' : 'text-slate-700'
+                    className={`w-full text-left px-3 py-2 text-xs flex items-center justify-between hover:bg-[#F1F7F1] transition-colors ${
+                      activeProject?.id === proj.id ? 'bg-[#EAF2EA] font-bold text-[#142820]' : 'text-[#2E4E40]'
                     }`}
                   >
-                    <div className="truncate pr-2">
-                      <div className="truncate font-semibold">{p.name}</div>
-                      <div className="text-[10px] text-slate-400 truncate">{p.domain}</div>
+                    <div className="truncate">
+                      <div className="font-semibold truncate">{proj.name}</div>
+                      <div className="text-[10px] text-[#587568] truncate">{proj.domain}</div>
                     </div>
-                    <span className="text-[10px] font-black px-1.5 py-0.5 rounded bg-purple-100 text-purple-800">
-                      {p.health_score !== null && p.health_score !== undefined ? p.health_score : '—'}
-                    </span>
+                    {activeProject?.id === proj.id && (
+                      <Check className="w-4 h-4 text-[#236B4F] shrink-0 ml-2" />
+                    )}
                   </button>
                 ))}
+              </div>
+              <div className="p-2 border-t border-[#EBF2EB]">
+                <button
+                  onClick={() => {
+                    setIsProjectDropdownOpen(false);
+                    navigate('/onboarding');
+                  }}
+                  className="w-full flex items-center justify-center space-x-1.5 py-1.5 rounded-lg bg-[#F1F7F1] hover:bg-[#EAF2EA] text-xs font-bold text-[#236B4F] transition-colors"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  <span>Add New Project</span>
+                </button>
               </div>
             </div>
           )}
         </div>
 
         {/* Date Range Selector */}
-        <div className="hidden sm:flex items-center space-x-1.5 px-3 py-1.5 rounded-xl bg-slate-50 border border-slate-200 text-xs font-medium text-slate-700">
-          <Calendar className="w-3.5 h-3.5 text-slate-500" />
+        <div className="hidden sm:flex items-center space-x-1.5 px-3 py-1.5 rounded-xl bg-[#F7FAF7] border border-[#DCE8DC] text-xs font-semibold text-[#2E4E40]">
+          <Calendar className="w-3.5 h-3.5 text-[#587568]" />
           <select
             value={dateRange}
             onChange={(e) => setDateRange(e.target.value)}
-            className="bg-transparent border-none text-xs font-bold text-slate-800 focus:outline-none cursor-pointer"
+            className="bg-transparent border-none text-xs font-bold text-[#142820] focus:ring-0 cursor-pointer p-0 pr-1 outline-none"
           >
-            <option>Last 30 Days</option>
-            <option>Last 7 Days</option>
-            <option>Last 90 Days</option>
-            <option>Year to Date</option>
+            <option value="Last 7 Days">Last 7 Days</option>
+            <option value="Last 30 Days">Last 30 Days</option>
+            <option value="Last 90 Days">Last 90 Days</option>
+            <option value="Year to Date">Year to Date</option>
           </select>
         </div>
 
-        {/* Refresh Icon */}
+        {/* Manual Data Refresh Button */}
         <button
           onClick={handleSync}
           disabled={isSyncing}
-          aria-label="Refresh Data"
-          className="p-2 text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded-xl transition-all border border-slate-200 bg-slate-50 shadow-sm"
-          title="Refresh Data"
+          title="Refresh Active Project Metrics"
+          className="p-2 rounded-xl bg-[#F7FAF7] border border-[#DCE8DC] hover:border-[#B8DFC9] hover:bg-[#F1F7F1] text-[#2E4E40] transition-all shadow-2xs disabled:opacity-50"
         >
-          <RotateCw className={`w-4 h-4 ${isSyncing ? 'animate-spin text-purple-600' : ''}`} />
+          <RotateCw className={`w-3.5 h-3.5 text-[#236B4F] ${isSyncing ? 'animate-spin' : ''}`} />
         </button>
 
-        {/* AI Assistant Button */}
+        {/* AI Diagnostic CTA (Botanical Modern Gradient) */}
         <button
           onClick={onOpenAI}
-          className="flex items-center space-x-1.5 px-3.5 py-1.5 btn-vibrant-primary rounded-xl text-xs font-bold shadow-md transition-all"
+          className="btn-primary-gradient flex items-center space-x-2 px-3.5 py-1.5 rounded-xl text-xs shadow-sm"
         >
-          <Bot className="w-3.5 h-3.5" />
-          <span className="hidden md:inline">AI Diagnostic</span>
+          <Sparkles className="w-3.5 h-3.5 text-white animate-pulse" />
+          <span className="font-bold">AI Diagnostic</span>
         </button>
       </div>
     </header>

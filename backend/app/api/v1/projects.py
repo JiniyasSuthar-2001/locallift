@@ -102,13 +102,24 @@ async def create_project(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
-    # Find active organization
-    mem_result = await db.execute(select(OrganizationMember).where(OrganizationMember.user_id == current_user.id))
-    mem = mem_result.scalars().first()
-    if not mem:
+    # Validate organization authorization
+    org_ids = await get_user_organization_ids(current_user.id, db)
+    if not org_ids and not current_user.is_superuser:
         raise HTTPException(status_code=400, detail="User has no associated organization")
 
-    org_id = project_in.organization_id or mem.organization_id
+    if project_in.organization_id:
+        if not current_user.is_superuser and project_in.organization_id not in org_ids:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Access denied: You cannot create a project under an unauthorized organization."
+            )
+        org_id = project_in.organization_id
+    else:
+        org_id = org_ids[0] if org_ids else 1
+
+    # Validate client_id belongs to the same organization
+    if project_in.client_id:
+        await verify_client_access(project_in.client_id, org_id, db)
 
     # Normalize primary and additional categories
     normalized_primary = CategoryTaxonomy.normalize_category_name(project_in.primary_category)
