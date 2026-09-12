@@ -146,30 +146,11 @@ async def global_exception_handler(request: Request, exc: Exception):
         headers=_add_cors_headers(request)
     )
 
-def _sync_sqlite_schema(sync_conn):
-    """Auto-migrate SQLite development database by adding any missing table columns."""
-    if sync_conn.dialect.name != "sqlite":
-        return
-    from sqlalchemy import inspect, text
-    inspector = inspect(sync_conn)
-    tables = inspector.get_table_names()
-    for table_name, table in Base.metadata.tables.items():
-        if table_name in tables:
-            existing_cols = {c["name"] for c in inspector.get_columns(table_name)}
-            for col in table.columns:
-                if col.name not in existing_cols:
-                    col_type = col.type.compile(sync_conn.dialect)
-                    try:
-                        sync_conn.execute(text(f"ALTER TABLE {table_name} ADD COLUMN {col.name} {col_type}"))
-                    except Exception as e:
-                        logger.warning(f"Failed to auto-add column {col.name} to {table_name}: {e}")
-
 @app.on_event("startup")
 async def startup_event():
     import app.models  # noqa: F401
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-        await conn.run_sync(_sync_sqlite_schema)
+    from app.core.migrations import run_db_migrations
+    await asyncio.to_thread(run_db_migrations)
 
 @app.get("/")
 async def root():

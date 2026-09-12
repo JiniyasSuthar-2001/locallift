@@ -17,9 +17,14 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    # Tables are created or managed via SQLAlchemy Base metadata
-    pass
+    import app.models  # noqa: F401
+    from app.database import Base
+    bind = op.get_bind()
+    Base.metadata.create_all(bind=bind)
 
 
 def downgrade() -> None:
-    pass
+    import app.models  # noqa: F401
+    from app.database import Base
+    bind = op.get_bind()
+    Base.metadata.drop_all(bind=bind)

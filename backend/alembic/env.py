@@ -18,7 +18,10 @@ config = context.config
 # Interpret the config file for Python logging.
 # This line sets up loggers basically.
 if config.config_file_name is not None:
-    fileConfig(config.config_file_name)
+    try:
+        fileConfig(config.config_file_name, disable_existing_loggers=False)
+    except Exception:
+        pass
 
 # Set database URL dynamically from app settings
 db_url = settings.DATABASE_URL
