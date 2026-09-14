@@ -1,11 +1,12 @@
 from typing import List, Optional
 from datetime import datetime, timezone
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 
 from app.database import get_db
 from app.core.deps import get_current_user, verify_project_access, get_user_organization_ids
+from app.core.audit_logger import log_user_action
 from app.models.user import User, OrganizationMember
 from app.models.audit import SEOIssue, SEOTask, TaskStatus, TaskPriority, IssueStatus
 from app.models.team import ProjectMembership
@@ -73,11 +74,12 @@ async def list_project_tasks(
 
 @router.post("", response_model=TaskOut)
 async def create_task(
+    request: Request,
     task_in: TaskCreate,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
-    await verify_project_access(task_in.project_id, current_user, db)
+    project = await verify_project_access(task_in.project_id, current_user, db)
 
     # Validate issue_id belongs to the same project
     if task_in.issue_id:
@@ -113,11 +115,21 @@ async def create_task(
     db.add(task)
     await db.commit()
     await db.refresh(task)
+
+    log_user_action(
+        request, "CREATE_TASK",
+        user_id=current_user.id,
+        organization_id=project.organization_id,
+        project_id=task.project_id,
+        task_id=task.id,
+        title=task.title
+    )
     return task
 
 
 @router.post("/convert-issue/{issue_id}", response_model=TaskOut)
 async def convert_issue_to_task(
+    request: Request,
     issue_id: int,
     req: Optional[ConvertIssueToTaskRequest] = None,
     current_user: User = Depends(get_current_user),
@@ -129,7 +141,7 @@ async def convert_issue_to_task(
     if not issue:
         raise HTTPException(status_code=404, detail="SEO Issue not found")
 
-    await verify_project_access(issue.project_id, current_user, db)
+    project = await verify_project_access(issue.project_id, current_user, db)
 
     # Validate assignee if provided
     assigned_user_id = req.assigned_to_id or current_user.id
@@ -168,11 +180,21 @@ async def convert_issue_to_task(
     db.add(task)
     await db.commit()
     await db.refresh(task)
+
+    log_user_action(
+        request, "CONVERT_ISSUE_TO_TASK",
+        user_id=current_user.id,
+        organization_id=project.organization_id,
+        project_id=project.id,
+        issue_id=issue_id,
+        task_id=task.id
+    )
     return task
 
 
 @router.patch("/{task_id}", response_model=TaskOut)
 async def update_task(
+    request: Request,
     task_id: int,
     task_in: TaskUpdate,
     current_user: User = Depends(get_current_user),
@@ -183,7 +205,7 @@ async def update_task(
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")
 
-    await verify_project_access(task.project_id, current_user, db)
+    project = await verify_project_access(task.project_id, current_user, db)
 
     if task_in.assigned_to_id is not None:
         await _verify_assigned_user(task_in.assigned_to_id, task.project_id, db)
@@ -216,11 +238,21 @@ async def update_task(
 
     await db.commit()
     await db.refresh(task)
+
+    log_user_action(
+        request, "UPDATE_TASK",
+        user_id=current_user.id,
+        organization_id=project.organization_id,
+        project_id=task.project_id,
+        task_id=task_id,
+        status=task.status.value if hasattr(task.status, 'value') else str(task.status)
+    )
     return task
 
 
 @router.delete("/{task_id}")
 async def delete_task(
+    request: Request,
     task_id: int,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
@@ -230,8 +262,18 @@ async def delete_task(
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")
 
-    await verify_project_access(task.project_id, current_user, db)
+    project = await verify_project_access(task.project_id, current_user, db)
+    org_id = project.organization_id
+    proj_id = task.project_id
 
     await db.delete(task)
     await db.commit()
+
+    log_user_action(
+        request, "DELETE_TASK",
+        user_id=current_user.id,
+        organization_id=org_id,
+        project_id=proj_id,
+        task_id=task_id
+    )
     return {"message": "Task deleted successfully"}

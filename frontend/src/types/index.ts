@@ -479,18 +479,36 @@ export interface SchemaValidationResult {
   entities: string[];
 }
 
-export interface GoogleConnectionSummary {
+export interface SingleServiceStatus {
   connected: boolean;
   google_email?: string;
-  status: 'connected' | 'expired' | 'error' | 'disconnected' | 'not_connected';
+  status: 'connected' | 'expired' | 'error' | 'disconnected' | 'not_connected' | string;
+  scopes?: string[];
+  last_sync_at?: string;
+  last_error?: string;
+  resource_count?: number;
+}
+
+export interface GoogleConnectionSummary {
+  business_profile?: SingleServiceStatus;
+  google_ads?: SingleServiceStatus;
+  search_console?: SingleServiceStatus;
+  analytics?: SingleServiceStatus;
+
+  connected?: boolean;
+  is_connected?: boolean;
+  google_email?: string;
+  account_email?: string;
+  status?: string;
   created_at?: string;
   last_sync_at?: string;
   last_error?: string;
-  has_gbp: boolean;
-  has_ads: boolean;
-  has_gsc: boolean;
-  has_ga4: boolean;
-  counts: {
+  sync_error?: string;
+  has_gbp?: boolean;
+  has_ads?: boolean;
+  has_gsc?: boolean;
+  has_ga4?: boolean;
+  counts?: {
     gbp_locations: number;
     ads_accounts: number;
     gsc_properties: number;

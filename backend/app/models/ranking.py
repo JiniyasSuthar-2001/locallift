@@ -50,7 +50,7 @@ class GeoGridScan(Base):
     project_id = Column(Integer, ForeignKey("projects.id", ondelete="CASCADE"), nullable=False)
     keyword_id = Column(Integer, ForeignKey("keywords.id", ondelete="CASCADE"), nullable=False)
     
-    center_name = Column(String(255), default="City Center")
+    center_name = Column(String(255), nullable=True, default=None)
     center_lat = Column(Float, nullable=False)
     center_lng = Column(Float, nullable=False)
     radius_km = Column(Float, default=10.0)

@@ -1,5 +1,4 @@
-from datetime import timedelta
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Request
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
@@ -7,15 +6,17 @@ from app.database import get_db
 from app.config import settings
 from app.core.security import verify_password, get_password_hash, create_access_token
 from app.core.deps import get_current_user
+from app.core.audit_logger import log_user_action
 from app.models.user import User, Organization, OrganizationMember, OrgRole
 from app.schemas.auth import Token, UserRegister, UserOut, UserLogin
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
 
 @router.post("/register", response_model=Token)
-async def register(user_in: UserRegister, db: AsyncSession = Depends(get_db)):
+async def register(request: Request, user_in: UserRegister, db: AsyncSession = Depends(get_db)):
     result = await db.execute(select(User).where(User.email == user_in.email))
     if result.scalars().first():
+        log_user_action(request, "REGISTER", status="failed", error="EMAIL_EXISTS", email=user_in.email)
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="User with this email already exists."
@@ -53,6 +54,8 @@ async def register(user_in: UserRegister, db: AsyncSession = Depends(get_db)):
     await db.commit()
     await db.refresh(user)
 
+    log_user_action(request, "REGISTER", user_id=user.id, organization_id=org.id, status="success", email=user.email)
+
     access_token = create_access_token(subject=user.id)
     user_out = UserOut(
         id=user.id,
@@ -67,10 +70,11 @@ async def register(user_in: UserRegister, db: AsyncSession = Depends(get_db)):
     return Token(access_token=access_token, token_type="bearer", user=user_out)
 
 @router.post("/login", response_model=Token)
-async def login(form_data: OAuth2PasswordRequestForm = Depends(), db: AsyncSession = Depends(get_db)):
+async def login(request: Request, form_data: OAuth2PasswordRequestForm = Depends(), db: AsyncSession = Depends(get_db)):
     result = await db.execute(select(User).where(User.email == form_data.username))
     user = result.scalars().first()
     if not user or not verify_password(form_data.password, user.hashed_password):
+        log_user_action(request, "LOGIN", status="failed", username=form_data.username)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect email or password",
@@ -78,6 +82,7 @@ async def login(form_data: OAuth2PasswordRequestForm = Depends(), db: AsyncSessi
         )
 
     if not user.is_active:
+        log_user_action(request, "LOGIN", user_id=user.id, status="failed", error="ACCOUNT_INACTIVE")
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Account is inactive. Please contact administrator.",
@@ -90,6 +95,8 @@ async def login(form_data: OAuth2PasswordRequestForm = Depends(), db: AsyncSessi
     mem = mem_result.scalars().first()
     org_id = mem.organization_id if mem else None
     role = mem.role.value if mem else "owner"
+
+    log_user_action(request, "LOGIN", user_id=user.id, organization_id=org_id, status="success")
 
     access_token = create_access_token(subject=user.id)
     user_out = UserOut(

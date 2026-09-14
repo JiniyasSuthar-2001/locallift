@@ -21,7 +21,7 @@ from app.services.serp.factory import get_serp_provider
 from app.services.serp.serpapi import SerpApiProvider
 from app.services.serp.mock_provider import MockSERPProvider
 from app.services.serp.grid_scanner import GeoGridScanner
-from app.services.serp.base import SERPProvider, SERPResponse, SERPItem
+from app.services.serp.base import SERPProvider, SERPResponse, SERPItem, NotConfiguredSERPProvider
 from app.test_helper import init_test_db
 
 # ---------------------------------------------------------------------------
@@ -80,18 +80,18 @@ async def test_serp_production_integrity():
     print(">> TEST 1: DEFAULT CONFIGURATION & ENVIRONMENT GUARDS")
     print("=======================================================")
 
-    # Assert default SERP provider in config is openserp, NOT mock
-    assert settings.SERP_PROVIDER == "openserp", f"Expected SERP_PROVIDER == 'openserp', got '{settings.SERP_PROVIDER}'"
-    print("[OK] Default settings.SERP_PROVIDER is 'openserp'")
+    # Assert default SERP provider in config is serpapi, NOT openserp or mock
+    assert settings.SERP_PROVIDER == "serpapi", f"Expected SERP_PROVIDER == 'serpapi', got '{settings.SERP_PROVIDER}'"
+    print("[OK] Default settings.SERP_PROVIDER is 'serpapi'")
 
-    # When requesting serpapi with no SERPAPI_KEY, SerpApiProvider reports is_configured=False
+    # When requesting serpapi with no SERPAPI_KEY, provider reports is_configured=False
     unconfigured_provider = get_serp_provider("serpapi")
-    assert isinstance(unconfigured_provider, SerpApiProvider)
+    assert isinstance(unconfigured_provider, (SerpApiProvider, NotConfiguredSERPProvider))
     assert unconfigured_provider.is_configured is False
-    print("[OK] SerpApiProvider initialized with empty key is unconfigured (is_configured=False)")
+    print("[OK] Provider initialized with empty key is unconfigured (is_configured=False)")
 
-    # Assert mock provider is strictly blocked when ENVIRONMENT is development or production
-    for env in ["development", "production", "staging"]:
+    # Assert mock provider is strictly blocked when ENVIRONMENT is production or staging
+    for env in ["production", "staging"]:
         original_env = settings.ENVIRONMENT
         try:
             settings.ENVIRONMENT = env

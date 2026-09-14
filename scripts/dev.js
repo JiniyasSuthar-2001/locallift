@@ -14,6 +14,24 @@ const rootDir = path.join(__dirname, '..');
 const frontendDir = path.join(rootDir, 'frontend');
 const isWin = process.platform === 'win32';
 
+const os = require('os');
+
+function getLanIp() {
+  const interfaces = os.networkInterfaces();
+  for (const devName in interfaces) {
+    const iface = interfaces[devName];
+    for (let i = 0; i < iface.length; i++) {
+      const alias = iface[i];
+      if ((alias.family === 'IPv4' || alias.family === 4) && !alias.internal) {
+        return alias.address;
+      }
+    }
+  }
+  return '192.168.1.13';
+}
+
+const lanIp = getLanIp();
+
 let treeKill;
 try {
   treeKill = require('tree-kill');
@@ -33,14 +51,14 @@ const backendProc = spawn(
   }
 );
 
-// 2. Spawn Frontend Process
-const npmCmd = isWin ? 'npm.cmd' : 'npm';
+// 2. Spawn Frontend Process directly via Node (avoids cmd.exe batch prompt crashes)
+const viteCli = path.join(frontendDir, 'node_modules', 'vite', 'bin', 'vite.js');
 const frontendProc = spawn(
-  npmCmd,
-  ['run', 'dev', '--', '--host', '127.0.0.1', '--port', '5173'],
+  process.execPath,
+  [viteCli, '--host', '0.0.0.0', '--port', '5173'],
   {
     cwd: frontendDir,
-    shell: isWin,
+    shell: false,
     stdio: ['ignore', 'pipe', 'pipe']
   }
 );
@@ -51,8 +69,8 @@ let backendReady = false;
 function checkReady() {
   if (frontendReady && backendReady) {
     console.log('\n\x1b[32m✓ LocalLift development environment ready\x1b[0m\n');
-    console.log('\x1b[36m[FRONTEND]\x1b[0m \x1b[32m✓ Running at http://localhost:5173\x1b[0m');
-    console.log('\x1b[32m[BACKEND]\x1b[0m  \x1b[32m✓ Running at http://localhost:8000\x1b[0m (API Docs: http://localhost:8000/docs)\n');
+    console.log(`\x1b[36m[FRONTEND]\x1b[0m \x1b[32m✓ Running at http://localhost:5173 (LAN: http://${lanIp}:5173)\x1b[0m`);
+    console.log(`\x1b[32m[BACKEND]\x1b[0m  \x1b[32m✓ Running at http://localhost:8000 (LAN: http://${lanIp}:8000)\x1b[0m (API Docs: http://localhost:8000/docs)\n`);
     console.log('\x1b[90mPress Ctrl+C to stop all services.\x1b[0m\n');
   }
 }

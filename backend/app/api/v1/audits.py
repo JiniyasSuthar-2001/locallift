@@ -1,12 +1,13 @@
 from typing import List, Optional
 from datetime import datetime, timezone
-from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
+from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from sqlalchemy.orm import selectinload
 
 from app.database import get_db, AsyncSessionLocal
 from app.core.deps import get_current_user
+from app.core.audit_logger import log_user_action
 from app.models.user import User
 from app.models.project import Project, Website, Location
 from app.models.gbp import GoogleAccount, GoogleBusinessProfile
@@ -296,6 +297,7 @@ from app.core.deps import get_current_user, verify_project_access
 
 @router.post("/crawl/{project_id}")
 async def trigger_crawl(
+    request: Request,
     project_id: int,
     crawl_in: CrawlRequest,
     background_tasks: BackgroundTasks,
@@ -303,6 +305,13 @@ async def trigger_crawl(
     db: AsyncSession = Depends(get_db)
 ):
     proj = await verify_project_access(project_id, current_user, db)
+    log_user_action(
+        request, "RUN_AUDIT",
+        user_id=current_user.id,
+        organization_id=proj.organization_id,
+        project_id=project_id,
+        url=crawl_in.url
+    )
 
     background_tasks.add_task(
         run_crawler_and_audit_task,

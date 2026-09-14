@@ -46,17 +46,18 @@ class Settings(BaseSettings):
     ]
     
     # Integrations - Google Platform
+    FRONTEND_BASE_URL: str = "http://localhost:5173"
     GOOGLE_CLIENT_ID: str = ""
     GOOGLE_CLIENT_SECRET: str = ""
-    GOOGLE_REDIRECT_URI: str = "http://localhost:5173/integrations/google/callback"
+    GOOGLE_REDIRECT_URI: str = "http://localhost:8000/api/v1/connections/google/callback"
     GOOGLE_ADS_DEVELOPER_TOKEN: str = ""
     
     # Integrations - SERP / Rank Tracking
-    SERP_PROVIDER: str = "openserp"  # openserp (default self-hosted), serpapi, mock (testing only)
-    OPENSERP_BASE_URL: str = "http://127.0.0.1:7000"
+    SERP_PROVIDER: str = "serpapi"  # serpapi (default organization user key), openserp (optional self-hosted), mock (testing only)
+    OPENSERP_BASE_URL: str = ""
     OPENSERP_TIMEOUT: int = 30
     OPENSERP_DEFAULT_ENGINE: str = "google"
-    SERP_FALLBACK_PROVIDER: str = "serpapi"  # serpapi fallback when enabled
+    SERP_FALLBACK_PROVIDER: str = ""
     SERPAPI_KEY: str = ""
     
     # AI Engine
@@ -106,4 +107,9 @@ def validate_production_security(custom_settings: Settings = None) -> None:
     s.validate_production_security()
 
 settings = Settings()
+# Normalize SQLite relative database paths to BACKEND_DIR to ensure 100% single database file consistency
+if "sqlite" in settings.DATABASE_URL and "./locallift.db" in settings.DATABASE_URL:
+    db_path = (BACKEND_DIR / "locallift.db").as_posix()
+    settings.DATABASE_URL = f"sqlite+aiosqlite:///{db_path}"
+
 settings.validate_production_security()

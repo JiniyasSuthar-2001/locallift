@@ -29,9 +29,9 @@ import { useProject } from '../context/ProjectContext';
 import { getErrorMessage } from '../utils/error';
 import {
   GoogleConnectionSummary,
+  SingleServiceStatus,
   DiscoveredResourcesResponse,
-  PublicBusinessListingItem,
-  DiscoveredGBPLocation
+  PublicBusinessListingItem
 } from '../types';
 import { normalizeExternalUrl } from '../utils/url';
 
@@ -48,14 +48,22 @@ export const ConnectionsView: React.FC = () => {
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
 
-  // Modals & form state
+  // Per-service specific error messages
+  const [serviceErrors, setServiceErrors] = useState<Record<string, string | null>>({
+    business_profile: null,
+    google_ads: null,
+    search_console: null,
+    analytics: null
+  });
+
+  // Modal & action state
   const [showMapsModal, setShowMapsModal] = useState<boolean>(false);
   const [showImportModal, setShowImportModal] = useState<boolean>(false);
   const [mapsUrl, setMapsUrl] = useState<string>('');
   const [mapsName, setMapsName] = useState<string>('');
   const [mapsCategory, setMapsCategory] = useState<string>('');
   const [submittingMaps, setSubmittingMaps] = useState<boolean>(false);
-  const [disconnectConfirm, setDisconnectConfirm] = useState<boolean>(false);
+  const [disconnectingService, setDisconnectingService] = useState<string | null>(null);
 
   // Selected GBP locations for import
   const [selectedLocations, setSelectedLocations] = useState<Record<string, boolean>>({});
@@ -71,14 +79,19 @@ export const ConnectionsView: React.FC = () => {
       setConnectionStatus(statusRes.data);
       setPublicListings(publicRes.data);
 
-      const isConn = statusRes.data.connected || (statusRes.data as any).is_connected || statusRes.data.status === 'connected';
-      if (isConn) {
+      const anyConn =
+        statusRes.data.business_profile?.connected ||
+        statusRes.data.google_ads?.connected ||
+        statusRes.data.search_console?.connected ||
+        statusRes.data.analytics?.connected ||
+        statusRes.data.connected ||
+        statusRes.data.is_connected;
+
+      if (anyConn) {
         try {
-          // Fetch discovered resources
           const discRes = await api.post<DiscoveredResourcesResponse>('/connections/google/discover');
           setDiscoveredResources(discRes.data);
 
-          // Pre-select all un-imported locations
           const initialSelected: Record<string, boolean> = {};
           (discRes.data.gbp_locations || []).forEach((loc) => {
             if (!loc.already_imported) {
@@ -87,29 +100,89 @@ export const ConnectionsView: React.FC = () => {
           });
           setSelectedLocations(initialSelected);
         } catch (discErr) {
-          console.warn('Google discovery error:', discErr);
+          console.warn('Google discovery notice:', discErr);
         }
       }
     } catch (err: any) {
-      setErrorMsg(getErrorMessage(err, 'Failed to load connection settings.'));
+      setErrorMsg(getErrorMessage(err, 'Failed to load Google connection settings.'));
     } finally {
       setLoading(false);
     }
   };
 
-
   useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const googleService = params.get('google_service') || params.get('service');
+    const googleStatus = params.get('status') || params.get('google');
+    const msg = params.get('message');
+
+    if (googleService && googleStatus === 'success') {
+      const formattedName =
+        googleService === 'business_profile'
+          ? 'Google Business Profile'
+          : googleService === 'google_ads'
+          ? 'Google Ads'
+          : googleService === 'search_console'
+          ? 'Google Search Console'
+          : googleService === 'analytics'
+          ? 'Google Analytics 4'
+          : 'Google Service';
+      setSuccessMsg(`${formattedName} connected successfully.`);
+      window.history.replaceState({}, document.title, window.location.pathname);
+    } else if (googleStatus === 'success') {
+      setSuccessMsg('Google Service connected successfully.');
+      window.history.replaceState({}, document.title, window.location.pathname);
+    } else if (googleStatus === 'error') {
+      const targetService = googleService || 'general';
+      const decodedErr = msg ? decodeURIComponent(msg) : 'Authorization failed or was cancelled.';
+      if (googleService && serviceErrors.hasOwnProperty(googleService)) {
+        setServiceErrors((prev) => ({ ...prev, [googleService]: decodedErr }));
+      } else {
+        setErrorMsg(decodedErr);
+      }
+      window.history.replaceState({}, document.title, window.location.pathname);
+    }
+
     fetchConnectionData();
   }, []);
 
-  const handleStartGoogleOAuth = async () => {
+  const handleStartOAuthForService = async (serviceKey: string) => {
+    setServiceErrors((prev) => ({ ...prev, [serviceKey]: null }));
+    setErrorMsg(null);
     try {
-      const res = await api.get<{ auth_url: string; state: string }>('/connections/google/auth-url');
+      const res = await api.get<{ auth_url: string; service: string }>(
+        `/connections/google/${serviceKey}/auth-url`
+      );
       if (res.data.auth_url) {
         window.location.href = res.data.auth_url;
       }
     } catch (err: any) {
-      setErrorMsg(getErrorMessage(err, 'Failed to initiate Google OAuth.'));
+      const errTxt = getErrorMessage(err, `Failed to initiate OAuth for ${serviceKey}.`);
+      setServiceErrors((prev) => ({ ...prev, [serviceKey]: errTxt }));
+    }
+  };
+
+  const handleDisconnectService = async (serviceKey: string) => {
+    setServiceErrors((prev) => ({ ...prev, [serviceKey]: null }));
+    setErrorMsg(null);
+    try {
+      await api.post(`/connections/google/${serviceKey}/disconnect`);
+      setDisconnectingService(null);
+      
+      const formattedName =
+        serviceKey === 'business_profile'
+          ? 'Google Business Profile'
+          : serviceKey === 'google_ads'
+          ? 'Google Ads'
+          : serviceKey === 'search_console'
+          ? 'Google Search Console'
+          : 'Google Analytics 4';
+
+      setSuccessMsg(`${formattedName} disconnected successfully.`);
+      await fetchConnectionData();
+    } catch (err: any) {
+      const errTxt = getErrorMessage(err, `Failed to disconnect ${serviceKey}.`);
+      setServiceErrors((prev) => ({ ...prev, [serviceKey]: errTxt }));
     }
   };
 
@@ -118,24 +191,12 @@ export const ConnectionsView: React.FC = () => {
     setErrorMsg(null);
     try {
       await api.post('/connections/google/sync');
-      setSuccessMsg('Google resources synchronized successfully.');
+      setSuccessMsg('Connected Google services synchronized successfully.');
       await fetchConnectionData();
     } catch (err: any) {
-      setErrorMsg(getErrorMessage(err, 'Sync failed.'));
+      setErrorMsg(getErrorMessage(err, 'Synchronization failed.'));
     } finally {
       setSyncing(false);
-    }
-  };
-
-  const handleDisconnect = async () => {
-    try {
-      await api.post('/connections/google/disconnect');
-      setDisconnectConfirm(false);
-      setSuccessMsg('Google account disconnected safely. Historical data preserved.');
-      setDiscoveredResources(null);
-      await fetchConnectionData();
-    } catch (err: any) {
-      setErrorMsg(getErrorMessage(err, 'Disconnect failed.'));
     }
   };
 
@@ -148,11 +209,11 @@ export const ConnectionsView: React.FC = () => {
         (l) => selectedLocations[l.location_id]
       );
 
-      const res = await api.post<{ created_projects_count: number; updated_projects_count: number; message: string }>(
+      const res = await api.post<{ created_projects_count: number; message: string }>(
         '/connections/google/import-resources',
         {
-          locations: selectedLocList,
-          auto_create_projects: true
+          selected_gbp_locations: selectedLocList,
+          create_new_projects: true
         }
       );
 
@@ -202,26 +263,70 @@ export const ConnectionsView: React.FC = () => {
       <div className="flex items-center justify-center p-12">
         <div className="flex items-center space-x-3 text-slate-500 text-xs">
           <RotateCw className="w-4 h-4 animate-spin text-purple-600" />
-          <span>Loading connections and authorized Google services...</span>
+          <span>Loading independent Google service connections...</span>
         </div>
       </div>
     );
   }
 
+  // Individual service status references
+  const bpStatus: SingleServiceStatus = connectionStatus?.business_profile || {
+    connected: false,
+    status: 'disconnected'
+  };
+  const adsStatus: SingleServiceStatus = connectionStatus?.google_ads || {
+    connected: false,
+    status: 'disconnected'
+  };
+  const gscStatus: SingleServiceStatus = connectionStatus?.search_console || {
+    connected: false,
+    status: 'disconnected'
+  };
+  const ga4Status: SingleServiceStatus = connectionStatus?.analytics || {
+    connected: false,
+    status: 'disconnected'
+  };
+
+  const anyConnected =
+    bpStatus.connected || adsStatus.connected || gscStatus.connected || ga4Status.connected;
+
   return (
     <div className="space-y-6 max-w-5xl">
-      {/* Header */}
-      <div>
-        <h2 className="text-xl font-black text-slate-900 flex items-center space-x-2">
-          <Link2 className="w-5 h-5 text-purple-600" />
-          <span>External Integrations & Connections</span>
-        </h2>
-        <p className="text-xs text-slate-500 mt-0.5">
-          Connect your official Google account to automatically discover and synchronize Google Business Profile locations, Google Ads, Search Console, and Analytics.
-        </p>
+      {/* Page Header */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div>
+          <h2 className="text-xl font-black text-slate-900 flex items-center space-x-2">
+            <Link2 className="w-5 h-5 text-purple-600" />
+            <span>Google Services</span>
+          </h2>
+          <p className="text-xs text-slate-500 mt-0.5">
+            Connect only the Google services your organization uses. Each service is authorized independently.
+          </p>
+        </div>
+        {anyConnected && (
+          <div className="flex items-center space-x-2">
+            <button
+              onClick={handleSyncNow}
+              disabled={syncing}
+              className="px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-xl transition-all flex items-center space-x-1.5"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${syncing ? 'animate-spin' : ''}`} />
+              <span>{syncing ? 'Syncing...' : 'Sync All Connected Services'}</span>
+            </button>
+            {discoveredResources && discoveredResources.gbp_locations.length > 0 && (
+              <button
+                onClick={() => setShowImportModal(true)}
+                className="px-3.5 py-2 bg-purple-50 hover:bg-purple-100 text-purple-700 border border-purple-200 text-xs font-bold rounded-xl transition-all flex items-center space-x-1.5"
+              >
+                <FolderPlus className="w-3.5 h-3.5 text-purple-600" />
+                <span>Import Resources</span>
+              </button>
+            )}
+          </div>
+        )}
       </div>
 
-      {/* Notifications */}
+      {/* Global Notifications */}
       {errorMsg && (
         <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl flex items-center space-x-2.5 text-xs text-rose-700">
           <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
@@ -241,180 +346,341 @@ export const ConnectionsView: React.FC = () => {
         </div>
       )}
 
-      {/* Master Google Connection Card */}
-      <div className="card-vibrant p-6 border border-slate-200/80 rounded-2xl shadow-sm bg-white space-y-6">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-100 pb-5">
-          <div className="flex items-center space-x-3.5">
-            <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-purple-600 to-indigo-600 flex items-center justify-center text-white shadow-md shadow-purple-500/20">
-              <Store className="w-6 h-6 text-white" />
-            </div>
-            <div>
-              <div className="flex items-center space-x-2">
-                <h3 className="text-base font-black text-slate-900">Google Central Hub</h3>
-                {connectionStatus?.connected ? (
-                  <span className="inline-flex items-center space-x-1 px-2.5 py-0.5 rounded-full text-[10px] font-black bg-emerald-100 text-emerald-800 border border-emerald-200">
-                    <CheckCircle2 className="w-3 h-3 text-emerald-600" />
-                    <span>Connected</span>
-                  </span>
-                ) : (
-                  <span className="inline-flex items-center space-x-1 px-2.5 py-0.5 rounded-full text-[10px] font-black bg-slate-100 text-slate-600 border border-slate-200">
-                    <span>Not Connected</span>
-                  </span>
-                )}
+      {/* 4 INDEPENDENT GOOGLE SERVICE CARDS */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        {/* CARD 1 — GOOGLE BUSINESS PROFILE */}
+        <div className="card-vibrant p-6 border border-slate-200/80 rounded-2xl shadow-sm bg-white flex flex-col justify-between space-y-4">
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center space-x-3">
+                <div className="w-10 h-10 rounded-xl bg-purple-50 text-purple-600 flex items-center justify-center font-bold">
+                  <Store className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-black text-slate-900">Google Business Profile</h3>
+                </div>
               </div>
-              <p className="text-xs text-slate-500 mt-0.5">
-                {connectionStatus?.connected
-                  ? `Authorized as: ${connectionStatus.google_email || 'Authenticated User'}`
-                  : 'Connect your Google account using secure OAuth 2.0 to access Google APIs.'}
-              </p>
+              {bpStatus.connected ? (
+                <span className="inline-flex items-center space-x-1 px-2.5 py-1 rounded-full text-[10px] font-black bg-emerald-100 text-emerald-800 border border-emerald-200">
+                  <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                  <span>Connected</span>
+                </span>
+              ) : (
+                <span className="inline-flex items-center space-x-1 px-2.5 py-1 rounded-full text-[10px] font-black bg-slate-100 text-slate-600 border border-slate-200">
+                  <span>Not Connected</span>
+                </span>
+              )}
             </div>
+
+            <p className="text-xs text-slate-500 leading-relaxed">
+              Manage locations, reviews, search visibility, and Business Profile insights.
+            </p>
+
+            {bpStatus.connected && bpStatus.google_email && (
+              <div className="p-2.5 bg-slate-50 border border-slate-100 rounded-xl text-xs text-slate-600 flex items-center space-x-1.5">
+                <span className="text-slate-400 font-medium">Connected account:</span>
+                <span className="font-bold text-slate-800">{bpStatus.google_email}</span>
+              </div>
+            )}
+
+            {serviceErrors.business_profile && (
+              <div className="p-2.5 bg-rose-50 border border-rose-200 rounded-xl text-xs text-rose-700 flex items-start space-x-2">
+                <AlertCircle className="w-3.5 h-3.5 text-rose-600 shrink-0 mt-0.5" />
+                <div className="flex-1">{serviceErrors.business_profile}</div>
+              </div>
+            )}
           </div>
 
-          <div className="flex items-center space-x-2">
-            {connectionStatus?.connected ? (
+          <div className="pt-2 border-t border-slate-100 flex items-center justify-end space-x-2">
+            {bpStatus.connected ? (
               <>
                 <button
-                  onClick={handleSyncNow}
-                  disabled={syncing}
-                  className="px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-xl transition-all flex items-center space-x-1.5"
+                  onClick={() => handleStartOAuthForService('business_profile')}
+                  className="px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-xl transition-all flex items-center space-x-1"
                 >
-                  <RefreshCw className={`w-3.5 h-3.5 ${syncing ? 'animate-spin' : ''}`} />
-                  <span>{syncing ? 'Syncing...' : 'Sync Now'}</span>
+                  <RotateCw className="w-3.5 h-3.5 text-slate-500" />
+                  <span>Reconnect</span>
                 </button>
                 <button
-                  onClick={() => setShowImportModal(true)}
-                  className="px-3.5 py-2 bg-purple-50 hover:bg-purple-100 text-purple-700 border border-purple-200 text-xs font-bold rounded-xl transition-all flex items-center space-x-1.5"
+                  onClick={() => setDisconnectingService('business_profile')}
+                  className="px-3.5 py-2 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 text-xs font-bold rounded-xl transition-all flex items-center space-x-1"
                 >
-                  <FolderPlus className="w-3.5 h-3.5 text-purple-600" />
-                  <span>Import Resources</span>
-                </button>
-                <button
-                  onClick={() => setDisconnectConfirm(true)}
-                  className="p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-xl transition-all"
-                  title="Disconnect Google Account"
-                >
-                  <Trash2 className="w-4 h-4" />
+                  <Trash2 className="w-3.5 h-3.5 text-rose-600" />
+                  <span>Disconnect</span>
                 </button>
               </>
             ) : (
               <button
-                onClick={handleStartGoogleOAuth}
-                className="px-5 py-2.5 btn-vibrant-primary rounded-xl text-xs font-bold shadow-md transition-all flex items-center space-x-2"
+                onClick={() => handleStartOAuthForService('business_profile')}
+                className="w-full sm:w-auto px-4 py-2.5 btn-vibrant-primary text-xs font-bold rounded-xl shadow-sm transition-all flex items-center justify-center space-x-2"
               >
-                <ExternalLink className="w-4 h-4" />
-                <span>Connect Google Account</span>
+                <ExternalLink className="w-3.5 h-3.5" />
+                <span>Connect Business Profile</span>
               </button>
             )}
           </div>
         </div>
 
-        {/* Multi-Service Sub-Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-          {/* GBP Card */}
-          <div className="p-4 rounded-xl border border-slate-100 bg-slate-50/60 space-y-2">
+        {/* CARD 2 — GOOGLE ADS */}
+        <div className="card-vibrant p-6 border border-slate-200/80 rounded-2xl shadow-sm bg-white flex flex-col justify-between space-y-4">
+          <div className="space-y-3">
             <div className="flex items-center justify-between">
-              <div className="flex items-center space-x-2">
-                <Store className="w-4 h-4 text-purple-600" />
-                <span className="text-xs font-black text-slate-800">Business Profile</span>
+              <div className="flex items-center space-x-3">
+                <div className="w-10 h-10 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center font-bold">
+                  <Layers className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-black text-slate-900">Google Ads</h3>
+                </div>
               </div>
-              <span className={`text-[10px] font-bold px-2 py-0.5 rounded-md ${
-                connectionStatus?.has_gbp || (connectionStatus?.counts?.gbp_locations ?? (connectionStatus as any)?.gbp_locations_count ?? 0) > 0 ? 'bg-purple-100 text-purple-800' : 'bg-slate-200 text-slate-600'
-              }`}>
-                {connectionStatus?.counts?.gbp_locations ?? (connectionStatus as any)?.gbp_locations_count ?? 0} Locations
-              </span>
+              {adsStatus.connected ? (
+                <span className="inline-flex items-center space-x-1 px-2.5 py-1 rounded-full text-[10px] font-black bg-emerald-100 text-emerald-800 border border-emerald-200">
+                  <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                  <span>Connected</span>
+                </span>
+              ) : (
+                <span className="inline-flex items-center space-x-1 px-2.5 py-1 rounded-full text-[10px] font-black bg-slate-100 text-slate-600 border border-slate-200">
+                  <span>Not Connected</span>
+                </span>
+              )}
             </div>
-            <p className="text-[11px] text-slate-500">
-              Google Maps profiles, reviews, search impressions & insights.
+
+            <p className="text-xs text-slate-500 leading-relaxed">
+              Access campaigns, advertising spend, conversions, and account telemetry.
             </p>
+
+            {adsStatus.connected && adsStatus.google_email && (
+              <div className="p-2.5 bg-slate-50 border border-slate-100 rounded-xl text-xs text-slate-600 flex items-center space-x-1.5">
+                <span className="text-slate-400 font-medium">Connected account:</span>
+                <span className="font-bold text-slate-800">{adsStatus.google_email}</span>
+              </div>
+            )}
+
+            {serviceErrors.google_ads && (
+              <div className="p-2.5 bg-rose-50 border border-rose-200 rounded-xl text-xs text-rose-700 flex items-start space-x-2">
+                <AlertCircle className="w-3.5 h-3.5 text-rose-600 shrink-0 mt-0.5" />
+                <div className="flex-1">{serviceErrors.google_ads}</div>
+              </div>
+            )}
           </div>
 
-          {/* Google Ads Card */}
-          <div className="p-4 rounded-xl border border-slate-100 bg-slate-50/60 space-y-2">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center space-x-2">
-                <Layers className="w-4 h-4 text-blue-600" />
-                <span className="text-xs font-black text-slate-800">Google Ads</span>
-              </div>
-              <span className={`text-[10px] font-bold px-2 py-0.5 rounded-md ${
-                connectionStatus?.has_ads || (connectionStatus?.counts?.ads_accounts ?? (connectionStatus as any)?.ads_accounts_count ?? 0) > 0 ? 'bg-blue-100 text-blue-800' : 'bg-slate-200 text-slate-600'
-              }`}>
-                {connectionStatus?.counts?.ads_accounts ?? (connectionStatus as any)?.ads_accounts_count ?? 0} Accounts
-              </span>
-            </div>
-            <p className="text-[11px] text-slate-500">
-              Local ad campaigns, ad spend, and conversion telemetry.
-            </p>
-          </div>
-
-          {/* Search Console Card */}
-          <div className="p-4 rounded-xl border border-slate-100 bg-slate-50/60 space-y-2">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center space-x-2">
-                <Search className="w-4 h-4 text-emerald-600" />
-                <span className="text-xs font-black text-slate-800">Search Console</span>
-              </div>
-              <span className={`text-[10px] font-bold px-2 py-0.5 rounded-md ${
-                connectionStatus?.has_gsc || (connectionStatus?.counts?.gsc_properties ?? (connectionStatus as any)?.search_console_properties_count ?? 0) > 0 ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-200 text-slate-600'
-              }`}>
-                {connectionStatus?.counts?.gsc_properties ?? (connectionStatus as any)?.search_console_properties_count ?? 0} Sites
-              </span>
-            </div>
-            <p className="text-[11px] text-slate-500">
-              Organic search performance, queries, clicks and CTR data.
-            </p>
-          </div>
-
-          {/* Google Analytics Card */}
-          <div className="p-4 rounded-xl border border-slate-100 bg-slate-50/60 space-y-2">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center space-x-2">
-                <BarChart3 className="w-4 h-4 text-amber-600" />
-                <span className="text-xs font-black text-slate-800">Analytics 4</span>
-              </div>
-              <span className={`text-[10px] font-bold px-2 py-0.5 rounded-md ${
-                connectionStatus?.has_ga4 || (connectionStatus?.counts?.ga4_properties ?? (connectionStatus as any)?.analytics_properties_count ?? 0) > 0 ? 'bg-amber-100 text-amber-800' : 'bg-slate-200 text-slate-600'
-              }`}>
-                {connectionStatus?.counts?.ga4_properties ?? (connectionStatus as any)?.analytics_properties_count ?? 0} Streams
-              </span>
-            </div>
-            <p className="text-[11px] text-slate-500">
-              Website engagement, traffic sources, and conversion analytics.
-            </p>
+          <div className="pt-2 border-t border-slate-100 flex items-center justify-end space-x-2">
+            {adsStatus.connected ? (
+              <>
+                <button
+                  onClick={() => handleStartOAuthForService('google_ads')}
+                  className="px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-xl transition-all flex items-center space-x-1"
+                >
+                  <RotateCw className="w-3.5 h-3.5 text-slate-500" />
+                  <span>Reconnect</span>
+                </button>
+                <button
+                  onClick={() => setDisconnectingService('google_ads')}
+                  className="px-3.5 py-2 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 text-xs font-bold rounded-xl transition-all flex items-center space-x-1"
+                >
+                  <Trash2 className="w-3.5 h-3.5 text-rose-600" />
+                  <span>Disconnect</span>
+                </button>
+              </>
+            ) : (
+              <button
+                onClick={() => handleStartOAuthForService('google_ads')}
+                className="w-full sm:w-auto px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl shadow-sm transition-all flex items-center justify-center space-x-2"
+              >
+                <ExternalLink className="w-3.5 h-3.5" />
+                <span>Connect Google Ads</span>
+              </button>
+            )}
           </div>
         </div>
 
-
-        {/* Disconnect Confirmation Alert */}
-        {disconnectConfirm && (
-          <div className="p-4 bg-rose-50 border border-rose-200 rounded-xl space-y-3">
-            <div className="flex items-start space-x-3">
-              <AlertCircle className="w-5 h-5 text-rose-600 shrink-0 mt-0.5" />
-              <div>
-                <h4 className="text-xs font-black text-rose-900">Confirm Google Disconnect</h4>
-                <p className="text-xs text-rose-700 mt-0.5">
-                  Disconnecting will revoke LocalLift's access tokens and pause automated synchronizations. All historical project data, audit logs, and ranking history in LocalLift will remain safely intact.
-                </p>
+        {/* CARD 3 — GOOGLE SEARCH CONSOLE */}
+        <div className="card-vibrant p-6 border border-slate-200/80 rounded-2xl shadow-sm bg-white flex flex-col justify-between space-y-4">
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center space-x-3">
+                <div className="w-10 h-10 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center font-bold">
+                  <Search className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-black text-slate-900">Google Search Console</h3>
+                </div>
               </div>
+              {gscStatus.connected ? (
+                <span className="inline-flex items-center space-x-1 px-2.5 py-1 rounded-full text-[10px] font-black bg-emerald-100 text-emerald-800 border border-emerald-200">
+                  <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                  <span>Connected</span>
+                </span>
+              ) : (
+                <span className="inline-flex items-center space-x-1 px-2.5 py-1 rounded-full text-[10px] font-black bg-slate-100 text-slate-600 border border-slate-200">
+                  <span>Not Connected</span>
+                </span>
+              )}
             </div>
-            <div className="flex items-center space-x-2">
-              <button
-                onClick={handleDisconnect}
-                className="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-bold transition-all"
-              >
-                Yes, Disconnect Google
-              </button>
-              <button
-                onClick={() => setDisconnectConfirm(false)}
-                className="px-4 py-2 bg-white border border-slate-200 text-slate-700 rounded-xl text-xs font-bold hover:bg-slate-50 transition-all"
-              >
-                Cancel
-              </button>
-            </div>
+
+            <p className="text-xs text-slate-500 leading-relaxed">
+              Access search queries, clicks, impressions, CTR, and organic search performance.
+            </p>
+
+            {gscStatus.connected && gscStatus.google_email && (
+              <div className="p-2.5 bg-slate-50 border border-slate-100 rounded-xl text-xs text-slate-600 flex items-center space-x-1.5">
+                <span className="text-slate-400 font-medium">Connected account:</span>
+                <span className="font-bold text-slate-800">{gscStatus.google_email}</span>
+              </div>
+            )}
+
+            {serviceErrors.search_console && (
+              <div className="p-2.5 bg-rose-50 border border-rose-200 rounded-xl text-xs text-rose-700 flex items-start space-x-2">
+                <AlertCircle className="w-3.5 h-3.5 text-rose-600 shrink-0 mt-0.5" />
+                <div className="flex-1">{serviceErrors.search_console}</div>
+              </div>
+            )}
           </div>
-        )}
+
+          <div className="pt-2 border-t border-slate-100 flex items-center justify-end space-x-2">
+            {gscStatus.connected ? (
+              <>
+                <button
+                  onClick={() => handleStartOAuthForService('search_console')}
+                  className="px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-xl transition-all flex items-center space-x-1"
+                >
+                  <RotateCw className="w-3.5 h-3.5 text-slate-500" />
+                  <span>Reconnect</span>
+                </button>
+                <button
+                  onClick={() => setDisconnectingService('search_console')}
+                  className="px-3.5 py-2 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 text-xs font-bold rounded-xl transition-all flex items-center space-x-1"
+                >
+                  <Trash2 className="w-3.5 h-3.5 text-rose-600" />
+                  <span>Disconnect</span>
+                </button>
+              </>
+            ) : (
+              <button
+                onClick={() => handleStartOAuthForService('search_console')}
+                className="w-full sm:w-auto px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl shadow-sm transition-all flex items-center justify-center space-x-2"
+              >
+                <ExternalLink className="w-3.5 h-3.5" />
+                <span>Connect Search Console</span>
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* CARD 4 — GOOGLE ANALYTICS 4 */}
+        <div className="card-vibrant p-6 border border-slate-200/80 rounded-2xl shadow-sm bg-white flex flex-col justify-between space-y-4">
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center space-x-3">
+                <div className="w-10 h-10 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center font-bold">
+                  <BarChart3 className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-black text-slate-900">Google Analytics 4</h3>
+                </div>
+              </div>
+              {ga4Status.connected ? (
+                <span className="inline-flex items-center space-x-1 px-2.5 py-1 rounded-full text-[10px] font-black bg-emerald-100 text-emerald-800 border border-emerald-200">
+                  <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                  <span>Connected</span>
+                </span>
+              ) : (
+                <span className="inline-flex items-center space-x-1 px-2.5 py-1 rounded-full text-[10px] font-black bg-slate-100 text-slate-600 border border-slate-200">
+                  <span>Not Connected</span>
+                </span>
+              )}
+            </div>
+
+            <p className="text-xs text-slate-500 leading-relaxed">
+              Access website traffic, users, engagement, acquisition, and analytics properties.
+            </p>
+
+            {ga4Status.connected && ga4Status.google_email && (
+              <div className="p-2.5 bg-slate-50 border border-slate-100 rounded-xl text-xs text-slate-600 flex items-center space-x-1.5">
+                <span className="text-slate-400 font-medium">Connected account:</span>
+                <span className="font-bold text-slate-800">{ga4Status.google_email}</span>
+              </div>
+            )}
+
+            {serviceErrors.analytics && (
+              <div className="p-2.5 bg-rose-50 border border-rose-200 rounded-xl text-xs text-rose-700 flex items-start space-x-2">
+                <AlertCircle className="w-3.5 h-3.5 text-rose-600 shrink-0 mt-0.5" />
+                <div className="flex-1">{serviceErrors.analytics}</div>
+              </div>
+            )}
+          </div>
+
+          <div className="pt-2 border-t border-slate-100 flex items-center justify-end space-x-2">
+            {ga4Status.connected ? (
+              <>
+                <button
+                  onClick={() => handleStartOAuthForService('analytics')}
+                  className="px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-xl transition-all flex items-center space-x-1"
+                >
+                  <RotateCw className="w-3.5 h-3.5 text-slate-500" />
+                  <span>Reconnect</span>
+                </button>
+                <button
+                  onClick={() => setDisconnectingService('analytics')}
+                  className="px-3.5 py-2 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 text-xs font-bold rounded-xl transition-all flex items-center space-x-1"
+                >
+                  <Trash2 className="w-3.5 h-3.5 text-rose-600" />
+                  <span>Disconnect</span>
+                </button>
+              </>
+            ) : (
+              <button
+                onClick={() => handleStartOAuthForService('analytics')}
+                className="w-full sm:w-auto px-4 py-2.5 bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold rounded-xl shadow-sm transition-all flex items-center justify-center space-x-2"
+              >
+                <ExternalLink className="w-3.5 h-3.5" />
+                <span>Connect Analytics</span>
+              </button>
+            )}
+          </div>
+        </div>
       </div>
 
-      {/* Discovered GBP Locations Table (when connected) */}
+      {/* Disconnect Confirmation Alert Modal */}
+      {disconnectingService && (
+        <div className="p-4 bg-rose-50 border border-rose-200 rounded-xl space-y-3">
+          <div className="flex items-start space-x-3">
+            <AlertCircle className="w-5 h-5 text-rose-600 shrink-0 mt-0.5" />
+            <div>
+              <h4 className="text-xs font-black text-rose-900">
+                Confirm Disconnecting {
+                  disconnectingService === 'business_profile'
+                    ? 'Google Business Profile'
+                    : disconnectingService === 'google_ads'
+                    ? 'Google Ads'
+                    : disconnectingService === 'search_console'
+                    ? 'Google Search Console'
+                    : 'Google Analytics 4'
+                }
+              </h4>
+              <p className="text-xs text-rose-700 mt-0.5">
+                Disconnecting this service will revoke LocalLift's access tokens for only this service. Other connected Google services will remain active and unaffected.
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center space-x-2">
+            <button
+              onClick={() => handleDisconnectService(disconnectingService)}
+              className="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-bold transition-all"
+            >
+              Confirm Disconnect
+            </button>
+            <button
+              onClick={() => setDisconnectingService(null)}
+              className="px-4 py-2 bg-white border border-slate-200 text-slate-700 rounded-xl text-xs font-bold hover:bg-slate-50 transition-all"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Discovered GBP Locations Table (when Business Profile connected) */}
       {discoveredResources && discoveredResources.gbp_locations.length > 0 && (
         <div className="card-vibrant p-6 border border-slate-200/80 rounded-2xl shadow-sm bg-white space-y-4">
           <div className="flex items-center justify-between">
@@ -424,7 +690,7 @@ export const ConnectionsView: React.FC = () => {
                 <span>Discovered Google Business Profiles ({discoveredResources.gbp_locations.length})</span>
               </h3>
               <p className="text-xs text-slate-500 mt-0.5">
-                Verified locations available from your connected Google account.
+                Verified locations available from your connected Google Business Profile account.
               </p>
             </div>
             <button

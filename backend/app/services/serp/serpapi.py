@@ -63,7 +63,7 @@ class SerpApiProvider(SERPProvider):
                         location=location,
                         success=False,
                         error_code="SERP_PROVIDER_AUTH_ERROR",
-                        error_message="Invalid or unauthorized SerpApi key."
+                        error_message="SerpApi rejected the configured API key. Please verify your SerpApi credentials."
                     )
 
                 if response.status_code == 429:
@@ -74,7 +74,18 @@ class SerpApiProvider(SERPProvider):
                         location=location,
                         success=False,
                         error_code="SERP_PROVIDER_RATE_LIMIT",
-                        error_message="SerpApi account quota exceeded or rate limited."
+                        error_message="SerpApi rate limit reached. Please wait and try again."
+                    )
+
+                if response.status_code >= 500:
+                    logger.error(f"SerpApi returned server status {response.status_code}")
+                    return SERPResponse(
+                        provider="serpapi",
+                        keyword=keyword,
+                        location=location,
+                        success=False,
+                        error_code="SERP_PROVIDER_ERROR",
+                        error_message="SerpApi is temporarily unavailable. Please try again shortly."
                     )
 
                 if response.status_code != 200:
@@ -99,7 +110,7 @@ class SerpApiProvider(SERPProvider):
                 location=location,
                 success=False,
                 error_code="SERP_PROVIDER_TIMEOUT",
-                error_message="SERP request timed out."
+                error_message="SerpApi did not respond in time. Please try again."
             )
         except Exception as e:
             logger.error(f"SerpApi request failed: {str(e)}")
@@ -152,7 +163,7 @@ class SerpApiProvider(SERPProvider):
                         location=f"@{lat},{lng}",
                         success=False,
                         error_code="SERP_PROVIDER_AUTH_ERROR",
-                        error_message="Invalid SerpApi credentials."
+                        error_message="SerpApi rejected the configured API key. Please verify your SerpApi credentials."
                     )
 
                 if response.status_code == 429:
@@ -162,7 +173,17 @@ class SerpApiProvider(SERPProvider):
                         location=f"@{lat},{lng}",
                         success=False,
                         error_code="SERP_PROVIDER_RATE_LIMIT",
-                        error_message="Rate limited on Geo-Grid query."
+                        error_message="SerpApi rate limit reached. Please wait and try again."
+                    )
+
+                if response.status_code >= 500:
+                    return SERPResponse(
+                        provider="serpapi",
+                        keyword=keyword,
+                        location=f"@{lat},{lng}",
+                        success=False,
+                        error_code="SERP_PROVIDER_ERROR",
+                        error_message="SerpApi is temporarily unavailable. Please try again shortly."
                     )
 
                 if response.status_code != 200:
@@ -172,7 +193,7 @@ class SerpApiProvider(SERPProvider):
                         location=f"@{lat},{lng}",
                         success=False,
                         error_code="SERP_PROVIDER_ERROR",
-                        error_message=f"HTTP {response.status_code}"
+                        error_message=f"SerpApi error: HTTP {response.status_code}"
                     )
 
                 data = response.json()

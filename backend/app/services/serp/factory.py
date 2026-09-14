@@ -1,7 +1,12 @@
 import logging
 from typing import Optional
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.future import select
+
 from app.config import settings
-from app.services.serp.base import SERPProvider, SERPResponse
+from app.core.security import decrypt_token
+from app.models.connections import OrganizationSERPConfig
+from app.services.serp.base import SERPProvider, SERPResponse, NotConfiguredSERPProvider
 from app.services.serp.openserp import OpenSERPProvider
 from app.services.serp.serpapi import SerpApiProvider
 from app.services.serp.mock_provider import MockSERPProvider
@@ -11,8 +16,8 @@ logger = logging.getLogger("locallift.serp.factory")
 
 class FallbackSERPProvider(SERPProvider):
     """
-    Composite SERP Provider that attempts the primary provider first (OpenSERP),
-    and falls back to secondary provider (SerpApi) if primary fails and fallback is enabled.
+    Composite SERP Provider that attempts the primary provider first,
+    and falls back to secondary provider if primary fails and fallback is enabled.
     """
 
     def __init__(self, primary: SERPProvider, secondary: Optional[SERPProvider] = None):
@@ -43,7 +48,6 @@ class FallbackSERPProvider(SERPProvider):
         if res.success:
             return res
 
-        # If primary failed and fallback secondary is configured, try fallback
         if self.secondary and self.secondary.is_configured:
             logger.warning(
                 f"SERP_PRIMARY_PROVIDER_FAILED: Provider '{self.primary.__class__.__name__}' "
@@ -97,43 +101,77 @@ class FallbackSERPProvider(SERPProvider):
         return res
 
 
-def get_serp_provider(
-    provider_type: Optional[str] = None,
-    allow_fallback: bool = True
+async def get_organization_serp_provider(
+    db: AsyncSession,
+    organization_id: int
 ) -> SERPProvider:
     """
-    Factory function to retrieve the configured SERP Provider.
-    - Default is self-hosted OpenSERPProvider.
-    - If SERP_FALLBACK_PROVIDER is 'serpapi' and allow_fallback is True, wraps in FallbackSERPProvider.
-    - MockSERPProvider is strictly restricted to test environments (ENVIRONMENT == 'testing').
+    Retrieves the SERP Provider configured specifically for an organization.
+    1. Checks OrganizationSERPConfig in DB. Decrypts organization SerpApi key if present.
+    2. Fallback to global settings.SERPAPI_KEY if organization config missing.
+    3. If provider is openserp and base_url is specified, uses OpenSERPProvider.
+    4. Otherwise returns NotConfiguredSERPProvider (Never attempts Docker or localhost:7000).
     """
-    selected = (provider_type or getattr(settings, "SERP_PROVIDER", "openserp")).lower()
-
-    if selected == "mock":
-        env = getattr(settings, "ENVIRONMENT", "production").lower()
-        if env != "testing":
-            raise RuntimeError(
-                f"CRITICAL: MockSERPProvider is strictly prohibited in '{env}' mode. "
-                "Mock SERP data is reserved exclusively for the 'testing' environment. "
-                "Configure OpenSERP or SerpApi."
-            )
+    env = getattr(settings, "ENVIRONMENT", "production").lower()
+    if env == "testing":
         return MockSERPProvider()
 
+    stmt = select(OrganizationSERPConfig).where(OrganizationSERPConfig.organization_id == organization_id)
+    res = await db.execute(stmt)
+    serp_config = res.scalars().first()
+
+    if serp_config and serp_config.enabled:
+        provider_name = (serp_config.provider or "serpapi").lower()
+        if provider_name == "serpapi":
+            raw_key = decrypt_token(serp_config.api_key) if serp_config.api_key else ""
+            if raw_key:
+                logger.info(f"[SERP] provider=serpapi configured=true organization_id={organization_id}")
+                return SerpApiProvider(api_key=raw_key)
+        elif provider_name == "openserp":
+            base_url = settings.OPENSERP_BASE_URL
+            if base_url:
+                logger.info(f"[SERP] provider=openserp organization_id={organization_id}")
+                return OpenSERPProvider(base_url=base_url)
+
+    global_serpapi_key = getattr(settings, "SERPAPI_KEY", "")
+    if global_serpapi_key:
+        logger.info(f"[SERP] provider=serpapi_global_fallback organization_id={organization_id}")
+        return SerpApiProvider(api_key=global_serpapi_key)
+
+    logger.debug(f"[SERP] provider=not_configured organization_id={organization_id}")
+    return NotConfiguredSERPProvider()
+
+
+def get_serp_provider(
+    provider_type: Optional[str] = None,
+    allow_fallback: bool = True,
+    api_key: Optional[str] = None
+) -> SERPProvider:
+    """
+    Synchronous/static factory function for backwards compatibility & unit tests.
+    Default is SerpApiProvider if key provided, else NotConfiguredSERPProvider.
+    """
+    env = getattr(settings, "ENVIRONMENT", "production").lower()
+    if provider_type == "mock":
+        if env in ["production", "staging"]:
+            raise RuntimeError(f"Mock SERP provider is strictly prohibited in environment '{env}'.")
+        return MockSERPProvider()
+
+    if env == "testing":
+        return MockSERPProvider()
+
+    selected = (provider_type or getattr(settings, "SERP_PROVIDER", "serpapi")).lower()
+
     if selected == "serpapi":
-        api_key = getattr(settings, "SERPAPI_KEY", "")
-        return SerpApiProvider(api_key=api_key)
+        key = api_key or getattr(settings, "SERPAPI_KEY", "")
+        if key:
+            return SerpApiProvider(api_key=key)
+        return NotConfiguredSERPProvider()
 
-    # Primary: OpenSERP
-    openserp_prov = OpenSERPProvider(
-        base_url=getattr(settings, "OPENSERP_BASE_URL", "http://127.0.0.1:7000"),
-        timeout=getattr(settings, "OPENSERP_TIMEOUT", 30),
-        default_engine=getattr(settings, "OPENSERP_DEFAULT_ENGINE", "google")
-    )
+    if selected == "openserp":
+        base_url = getattr(settings, "OPENSERP_BASE_URL", "")
+        if base_url:
+            return OpenSERPProvider(base_url=base_url)
+        return NotConfiguredSERPProvider()
 
-    fallback_choice = getattr(settings, "SERP_FALLBACK_PROVIDER", "").lower()
-    if allow_fallback and fallback_choice == "serpapi":
-        serpapi_key = getattr(settings, "SERPAPI_KEY", "")
-        fallback_prov = SerpApiProvider(api_key=serpapi_key) if serpapi_key else None
-        return FallbackSERPProvider(primary=openserp_prov, secondary=fallback_prov)
-
-    return openserp_prov
+    return NotConfiguredSERPProvider()

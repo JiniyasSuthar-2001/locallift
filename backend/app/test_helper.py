@@ -10,6 +10,7 @@ Provides centralized, unified database setup and fixture management across all b
 
 import sys
 import uuid
+import asyncio
 from typing import AsyncGenerator, Optional, Tuple
 from contextlib import asynccontextmanager
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -22,7 +23,7 @@ if hasattr(sys.stdout, "reconfigure"):
         pass
 
 from app.database import engine, Base, AsyncSessionLocal
-from app.main import _sync_sqlite_schema
+from app.core.migrations import run_db_migrations
 from app.models.user import User, Organization, OrganizationMember, OrgRole
 from app.models.project import Project, Location
 from app.core.security import get_password_hash, create_access_token
@@ -41,7 +42,8 @@ async def init_test_db(seed_demo: bool = False, reset: bool = False) -> None:
         if reset:
             await conn.run_sync(Base.metadata.drop_all)
         await conn.run_sync(Base.metadata.create_all)
-        await conn.run_sync(_sync_sqlite_schema)
+
+    await asyncio.to_thread(run_db_migrations)
 
     if seed_demo:
         # Check if demo user already exists

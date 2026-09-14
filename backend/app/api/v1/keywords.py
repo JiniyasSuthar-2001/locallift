@@ -1,13 +1,14 @@
 import logging
 from typing import List, Optional
 from datetime import datetime, timezone
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from sqlalchemy.orm import selectinload
 
 from app.database import get_db
 from app.core.deps import get_current_user, verify_project_access
+from app.core.audit_logger import log_user_action
 from app.models.user import User
 from app.models.project import Project, Location
 from app.models.ranking import Keyword, KeywordRanking, GeoGridScan
@@ -19,7 +20,7 @@ from app.schemas.ranking import (
     KeywordCheckResponse,
     KeywordCheckAllResponse
 )
-from app.services.serp import get_serp_provider, DomainMatcher, GeoGridScanner
+from app.services.serp import get_serp_provider, get_organization_serp_provider, DomainMatcher, GeoGridScanner
 
 logger = logging.getLogger("locallift.keywords")
 
@@ -41,6 +42,7 @@ async def list_keywords(
 
 @router.post("", response_model=KeywordOut)
 async def add_keyword(
+    request: Request,
     kw_in: KeywordCreate,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
@@ -69,8 +71,17 @@ async def add_keyword(
     await db.commit()
     await db.refresh(kw)
 
-    # If SERP provider is configured, attempt an immediate initial live lookup
-    provider = get_serp_provider()
+    log_user_action(
+        request, "CREATE_KEYWORD",
+        user_id=current_user.id,
+        organization_id=project.organization_id,
+        project_id=project.id,
+        keyword=kw.keyword,
+        target_location=kw.target_location
+    )
+
+    # If SERP provider is configured for organization, attempt an immediate initial live lookup
+    provider = await get_organization_serp_provider(db, project.organization_id)
     if provider.is_configured:
         try:
             serp_resp = await provider.search_keyword(
@@ -105,6 +116,7 @@ async def add_keyword(
 
 @router.post("/{keyword_id}/check", response_model=KeywordCheckResponse)
 async def check_keyword_rank(
+    request: Request,
     keyword_id: int,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
@@ -118,8 +130,16 @@ async def check_keyword_rank(
         raise HTTPException(status_code=404, detail="Keyword not found")
 
     project = await verify_project_access(kw.project_id, current_user, db)
+    log_user_action(
+        request, "RUN_KEYWORD_RANK_CHECK",
+        user_id=current_user.id,
+        organization_id=project.organization_id,
+        project_id=project.id,
+        keyword_id=kw.id,
+        keyword=kw.keyword
+    )
 
-    provider = get_serp_provider()
+    provider = await get_organization_serp_provider(db, project.organization_id)
     country = "au" if "com.au" in project.domain else "us"
 
     serp_resp = await provider.search_keyword(
@@ -193,6 +213,7 @@ async def check_keyword_rank(
 
 @router.post("/{project_id}/check-all", response_model=KeywordCheckAllResponse)
 async def check_all_project_keywords(
+    request: Request,
     project_id: int,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
@@ -201,11 +222,17 @@ async def check_all_project_keywords(
     Executes real live SERP checks for all tracked keywords in a project.
     """
     project = await verify_project_access(project_id, current_user, db)
+    log_user_action(
+        request, "RUN_ALL_KEYWORDS_CHECK",
+        user_id=current_user.id,
+        organization_id=project.organization_id,
+        project_id=project_id
+    )
 
     kw_res = await db.execute(select(Keyword).where(Keyword.project_id == project_id))
     keywords = kw_res.scalars().all()
 
-    provider = get_serp_provider()
+    provider = await get_organization_serp_provider(db, project.organization_id)
     country = "au" if "com.au" in project.domain else "us"
 
     results = []
@@ -213,13 +240,21 @@ async def check_all_project_keywords(
     not_found_count = 0
     error_count = 0
 
-    for kw in keywords:
-        serp_resp = await provider.search_keyword(
-            keyword=kw.keyword,
-            location=kw.target_location,
-            country=country
-        )
+    import asyncio
+    sem = asyncio.Semaphore(5)
 
+    async def _fetch_kw(kw_obj: Keyword):
+        async with sem:
+            resp = await provider.search_keyword(
+                keyword=kw_obj.keyword,
+                location=kw_obj.target_location,
+                country=country
+            )
+            return kw_obj, resp
+
+    pairs = await asyncio.gather(*(_fetch_kw(kw) for kw in keywords))
+
+    for kw, serp_resp in pairs:
         if not serp_resp.success:
             error_count += 1
             results.append(KeywordCheckResponse(
@@ -295,6 +330,7 @@ async def check_all_project_keywords(
 
 @router.delete("/{keyword_id}")
 async def delete_keyword(
+    request: Request,
     keyword_id: int,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
@@ -304,7 +340,14 @@ async def delete_keyword(
     if not kw:
         raise HTTPException(status_code=404, detail="Keyword not found")
 
-    await verify_project_access(kw.project_id, current_user, db)
+    project = await verify_project_access(kw.project_id, current_user, db)
+    log_user_action(
+        request, "DELETE_KEYWORD",
+        user_id=current_user.id,
+        organization_id=project.organization_id,
+        project_id=project.id,
+        keyword_id=keyword_id
+    )
 
     await db.delete(kw)
     await db.commit()
@@ -316,6 +359,7 @@ async def delete_keyword(
 
 @router.post("/grid-scan", response_model=GeoGridScanOut)
 async def trigger_grid_scan(
+    request: Request,
     scan_req: GeoGridScanRequest,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
@@ -358,6 +402,39 @@ async def trigger_grid_scan(
     lat_center = scan_req.center_lat if scan_req.center_lat is not None else (loc.latitude if loc else None)
     lng_center = scan_req.center_lng if scan_req.center_lng is not None else (loc.longitude if loc else None)
 
+    # Attempt automatic geocoding fallback if location address/city exists but coordinates are missing
+    if (lat_center is None or lng_center is None) and (loc or scan_req.center_name):
+        from app.services.geocoding import GeocodingService
+        geo_coords = None
+        if loc and (loc.address or loc.city):
+            geo_coords = await GeocodingService.geocode_address(
+                address=loc.address,
+                city=loc.city,
+                state=loc.state,
+                postal_code=loc.postal_code,
+                country=loc.country
+            )
+        if not geo_coords and scan_req.center_name:
+            geo_coords = await GeocodingService.geocode_address(city=scan_req.center_name)
+
+        if geo_coords:
+            lat_center, lng_center = geo_coords
+            if loc:
+                loc.latitude = lat_center
+                loc.longitude = lng_center
+                db.add(loc)
+                await db.commit()
+                await db.refresh(loc)
+                log_user_action(
+                    request, "SAVE_LOCATION_COORDINATES",
+                    user_id=current_user.id,
+                    organization_id=project.organization_id,
+                    project_id=project.id,
+                    location_id=loc.id,
+                    latitude=lat_center,
+                    longitude=lng_center
+                )
+
     if lat_center is None or lng_center is None:
         raise HTTPException(
             status_code=400,
@@ -369,12 +446,62 @@ async def trigger_grid_scan(
     if not (-180.0 <= lng_center <= 180.0):
         raise HTTPException(status_code=400, detail="INVALID_LONGITUDE: Longitude must be between -180 and 180 degrees.")
 
+    # Auto-persist manual coordinates into Location database entity so they survive page reload
+    if scan_req.center_lat is not None or scan_req.center_lng is not None:
+        if loc:
+            loc.latitude = lat_center
+            loc.longitude = lng_center
+            db.add(loc)
+            await db.commit()
+            await db.refresh(loc)
+            log_user_action(
+                request, "SAVE_LOCATION_COORDINATES",
+                user_id=current_user.id,
+                organization_id=project.organization_id,
+                project_id=project.id,
+                location_id=loc.id,
+                latitude=lat_center,
+                longitude=lng_center
+            )
+        elif not project.locations:
+            new_loc = Location(
+                project_id=project.id,
+                name=scan_req.center_name or "Main Location",
+                latitude=lat_center,
+                longitude=lng_center
+            )
+            db.add(new_loc)
+            await db.commit()
+            await db.refresh(new_loc)
+            loc = new_loc
+            log_user_action(
+                request, "SAVE_LOCATION_COORDINATES",
+                user_id=current_user.id,
+                organization_id=project.organization_id,
+                project_id=project.id,
+                location_id=new_loc.id,
+                latitude=lat_center,
+                longitude=lng_center
+            )
+
     radius = scan_req.radius_km or 10.0
     grid_size = scan_req.grid_size or 5
     center_name = (loc.name if loc and loc.name else None) or scan_req.center_name or "Business Location"
 
+    log_user_action(
+        request, "RUN_GEO_GRID",
+        user_id=current_user.id,
+        organization_id=project.organization_id,
+        project_id=project.id,
+        location_id=loc.id if loc else "manual",
+        location_name=center_name,
+        keyword=kw_phrase,
+        grid_size=grid_size,
+        radius_km=radius
+    )
+
     # 3. Execute real GeoGrid scan via GeoGridScanner
-    provider = get_serp_provider()
+    provider = await get_organization_serp_provider(db, project.organization_id)
     scan_result = await GeoGridScanner.scan_grid(
         provider=provider,
         keyword=kw_phrase,
@@ -406,11 +533,35 @@ async def trigger_grid_scan(
     db.add(scan)
     await db.commit()
     await db.refresh(scan)
+
+    if scan_result["scan_status"] == "failed":
+        log_user_action(
+            request, "GEO_GRID_FAILED",
+            user_id=current_user.id,
+            organization_id=project.organization_id,
+            project_id=project.id,
+            total=scan_result["total_points"],
+            successful=scan_result["successful_points"],
+            failed=scan_result["failed_points"],
+            reason="All grid point queries failed"
+        )
+    else:
+        log_user_action(
+            request, "GEO_GRID_COMPLETE",
+            user_id=current_user.id,
+            organization_id=project.organization_id,
+            project_id=project.id,
+            total=scan_result["total_points"],
+            successful=scan_result["successful_points"],
+            failed=scan_result["failed_points"]
+        )
+
     return scan
 
 @router.post("/{project_id}/grid/rescan", response_model=GeoGridScanOut)
 @router.post("/{project_id}/grid/scan", response_model=GeoGridScanOut)
 async def rescan_project_grid(
+    request: Request,
     project_id: int,
     scan_req: GeoGridScanRequest,
     current_user: User = Depends(get_current_user),
@@ -456,10 +607,11 @@ async def rescan_project_grid(
         scan_req.keyword_id = matched_kw.id
         scan_req.keyword = matched_kw.keyword
 
-    return await trigger_grid_scan(scan_req, current_user, db)
+    return await trigger_grid_scan(request, scan_req, current_user, db)
 
 @router.get("/{project_id}/grid", response_model=Optional[GeoGridScanOut])
 async def get_project_grid(
+    request: Request,
     project_id: int,
     keyword_id: Optional[int] = None,
     current_user: User = Depends(get_current_user),
@@ -468,7 +620,13 @@ async def get_project_grid(
     """
     Returns latest GeoGrid scan for project.
     """
-    await verify_project_access(project_id, current_user, db)
+    project = await verify_project_access(project_id, current_user, db)
+    log_user_action(
+        request, "OPEN_GEO_GRID",
+        user_id=current_user.id,
+        organization_id=project.organization_id,
+        project_id=project_id
+    )
     query = select(GeoGridScan).where(GeoGridScan.project_id == project_id)
     if keyword_id:
         query = query.where(GeoGridScan.keyword_id == keyword_id)

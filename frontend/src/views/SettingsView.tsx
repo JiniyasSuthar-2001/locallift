@@ -15,6 +15,7 @@ import {
   Activity,
   RefreshCw,
   Cpu,
+  Key,
   Check
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
@@ -25,15 +26,13 @@ import { StatusBadge } from '../components/ui/StatusBadge';
 import api from '../api/client';
 import { getErrorMessage } from '../utils/error';
 
-interface SERPHealth {
+interface SERPConfig {
   provider: string;
-  status: string;
-  base_url: string;
-  default_engine: string;
-  fallback_provider?: string;
-  fallback_configured?: boolean;
-  latency_ms?: number;
-  message?: string;
+  has_key: boolean;
+  masked_key: string | null;
+  connection_status: string;
+  status_message: string | null;
+  last_tested_at: string | null;
 }
 
 export const SettingsView: React.FC = () => {
@@ -52,10 +51,14 @@ export const SettingsView: React.FC = () => {
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
-  // SERP Health State
-  const [serpHealth, setSerpHealth] = useState<SERPHealth | null>(null);
-  const [isTestingSerp, setIsTestingSerp] = useState(false);
-  const [testResultMsg, setTestResultMsg] = useState<string | null>(null);
+  // SERP Config State
+  const [serpConfig, setSerpConfig] = useState<SERPConfig | null>(null);
+  const [selectedProvider, setSelectedProvider] = useState<string>('serpapi');
+  const [apiKeyInput, setApiKeyInput] = useState<string>('');
+  const [isSavingSerpKey, setIsSavingSerpKey] = useState(false);
+  const [isTestingSerpKey, setIsTestingSerpKey] = useState(false);
+  const [serpResultMsg, setSerpResultMsg] = useState<string | null>(null);
+  const [serpResultError, setSerpResultError] = useState<string | null>(null);
 
   // Sync form state when activeProject changes
   useEffect(() => {
@@ -69,42 +72,72 @@ export const SettingsView: React.FC = () => {
     }
   }, [activeProject?.id, activeProject?.name, activeProject?.domain, activeProject?.primary_category, activeProject?.country]);
 
-  // Load SERP health on mount
+  // Load SERP config on mount
   useEffect(() => {
-    fetchSerpHealth();
+    fetchSerpConfig();
   }, []);
 
-  const fetchSerpHealth = async () => {
+  const fetchSerpConfig = async () => {
     try {
-      const resp = await api.get('/serp/health');
-      setSerpHealth(resp.data);
+      const resp = await api.get('/serp/config');
+      setSerpConfig(resp.data);
+      if (resp.data?.provider) {
+        setSelectedProvider(resp.data.provider);
+      }
     } catch {
-      setSerpHealth({
-        provider: 'openserp',
-        status: 'UNAVAILABLE',
-        base_url: 'http://127.0.0.1:7000',
-        default_engine: 'google',
-        fallback_provider: 'serpapi',
-        fallback_configured: false,
-        message: 'Could not connect to OpenSERP server.'
+      setSerpConfig({
+        provider: 'serpapi',
+        has_key: false,
+        masked_key: null,
+        connection_status: 'not_configured',
+        status_message: 'SERP API key not configured. Add your SerpApi API key to enable rank tracking.',
+        last_tested_at: null
       });
     }
   };
 
-  const handleTestSerp = async () => {
-    setIsTestingSerp(true);
-    setTestResultMsg(null);
+  const handleSaveSerpKey = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsSavingSerpKey(true);
+    setSerpResultMsg(null);
+    setSerpResultError(null);
+
+    try {
+      const resp = await api.post('/serp/config', {
+        provider: selectedProvider,
+        api_key: apiKeyInput.trim()
+      });
+      setSerpConfig(resp.data);
+      setApiKeyInput('');
+      setSerpResultMsg('SERP API configuration saved successfully.');
+      setTimeout(() => setSerpResultMsg(null), 4000);
+    } catch (err: any) {
+      setSerpResultError(getErrorMessage(err, 'Failed to save SERP API key.'));
+    } finally {
+      setIsSavingSerpKey(false);
+    }
+  };
+
+  const handleTestSerpKey = async () => {
+    setIsTestingSerpKey(true);
+    setSerpResultMsg(null);
+    setSerpResultError(null);
     try {
       const resp = await api.post('/serp/test-connection', {
-        base_url: serpHealth?.base_url || 'http://127.0.0.1:7000',
-        engine: serpHealth?.default_engine || 'google'
+        provider: selectedProvider,
+        api_key: apiKeyInput.trim() || undefined
       });
-      setTestResultMsg(resp.data?.message || `Status: ${resp.data?.status}`);
-      await fetchSerpHealth();
+
+      if (resp.data?.success) {
+        setSerpResultMsg(resp.data?.message || 'SerpApi connection test passed successfully!');
+      } else {
+        setSerpResultError(resp.data?.message || 'Connection test failed.');
+      }
+      await fetchSerpConfig();
     } catch (err: any) {
-      setTestResultMsg(getErrorMessage(err, 'Connection test failed.'));
+      setSerpResultError(getErrorMessage(err, 'Connection test failed.'));
     } finally {
-      setIsTestingSerp(false);
+      setIsTestingSerpKey(false);
     }
   };
 
@@ -148,7 +181,7 @@ export const SettingsView: React.FC = () => {
           <span>Platform & Infrastructure Settings</span>
         </h1>
         <p className="text-xs text-[#587568] mt-1">
-          Manage agency connections, Google multi-service integrations, self-hosted OpenSERP engine, and project metadata.
+          Manage agency connections, Google multi-service integrations, organization SERP credentials, and project metadata.
         </p>
       </div>
 
@@ -175,7 +208,7 @@ export const SettingsView: React.FC = () => {
           }`}
         >
           <Server className="w-4 h-4 text-[#236B4F]" />
-          <span>SERP Provider (OpenSERP)</span>
+          <span>SERP Provider (SerpApi)</span>
         </button>
 
         <button
@@ -202,94 +235,125 @@ export const SettingsView: React.FC = () => {
               <div>
                 <div className="flex items-center space-x-3">
                   <h3 className="text-base font-extrabold text-[#142820] tracking-tight">
-                    Self-Hosted OpenSERP Engine
+                    SERP Search Provider Configuration
                   </h3>
-                  <StatusBadge status={serpHealth?.status || 'UNAVAILABLE'} />
+                  <StatusBadge
+                    status={
+                      serpConfig?.connection_status === 'connected'
+                        ? 'Connected'
+                        : serpConfig?.connection_status === 'invalid_key'
+                        ? 'Invalid Key'
+                        : serpConfig?.connection_status === 'quota_exceeded'
+                        ? 'Quota Exceeded'
+                        : 'Not Configured'
+                    }
+                  />
                 </div>
                 <p className="text-xs text-[#587568] mt-1">
-                  Open source, self-hosted search engine scraper and ranking normalizer. Runs locally without third-party API fees.
+                  Use your organization's SerpApi account for keyword rank tracking and 5x5 Geo-Grid map searches. No Docker service required.
                 </p>
               </div>
-
-              <button
-                onClick={handleTestSerp}
-                disabled={isTestingSerp}
-                className="btn-secondary-nature px-3.5 py-1.5 rounded-xl text-xs flex items-center space-x-2"
-              >
-                <RefreshCw className={`w-3.5 h-3.5 text-[#236B4F] ${isTestingSerp ? 'animate-spin' : ''}`} />
-                <span>Test Connection</span>
-              </button>
             </div>
 
-            {testResultMsg && (
-              <div className="p-3 bg-[#F1F7F1] border border-[#B8DFC9] rounded-xl text-xs text-[#142820] flex items-center space-x-2">
-                <Info className="w-4 h-4 text-[#236B4F] shrink-0" />
-                <span>{testResultMsg}</span>
+            {serpResultMsg && (
+              <div className="p-3.5 bg-[#F1F7F1] border border-[#B8DFC9] rounded-xl text-xs text-[#142820] flex items-center space-x-2">
+                <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                <span className="font-medium">{serpResultMsg}</span>
               </div>
             )}
 
-            {/* Configuration Details Grid */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
-              <div className="p-4 rounded-xl bg-[#F7FAF7] border border-[#DCE8DC] space-y-2">
-                <span className="text-[10px] font-extrabold uppercase tracking-wider text-[#587568]">Primary Provider</span>
-                <div className="text-sm font-bold text-[#142820] flex items-center space-x-2">
-                  <Cpu className="w-4 h-4 text-[#236B4F]" />
-                  <span>OpenSERP (Self-Hosted)</span>
-                </div>
-                <p className="text-[11px] text-[#587568]">
-                  Container: <code className="bg-[#EAF2EA] px-1.5 py-0.5 rounded text-[#174A38] font-mono">karust/openserp:latest</code>
-                </p>
+            {serpResultError && (
+              <div className="p-3.5 bg-rose-50 border border-rose-200 rounded-xl text-xs text-rose-800 flex items-center space-x-2">
+                <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
+                <span className="font-semibold">{serpResultError}</span>
               </div>
+            )}
 
-              <div className="p-4 rounded-xl bg-[#F7FAF7] border border-[#DCE8DC] space-y-2">
-                <span className="text-[10px] font-extrabold uppercase tracking-wider text-[#587568]">Endpoint URL</span>
-                <div className="text-sm font-bold font-mono text-[#142820]">
-                  {serpHealth?.base_url || 'http://127.0.0.1:7000'}
-                </div>
-                <p className="text-[11px] text-[#587568]">
-                  Default Engine: <span className="font-semibold text-[#142820] capitalize">{serpHealth?.default_engine || 'google'}</span>
-                </p>
-              </div>
-
-              <div className="p-4 rounded-xl bg-[#F7FAF7] border border-[#DCE8DC] space-y-2">
-                <span className="text-[10px] font-extrabold uppercase tracking-wider text-[#587568]">Fallback Provider</span>
-                <div className="text-sm font-bold text-[#142820] flex items-center space-x-2">
-                  <Activity className="w-4 h-4 text-[#39B982]" />
-                  <span>SerpApi (Optional Fallback)</span>
-                </div>
-                <p className="text-[11px] text-[#587568]">
-                  Status: {serpHealth?.fallback_configured ? (
-                    <span className="font-semibold text-[#065F46]">Configured & Ready</span>
-                  ) : (
-                    <span className="text-[#587568]">Optional (Unconfigured)</span>
-                  )}
-                </p>
-              </div>
-
-              <div className="p-4 rounded-xl bg-[#F7FAF7] border border-[#DCE8DC] space-y-2">
-                <span className="text-[10px] font-extrabold uppercase tracking-wider text-[#587568]">Performance & Latency</span>
-                <div className="text-sm font-bold text-[#142820]">
-                  {serpHealth?.latency_ms !== undefined && serpHealth?.latency_ms !== null
-                    ? `${serpHealth.latency_ms} ms`
-                    : '—'}
-                </div>
-                <p className="text-[11px] text-[#587568]">
-                  Zero per-search vendor billing on self-hosted infrastructure.
-                </p>
-              </div>
-            </div>
-
-            {/* Truthful Architecture Notice */}
-            <div className="p-4 rounded-xl bg-[#F1F7F1] border border-[#B8DFC9] space-y-2 text-xs text-[#2E4E40]">
-              <div className="flex items-start space-x-2.5">
-                <Info className="w-4 h-4 text-[#236B4F] shrink-0 mt-0.5" />
+            <form onSubmit={handleSaveSerpKey} className="space-y-5">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {/* Provider Selection */}
                 <div>
-                  <span className="font-bold text-[#142820]">Infrastructure & Throughput Note: </span>
-                  <span>
-                    Self-hosted OpenSERP operates directly on your infrastructure without vendor API tokens. Actual query capacity is governed by local network conditions, search engine rate limits, and proxy configuration. Failed scans fail closed with honest diagnostics rather than false rankings.
-                  </span>
+                  <label className="block text-xs font-bold text-[#142820] uppercase tracking-wider mb-1.5">
+                    SERP Provider
+                  </label>
+                  <select
+                    value={selectedProvider}
+                    onChange={(e) => setSelectedProvider(e.target.value)}
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-[#B8DFC9] bg-white text-[#142820] text-xs font-semibold focus:ring-2 focus:ring-[#236B4F] focus:outline-none"
+                  >
+                    <option value="serpapi">SerpApi (Default Cloud Provider)</option>
+                    <option value="openserp">OpenSERP (Optional Advanced Self-Hosted)</option>
+                  </select>
+                </div>
+
+                {/* API Key Input */}
+                <div>
+                  <label className="block text-xs font-bold text-[#142820] uppercase tracking-wider mb-1.5">
+                    SerpApi API Key
+                  </label>
+                  <div className="relative">
+                    <input
+                      type="password"
+                      value={apiKeyInput}
+                      onChange={(e) => setApiKeyInput(e.target.value)}
+                      placeholder={
+                        serpConfig?.has_key
+                          ? `Configured (${serpConfig.masked_key})`
+                          : 'Enter your SerpApi API key'
+                      }
+                      className="w-full px-3.5 py-2.5 rounded-xl border border-[#B8DFC9] bg-white text-[#142820] text-xs font-mono font-medium focus:ring-2 focus:ring-[#236B4F] focus:outline-none pr-10"
+                    />
+                    <Key className="w-4 h-4 text-[#587568] absolute right-3 top-3 pointer-events-none" />
+                  </div>
                 </div>
               </div>
+
+              {/* Action Buttons */}
+              <div className="flex flex-wrap items-center justify-between gap-3 pt-2">
+                <div className="text-[11px] text-[#587568] font-medium">
+                  {serpConfig?.has_key ? (
+                    <span className="text-emerald-700 font-semibold flex items-center space-x-1">
+                      <Check className="w-3.5 h-3.5 inline" />
+                      <span>Encrypted API key active for this organization ({serpConfig.masked_key})</span>
+                    </span>
+                  ) : (
+                    <span>No API key currently configured for your organization.</span>
+                  )}
+                </div>
+
+                <div className="flex items-center space-x-3">
+                  <button
+                    type="button"
+                    onClick={handleTestSerpKey}
+                    disabled={isTestingSerpKey}
+                    className="btn-secondary-nature px-4 py-2 rounded-xl text-xs flex items-center space-x-2 font-bold"
+                  >
+                    <RefreshCw className={`w-3.5 h-3.5 text-[#236B4F] ${isTestingSerpKey ? 'animate-spin' : ''}`} />
+                    <span>{isTestingSerpKey ? 'Testing...' : 'Test Connection'}</span>
+                  </button>
+
+                  <button
+                    type="submit"
+                    disabled={isSavingSerpKey || !apiKeyInput.trim()}
+                    className="btn-primary-nature px-5 py-2 rounded-xl text-xs font-bold shadow-xs hover:shadow-md transition-all flex items-center space-x-2"
+                  >
+                    <span>{isSavingSerpKey ? 'Saving Key...' : 'Save API Key'}</span>
+                  </button>
+                </div>
+              </div>
+            </form>
+
+            {/* Diagnostic Information */}
+            <div className="p-4 rounded-xl bg-[#F7FAF7] border border-[#DCE8DC] space-y-2 text-xs">
+              <div className="flex items-center justify-between text-[#142820] font-bold">
+                <span>Organization SERP Status</span>
+                <span className="text-[11px] font-mono text-[#587568]">
+                  {serpConfig?.last_tested_at ? `Last Tested: ${new Date(serpConfig.last_tested_at).toLocaleString()}` : 'Never Tested'}
+                </span>
+              </div>
+              <p className="text-[11px] text-[#587568]">
+                {serpConfig?.status_message || 'SERP credentials are encrypted at rest using AES-256 Fernet tokens and used exclusively for your organization.'}
+              </p>
             </div>
           </div>
         </div>
@@ -298,135 +362,100 @@ export const SettingsView: React.FC = () => {
       {/* General Project Settings Tab */}
       {activeTab === 'general' && (
         <div className="space-y-6">
+          {successMsg && (
+            <div className="p-4 rounded-xl bg-[#EAF2EA] border border-[#B8DFC9] text-[#142820] text-xs flex items-center space-x-2">
+              <CheckCircle2 className="w-4 h-4 text-[#236B4F] shrink-0" />
+              <span className="font-semibold">{successMsg}</span>
+            </div>
+          )}
+
+          {errorMsg && (
+            <div className="p-4 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 text-xs flex items-center space-x-2">
+              <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
+              <span className="font-semibold">{errorMsg}</span>
+            </div>
+          )}
+
           {!activeProject ? (
             <EmptyState
               icon={Building2}
-              badge="Project Settings"
+              badge="Settings"
               title="No Active Project Selected"
-              description="Select or create a business project to configure project parameters and domain targets."
+              description="Select a project from the top navigation to view or update metadata settings."
             />
           ) : (
-            <>
-              {/* Notifications */}
-              {successMsg && (
-                <div className="p-3.5 bg-[#ECFDF5] border border-[#A7F3D0] rounded-xl flex items-center space-x-2 text-xs text-[#065F46] animate-in fade-in">
-                  <CheckCircle2 className="w-4 h-4 shrink-0 text-[#065F46]" />
-                  <span className="flex-1 font-semibold">{successMsg}</span>
-                  <button onClick={() => setSuccessMsg(null)} aria-label="Dismiss notification" className="text-[#065F46] hover:opacity-80 text-xs font-bold">✕</button>
-                </div>
-              )}
-
-              {errorMsg && (
-                <div className="p-3.5 bg-[#FEF2F2] border border-[#FECACA] rounded-xl flex items-center space-x-2 text-xs text-[#991B1B] animate-in fade-in">
-                  <AlertCircle className="w-4 h-4 shrink-0 text-[#991B1B]" />
-                  <span className="flex-1 font-semibold">{errorMsg}</span>
-                  <button onClick={() => setErrorMsg(null)} aria-label="Dismiss error notification" className="text-[#991B1B] hover:opacity-80 text-xs font-bold">✕</button>
-                </div>
-              )}
-
-              <div className="card-nature p-6 space-y-6">
-                <form onSubmit={handleSave} className="space-y-6 text-xs">
-                  <div>
-                    <h3 className="text-sm font-extrabold text-[#142820] mb-1 flex items-center space-x-2">
-                      <Building2 className="w-4 h-4 text-[#236B4F]" />
-                      <span>Active Project Configuration</span>
-                    </h3>
-                    <p className="text-[11px] text-[#587568] mb-4">
-                      Update metadata, primary business taxonomy, and domain bindings for the current project.
-                    </p>
-
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                      <div>
-                        <label className="text-[#142820] font-bold block mb-1">Active Project Name</label>
-                        <input
-                          type="text"
-                          required
-                          value={name}
-                          onChange={(e) => setName(e.target.value)}
-                          placeholder="e.g. Apex Electrical Services"
-                          className="w-full bg-[#F7FAF7] border border-[#DCE8DC] rounded-xl p-2.5 text-[#142820] focus:outline-none focus:border-[#236B4F] font-medium"
-                        />
-                      </div>
-
-                      <div>
-                        <label className="text-[#142820] font-bold block mb-1">Target Website Domain</label>
-                        <input
-                          type="text"
-                          required
-                          value={domain}
-                          onChange={(e) => setDomain(e.target.value)}
-                          placeholder="e.g. apexelectrical.com.au"
-                          className="w-full bg-[#F7FAF7] border border-[#DCE8DC] rounded-xl p-2.5 text-[#142820] focus:outline-none focus:border-[#236B4F] font-medium"
-                        />
-                      </div>
-
-                      <div>
-                        <label className="text-[#142820] font-bold block mb-1">Primary Business Category</label>
-                        <input
-                          type="text"
-                          value={primaryCategory}
-                          onChange={(e) => setPrimaryCategory(e.target.value)}
-                          placeholder="e.g. Electrician, Plumber, Dental Clinic"
-                          className="w-full bg-[#F7FAF7] border border-[#DCE8DC] rounded-xl p-2.5 text-[#142820] focus:outline-none focus:border-[#236B4F] font-medium"
-                        />
-                      </div>
-
-                      <div>
-                        <label className="text-[#142820] font-bold block mb-1">Target Country</label>
-                        <input
-                          type="text"
-                          value={country}
-                          onChange={(e) => setCountry(e.target.value)}
-                          placeholder="e.g. United States, Australia, United Kingdom"
-                          className="w-full bg-[#F7FAF7] border border-[#DCE8DC] rounded-xl p-2.5 text-[#142820] focus:outline-none focus:border-[#236B4F] font-medium"
-                        />
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="pt-4 border-t border-[#DCE8DC]">
-                    <h3 className="text-sm font-extrabold text-[#142820] mb-1 flex items-center space-x-2">
-                      <Shield className="w-4 h-4 text-[#236B4F]" />
-                      <span>Account & Organization Reference</span>
-                    </h3>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-3">
-                      <div>
-                        <label className="text-[#142820] font-bold block mb-1">Account Email</label>
-                        <input
-                          type="email"
-                          disabled
-                          value={user?.email || ''}
-                          className="w-full bg-[#EAF2EA] border border-[#DCE8DC] rounded-xl p-2.5 text-[#587568] font-medium cursor-not-allowed"
-                        />
-                      </div>
-                      <div>
-                        <label className="text-[#142820] font-bold block mb-1">User Role</label>
-                        <input
-                          type="text"
-                          disabled
-                          value={user?.role || 'Admin'}
-                          className="w-full bg-[#EAF2EA] border border-[#DCE8DC] rounded-xl p-2.5 text-[#587568] font-medium cursor-not-allowed"
-                        />
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="flex items-center justify-end pt-4 border-t border-[#DCE8DC]">
-                    <button
-                      type="submit"
-                      disabled={isSaving}
-                      className="px-6 py-2.5 btn-primary-gradient rounded-xl text-xs font-bold transition-all disabled:opacity-50 flex items-center space-x-2"
-                    >
-                      {isSaving ? (
-                        <span>Saving...</span>
-                      ) : (
-                        <span>Save Configuration</span>
-                      )}
-                    </button>
-                  </div>
-                </form>
+            <form onSubmit={handleSave} className="card-nature p-6 space-y-6">
+              <div className="border-b border-[#EBF2EB] pb-4">
+                <h3 className="text-base font-extrabold text-[#142820] tracking-tight">
+                  Project Configuration
+                </h3>
+                <p className="text-xs text-[#587568] mt-1">
+                  Update your canonical project name, domain address, primary category, and location defaults.
+                </p>
               </div>
-            </>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
+                <div>
+                  <label className="block text-xs font-bold text-[#142820] uppercase tracking-wider mb-1.5">
+                    Business / Project Name
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={name}
+                    onChange={(e) => setName(e.target.value)}
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-[#B8DFC9] bg-white text-[#142820] text-xs font-medium focus:ring-2 focus:ring-[#236B4F] focus:outline-none"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-[#142820] uppercase tracking-wider mb-1.5">
+                    Canonical Website Domain
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={domain}
+                    onChange={(e) => setDomain(e.target.value)}
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-[#B8DFC9] bg-white text-[#142820] text-xs font-medium focus:ring-2 focus:ring-[#236B4F] focus:outline-none"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-[#142820] uppercase tracking-wider mb-1.5">
+                    Primary Business Category
+                  </label>
+                  <input
+                    type="text"
+                    value={primaryCategory}
+                    onChange={(e) => setPrimaryCategory(e.target.value)}
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-[#B8DFC9] bg-white text-[#142820] text-xs font-medium focus:ring-2 focus:ring-[#236B4F] focus:outline-none"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-[#142820] uppercase tracking-wider mb-1.5">
+                    Target Country
+                  </label>
+                  <input
+                    type="text"
+                    value={country}
+                    onChange={(e) => setCountry(e.target.value)}
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-[#B8DFC9] bg-white text-[#142820] text-xs font-medium focus:ring-2 focus:ring-[#236B4F] focus:outline-none"
+                  />
+                </div>
+              </div>
+
+              <div className="flex items-center justify-end pt-4 border-t border-[#EBF2EB]">
+                <button
+                  type="submit"
+                  disabled={isSaving}
+                  className="btn-primary-nature px-5 py-2.5 rounded-xl text-xs font-bold shadow-xs hover:shadow-md transition-all flex items-center space-x-2"
+                >
+                  <span>{isSaving ? 'Saving Changes...' : 'Save Project Metadata'}</span>
+                </button>
+              </div>
+            </form>
           )}
         </div>
       )}

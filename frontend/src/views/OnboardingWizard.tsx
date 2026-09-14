@@ -58,6 +58,10 @@ export const OnboardingWizard: React.FC = () => {
       });
 
       const newProjectId = projResp.data.id;
+      const createdLoc = projResp.data.locations?.[0];
+      if (createdLoc && (createdLoc.latitude == null || createdLoc.longitude == null)) {
+        console.info('[ONBOARDING] Coordinates not automatically resolved. User can configure coordinates in Project Settings.');
+      }
 
       // Add keywords if entered
       if (keywordInput.trim()) {
@@ -67,7 +71,7 @@ export const OnboardingWizard: React.FC = () => {
             await api.post('/keywords', {
               project_id: newProjectId,
               keyword: kw.trim(),
-              target_location: city.trim() || 'Metro Area',
+              target_location: city.trim() || undefined,
               search_intent: 'Commercial',
               search_volume: 450
             });

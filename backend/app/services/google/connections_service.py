@@ -18,19 +18,50 @@ from app.models.connections import (
 )
 from app.models.project import Project, Location, Website
 from app.models.gbp import GoogleAccount, GoogleBusinessProfile
-from app.services.google.oauth import GoogleOAuthService
+from app.services.google.oauth import GoogleOAuthCore
 from app.services.google.gbp_client import GoogleBusinessProfileClient
 from app.services.category_taxonomy import CategoryTaxonomy
 
 logger = logging.getLogger("locallift.google.connections")
 
+VALID_SERVICES = ["business_profile", "google_ads", "search_console", "analytics"]
+
+
 class GoogleConnectionsService:
     @classmethod
-    async def get_connection_for_org(
+    async def get_connection_for_service(
+        cls,
+        organization_id: int,
+        service: str,
+        db: AsyncSession
+    ) -> Optional[GoogleConnection]:
+        """
+        Retrieves the active GoogleConnection record for a specific organization and Google service.
+        """
+        result = await db.execute(
+            select(GoogleConnection)
+            .options(
+                selectinload(GoogleConnection.ads_accounts),
+                selectinload(GoogleConnection.search_console_properties),
+                selectinload(GoogleConnection.analytics_properties)
+            )
+            .where(
+                GoogleConnection.organization_id == organization_id,
+                GoogleConnection.service == service
+            )
+            .order_by(GoogleConnection.id.desc())
+        )
+        return result.scalars().first()
+
+    @classmethod
+    async def get_all_connections_for_org(
         cls,
         organization_id: int,
         db: AsyncSession
-    ) -> Optional[GoogleConnection]:
+    ) -> Dict[str, Optional[GoogleConnection]]:
+        """
+        Retrieves a map of all 4 service connection records for the organization.
+        """
         result = await db.execute(
             select(GoogleConnection)
             .options(
@@ -39,9 +70,26 @@ class GoogleConnectionsService:
                 selectinload(GoogleConnection.analytics_properties)
             )
             .where(GoogleConnection.organization_id == organization_id)
-            .order_by(GoogleConnection.id.desc())
         )
-        return result.scalars().first()
+        connections = result.scalars().all()
+        conn_map: Dict[str, Optional[GoogleConnection]] = {s: None for s in VALID_SERVICES}
+        for conn in connections:
+            if conn.service in conn_map:
+                conn_map[conn.service] = conn
+        return conn_map
+
+    @classmethod
+    async def get_connection_for_org(
+        cls,
+        organization_id: int,
+        db: AsyncSession,
+        service: Optional[str] = None
+    ) -> Optional[GoogleConnection]:
+        """
+        Legacy fallback helper. Defaults to business_profile if service not provided.
+        """
+        target_service = service or "business_profile"
+        return await cls.get_connection_for_service(organization_id, target_service, db)
 
     @classmethod
     async def save_connection_tokens(
@@ -50,12 +98,17 @@ class GoogleConnectionsService:
         user_id: int,
         token_data: Dict[str, Any],
         db: AsyncSession,
+        service: str = "business_profile",
         project_id: Optional[int] = None
     ) -> GoogleConnection:
         """
-        Saves or updates the organization's Google OAuth connection with encrypted tokens.
+        Saves or updates the service-specific Google OAuth connection with encrypted tokens.
+        Strictly isolated per service (business_profile, google_ads, search_console, analytics).
         """
-        existing = await cls.get_connection_for_org(organization_id, db)
+        if service not in VALID_SERVICES:
+            raise ValueError(f"Invalid service '{service}' for connection persistence.")
+
+        existing = await cls.get_connection_for_service(organization_id, service, db)
         email = token_data.get("email") or "connected-user@gmail.com"
         scopes = token_data.get("scopes", [])
         raw_access_token = token_data.get("access_token")
@@ -83,6 +136,7 @@ class GoogleConnectionsService:
             conn = GoogleConnection(
                 organization_id=organization_id,
                 project_id=project_id,
+                service=service,
                 account_email=email,
                 access_token=enc_access_token,
                 refresh_token=enc_refresh_token,
@@ -95,8 +149,8 @@ class GoogleConnectionsService:
 
         await db.flush()
 
-        # Sync project GoogleAccount relation with encrypted tokens
-        if project_id:
+        # Sync project GoogleAccount relation for business_profile service
+        if service == "business_profile" and project_id:
             acc_res = await db.execute(
                 select(GoogleAccount).where(GoogleAccount.project_id == project_id)
             )
@@ -121,7 +175,48 @@ class GoogleConnectionsService:
                 ))
 
         await db.commit()
+        logger.info(f"[OAUTH] service={service} stage=connection_saved org_id={organization_id} email={email}")
         return conn
+
+    @classmethod
+    async def get_services_status_summary(
+        cls,
+        organization_id: int,
+        db: AsyncSession
+    ) -> Dict[str, Any]:
+        """
+        Returns structured connection status for all 4 Google services independently.
+        Never reports connected unless credentials exist and status is connected.
+        """
+        conn_map = await cls.get_all_connections_for_org(organization_id, db)
+
+        summary: Dict[str, Any] = {}
+        for s in VALID_SERVICES:
+            conn = conn_map.get(s)
+            is_conn = bool(conn and conn.status == "connected" and conn.access_token)
+            
+            res_count = 0
+            if conn:
+                if s == "google_ads":
+                    res_count = len(conn.ads_accounts or [])
+                elif s == "search_console":
+                    res_count = len(conn.search_console_properties or [])
+                elif s == "analytics":
+                    res_count = len(conn.analytics_properties or [])
+                elif s == "business_profile":
+                    res_count = 0  # Dynamic location count
+
+            summary[s] = {
+                "connected": is_conn,
+                "status": conn.status if conn else "disconnected",
+                "google_email": conn.account_email if (is_conn and conn) else None,
+                "last_sync_at": conn.last_sync_at.isoformat() if (conn and conn.last_sync_at) else None,
+                "last_error": conn.sync_error if conn else None,
+                "scopes": conn.scopes if (is_conn and conn) else [],
+                "resource_count": res_count
+            }
+
+        return summary
 
     @classmethod
     async def discover_and_sync_all_resources(
@@ -130,24 +225,28 @@ class GoogleConnectionsService:
         db: AsyncSession
     ) -> Dict[str, Any]:
         """
-        Discovers all accessible Google services for the connected account using decrypted tokens:
+        Discovers accessible Google service resources based on the specific service connection:
         1. Google Business Profile locations
         2. Google Search Console verified sites
         3. Google Ads accounts (API v18)
         4. Google Analytics 4 properties
         """
-        if not connection.access_token:
+        if not connection.access_token or connection.status != "connected":
             return {"error": "No valid access token available for synchronization."}
 
         plain_access_token = decrypt_token(connection.access_token)
-        plain_refresh_token = decrypt_token(connection.refresh_token)
+        plain_refresh_token = decrypt_token(connection.refresh_token) if connection.refresh_token else None
         expiry = connection.token_expiry
         granted_scopes = connection.scopes or []
+        service = connection.service
 
-        # 1. Discover GBP Locations (requires business.manage scope)
         discovered_gbp: List[Dict[str, Any]] = []
-        has_gbp_scope = any("business.manage" in s for s in granted_scopes) or not granted_scopes
-        if has_gbp_scope:
+        discovered_gsc: List[Dict[str, Any]] = []
+        discovered_ads: List[Dict[str, Any]] = []
+        discovered_ga4: List[Dict[str, Any]] = []
+
+        # 1. Discover GBP Locations (if service == business_profile or has scope)
+        if service == "business_profile" or any("business.manage" in s for s in granted_scopes):
             gbp_client = GoogleBusinessProfileClient(plain_access_token, plain_refresh_token, expiry)
             try:
                 accounts = await gbp_client.list_accounts()
@@ -178,12 +277,10 @@ class GoogleConnectionsService:
                             "is_verified": l.get("profile", {}).get("isVerified", True)
                         })
             except Exception as e:
-                logger.warning(f"GBP discovery error: {e}")
+                logger.warning(f"[SERVICE_DISCOVERY] GBP discovery error: {e}")
 
-        # 2. Discover Google Search Console Properties
-        discovered_gsc: List[Dict[str, Any]] = []
-        has_gsc_scope = any("webmasters" in s for s in granted_scopes) or not granted_scopes
-        if has_gsc_scope:
+        # 2. Discover Google Search Console Properties (if service == search_console or has scope)
+        if service == "search_console" or any("webmasters" in s for s in granted_scopes):
             try:
                 headers = {"Authorization": f"Bearer {plain_access_token}"}
                 async with httpx.AsyncClient(timeout=10.0) as client:
@@ -199,12 +296,10 @@ class GoogleConnectionsService:
                             if url:
                                 discovered_gsc.append({"site_url": url, "permission_level": perm})
             except Exception as e:
-                logger.warning(f"Search Console discovery error: {e}")
+                logger.warning(f"[SERVICE_DISCOVERY] Search Console discovery error: {e}")
 
-        # 3. Discover Google Ads Accounts (API v18 with developer-token header)
-        discovered_ads: List[Dict[str, Any]] = []
-        has_ads_scope = any("adwords" in s for s in granted_scopes) or not granted_scopes
-        if has_ads_scope and settings.GOOGLE_ADS_DEVELOPER_TOKEN:
+        # 3. Discover Google Ads Accounts (if service == google_ads or has scope)
+        if (service == "google_ads" or any("adwords" in s for s in granted_scopes)) and settings.GOOGLE_ADS_DEVELOPER_TOKEN:
             try:
                 headers = {
                     "Authorization": f"Bearer {plain_access_token}",
@@ -225,12 +320,10 @@ class GoogleConnectionsService:
                                 "status": "ENABLED"
                             })
             except Exception as e:
-                logger.warning(f"Google Ads discovery error: {e}")
+                logger.warning(f"[SERVICE_DISCOVERY] Google Ads discovery error: {e}")
 
-        # 4. Discover GA4 Properties
-        discovered_ga4: List[Dict[str, Any]] = []
-        has_ga4_scope = any("analytics" in s for s in granted_scopes) or not granted_scopes
-        if has_ga4_scope:
+        # 4. Discover GA4 Properties (if service == analytics or has scope)
+        if service == "analytics" or any("analytics" in s for s in granted_scopes):
             try:
                 headers = {"Authorization": f"Bearer {plain_access_token}"}
                 async with httpx.AsyncClient(timeout=10.0) as client:
@@ -251,52 +344,52 @@ class GoogleConnectionsService:
                                     "account_name": acc_title
                                 })
             except Exception as e:
-                logger.warning(f"Google Analytics discovery error: {e}")
+                logger.warning(f"[SERVICE_DISCOVERY] Google Analytics discovery error: {e}")
 
         # Idempotent persistence of discovered properties
-        # GSC
-        gsc_res = await db.execute(
-            select(GoogleSearchConsoleProperty).where(GoogleSearchConsoleProperty.connection_id == connection.id)
-        )
-        existing_gsc = {p.site_url: p for p in gsc_res.scalars().all()}
-        for s in discovered_gsc:
-            if s["site_url"] not in existing_gsc:
-                db.add(GoogleSearchConsoleProperty(
-                    connection_id=connection.id,
-                    site_url=s["site_url"],
-                    permission_level=s["permission_level"],
-                    is_linked=True
-                ))
+        if discovered_gsc:
+            gsc_res = await db.execute(
+                select(GoogleSearchConsoleProperty).where(GoogleSearchConsoleProperty.connection_id == connection.id)
+            )
+            existing_gsc = {p.site_url: p for p in gsc_res.scalars().all()}
+            for s in discovered_gsc:
+                if s["site_url"] not in existing_gsc:
+                    db.add(GoogleSearchConsoleProperty(
+                        connection_id=connection.id,
+                        site_url=s["site_url"],
+                        permission_level=s["permission_level"],
+                        is_linked=True
+                    ))
 
-        # Ads
-        ads_res = await db.execute(
-            select(GoogleAdsAccount).where(GoogleAdsAccount.connection_id == connection.id)
-        )
-        existing_ads = {a.customer_id: a for a in ads_res.scalars().all()}
-        for a in discovered_ads:
-            if a["customer_id"] not in existing_ads:
-                db.add(GoogleAdsAccount(
-                    connection_id=connection.id,
-                    customer_id=a["customer_id"],
-                    name=a["name"],
-                    status=a["status"],
-                    is_linked=True
-                ))
+        if discovered_ads:
+            ads_res = await db.execute(
+                select(GoogleAdsAccount).where(GoogleAdsAccount.connection_id == connection.id)
+            )
+            existing_ads = {a.customer_id: a for a in ads_res.scalars().all()}
+            for a in discovered_ads:
+                if a["customer_id"] not in existing_ads:
+                    db.add(GoogleAdsAccount(
+                        connection_id=connection.id,
+                        customer_id=a["customer_id"],
+                        name=a["name"],
+                        status=a["status"],
+                        is_linked=True
+                    ))
 
-        # GA4
-        ga4_res = await db.execute(
-            select(GoogleAnalyticsProperty).where(GoogleAnalyticsProperty.connection_id == connection.id)
-        )
-        existing_ga4 = {g.property_id: g for g in ga4_res.scalars().all()}
-        for g in discovered_ga4:
-            if g["property_id"] not in existing_ga4:
-                db.add(GoogleAnalyticsProperty(
-                    connection_id=connection.id,
-                    property_id=g["property_id"],
-                    display_name=g["display_name"],
-                    account_name=g["account_name"],
-                    is_linked=True
-                ))
+        if discovered_ga4:
+            ga4_res = await db.execute(
+                select(GoogleAnalyticsProperty).where(GoogleAnalyticsProperty.connection_id == connection.id)
+            )
+            existing_ga4 = {g.property_id: g for g in ga4_res.scalars().all()}
+            for g in discovered_ga4:
+                if g["property_id"] not in existing_ga4:
+                    db.add(GoogleAnalyticsProperty(
+                        connection_id=connection.id,
+                        property_id=g["property_id"],
+                        display_name=g["display_name"],
+                        account_name=g["account_name"],
+                        is_linked=True
+                    ))
 
         connection.last_sync_at = datetime.now(timezone.utc)
         connection.sync_error = None
@@ -434,13 +527,15 @@ class GoogleConnectionsService:
     async def disconnect(
         cls,
         organization_id: int,
-        db: AsyncSession
+        db: AsyncSession,
+        service: Optional[str] = None
     ) -> bool:
         """
-        Safely disconnects Google integration for the organization.
-        Preserves historical LocalLift audit/project data.
+        Safely disconnects a specific Google service integration for the organization.
+        Disconnecting one service MUST NOT disconnect or clear credentials for other services.
         """
-        conn = await cls.get_connection_for_org(organization_id, db)
+        target_service = service or "business_profile"
+        conn = await cls.get_connection_for_service(organization_id, target_service, db)
         if not conn:
             return False
 
@@ -450,4 +545,5 @@ class GoogleConnectionsService:
         conn.sync_error = None
         conn.last_sync_at = datetime.now(timezone.utc)
         await db.commit()
+        logger.info(f"[OAUTH] service={target_service} stage=connection_disconnected org_id={organization_id}")
         return True

@@ -35,7 +35,7 @@ function getPythonCommand() {
 const pythonCmd = getPythonCommand();
 const backendDir = path.join(__dirname, '..', 'backend');
 
-const args = ['-m', 'uvicorn', 'app.main:app', '--reload', '--port', '8000', '--host', '127.0.0.1'];
+const args = ['-m', 'uvicorn', 'app.main:app', '--reload', '--port', '8000', '--host', '0.0.0.0'];
 
 const backendProcess = spawn(pythonCmd, args, {
   cwd: backendDir,

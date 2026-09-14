@@ -1,6 +1,7 @@
 from pydantic import BaseModel
-from typing import Optional, List, Any
+from typing import Optional, List, Dict, Any
 from datetime import datetime
+
 
 class GoogleAdsAccountOut(BaseModel):
     id: int
@@ -15,6 +16,7 @@ class GoogleAdsAccountOut(BaseModel):
     class Config:
         from_attributes = True
 
+
 class GoogleSearchConsolePropertyOut(BaseModel):
     id: int
     site_url: str
@@ -24,6 +26,7 @@ class GoogleSearchConsolePropertyOut(BaseModel):
 
     class Config:
         from_attributes = True
+
 
 class GoogleAnalyticsPropertyOut(BaseModel):
     id: int
@@ -36,6 +39,7 @@ class GoogleAnalyticsPropertyOut(BaseModel):
     class Config:
         from_attributes = True
 
+
 class DiscoveredGBPLocation(BaseModel):
     account_id: str
     location_id: str
@@ -47,10 +51,27 @@ class DiscoveredGBPLocation(BaseModel):
     is_verified: bool = False
     is_imported: bool = False
 
+
+class SingleServiceStatus(BaseModel):
+    connected: bool = False
+    google_email: Optional[str] = None
+    status: str = "disconnected"
+    scopes: List[str] = []
+    last_sync_at: Optional[datetime] = None
+    last_error: Optional[str] = None
+    resource_count: int = 0
+
+
 class GoogleConnectionStatusOut(BaseModel):
-    is_connected: bool
+    business_profile: SingleServiceStatus = SingleServiceStatus()
+    google_ads: SingleServiceStatus = SingleServiceStatus()
+    search_console: SingleServiceStatus = SingleServiceStatus()
+    analytics: SingleServiceStatus = SingleServiceStatus()
+
+    # Legacy / top-level compatibility fields
+    is_connected: bool = False
     account_email: Optional[str] = None
-    status: str
+    status: str = "disconnected"
     scopes: List[str] = []
     last_sync_at: Optional[datetime] = None
     sync_error: Optional[str] = None
@@ -63,11 +84,13 @@ class GoogleConnectionStatusOut(BaseModel):
     analytics_properties: List[GoogleAnalyticsPropertyOut] = []
     discovered_gbp_locations: List[DiscoveredGBPLocation] = []
 
+
 class ImportResourcesRequest(BaseModel):
     project_id: Optional[int] = None
     selected_gbp_locations: Optional[List[DiscoveredGBPLocation]] = []
     selected_search_console_urls: Optional[List[str]] = []
     create_new_projects: bool = True
+
 
 class ImportResourcesResponse(BaseModel):
     success: bool
@@ -76,10 +99,13 @@ class ImportResourcesResponse(BaseModel):
     imported_websites_count: int
     message: str
 
+
 class GoogleCallbackRequest(BaseModel):
     code: Optional[str] = None
     state: Optional[str] = None
+    service: Optional[str] = None
     project_id: Optional[int] = None
+
 
 class PublicMapsImportRequest(BaseModel):
     maps_url: Optional[str] = None
@@ -98,6 +124,7 @@ class PublicMapsImportRequest(BaseModel):
 
     def get_category(self) -> Optional[str]:
         return (self.category or self.target_category or "").strip() or None
+
 
 class PublicBusinessListingOut(BaseModel):
     id: int

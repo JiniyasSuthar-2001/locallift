@@ -29,6 +29,30 @@ class LocationBase(BaseModel):
 class LocationCreate(LocationBase):
     pass
 
+class LocationUpdate(BaseModel):
+    name: Optional[str] = None
+    address: Optional[str] = None
+    city: Optional[str] = None
+    state: Optional[str] = None
+    postal_code: Optional[str] = None
+    country: Optional[str] = None
+    phone: Optional[str] = None
+    latitude: Optional[float] = None
+    longitude: Optional[float] = None
+    place_id: Optional[str] = None
+
+    @field_validator("latitude")
+    def validate_latitude(cls, v):
+        if v is not None and not (-90.0 <= v <= 90.0):
+            raise ValueError("Latitude must be between -90 and 90 degrees")
+        return v
+
+    @field_validator("longitude")
+    def validate_longitude(cls, v):
+        if v is not None and not (-180.0 <= v <= 180.0):
+            raise ValueError("Longitude must be between -180 and 180 degrees")
+        return v
+
 class LocationOut(LocationBase):
     id: int
     project_id: int

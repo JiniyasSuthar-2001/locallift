@@ -1,14 +1,18 @@
 from datetime import datetime, timezone
-from sqlalchemy import Column, Integer, String, Boolean, Float, DateTime, ForeignKey, Text, JSON
+from sqlalchemy import Column, Integer, String, Boolean, Float, DateTime, ForeignKey, Text, JSON, UniqueConstraint
 from sqlalchemy.orm import relationship
 from app.database import Base
 
 class GoogleConnection(Base):
     __tablename__ = "google_connections"
+    __table_args__ = (
+        UniqueConstraint("organization_id", "service", name="uq_google_connections_org_service"),
+    )
 
     id = Column(Integer, primary_key=True, index=True)
     organization_id = Column(Integer, ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False)
     project_id = Column(Integer, ForeignKey("projects.id", ondelete="SET NULL"), nullable=True)
+    service = Column(String(50), nullable=False, default="business_profile", index=True)  # business_profile, google_ads, search_console, analytics
     
     account_email = Column(String(255), nullable=False)
     access_token = Column(Text, nullable=True)
@@ -102,3 +106,23 @@ class PublicBusinessListing(Base):
 
     organization = relationship("Organization")
     project = relationship("Project")
+
+
+class OrganizationSERPConfig(Base):
+    __tablename__ = "organization_serp_configs"
+
+    id = Column(Integer, primary_key=True, index=True)
+    organization_id = Column(Integer, ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False, unique=True, index=True)
+
+    provider = Column(String(50), default="serpapi", nullable=False)  # serpapi, openserp, not_configured
+    api_key = Column(Text, nullable=True)  # Encrypted at rest via encrypt_token
+    enabled = Column(Boolean, default=True)
+    connection_status = Column(String(50), default="not_configured")  # not_configured, connected, invalid_key, quota_exceeded, error
+    status_message = Column(Text, nullable=True)
+    last_tested_at = Column(DateTime, nullable=True)
+
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+
+    organization = relationship("Organization", lazy="selectin")
+

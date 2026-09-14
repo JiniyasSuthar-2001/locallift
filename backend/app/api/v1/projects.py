@@ -1,10 +1,11 @@
 from typing import List, Optional
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from sqlalchemy.orm import selectinload
 from app.database import get_db
 from app.core.deps import get_current_user, verify_project_access, verify_client_access, get_user_organization_ids
+from app.core.audit_logger import log_user_action
 from app.models.user import User, OrganizationMember
 from app.models.project import Project, Location, Website
 from app.models.audit import SEOAudit, SEOIssue, SEOTask, IssueSeverity, IssueStatus
@@ -12,7 +13,7 @@ from app.models.gbp import GoogleBusinessProfile, GoogleAccount
 from app.models.ranking import Keyword
 from app.models.local_seo import Review
 from app.models.analytics import GSCMetric
-from app.schemas.project import ProjectCreate, ProjectUpdate, ProjectOut, DashboardSummaryOut, LocationCreate, LocationOut
+from app.schemas.project import ProjectCreate, ProjectUpdate, ProjectOut, DashboardSummaryOut, LocationCreate, LocationUpdate, LocationOut
 from app.services.category_taxonomy import CategoryTaxonomy
 
 router = APIRouter(prefix="/projects", tags=["Projects"])
@@ -98,6 +99,7 @@ async def list_projects(
 
 @router.post("", response_model=ProjectOut)
 async def create_project(
+    request: Request,
     project_in: ProjectCreate,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
@@ -115,7 +117,9 @@ async def create_project(
             )
         org_id = project_in.organization_id
     else:
-        org_id = org_ids[0] if org_ids else 1
+        if not org_ids:
+            raise HTTPException(status_code=400, detail="User has no associated organization to create project under.")
+        org_id = org_ids[0]
 
     # Validate client_id belongs to the same organization
     if project_in.client_id:
@@ -194,15 +198,25 @@ async def create_project(
     )
     db.add(website)
 
+    db.add(website)
+
     await db.commit()
     
     # Reload with relations
     result = await db.execute(
         select(Project).options(selectinload(Project.locations)).where(Project.id == project.id)
     )
-    return result.scalars().first()
+    created_proj = result.scalars().first()
+    log_user_action(
+        request, "CREATE_PROJECT",
+        user_id=current_user.id,
+        organization_id=org_id,
+        project_id=created_proj.id,
+        project_name=created_proj.name,
+        domain=created_proj.domain
+    )
+    return created_proj
 
-from app.core.deps import get_current_user, verify_project_access, get_user_organization_ids
 
 @router.get("/{project_id}", response_model=ProjectOut)
 async def get_project(
@@ -216,9 +230,11 @@ async def get_project(
     )
     return result.scalars().first()
 
+
 @router.patch("/{project_id}", response_model=ProjectOut)
 @router.put("/{project_id}", response_model=ProjectOut)
 async def update_project(
+    request: Request,
     project_id: int,
     project_in: ProjectUpdate,
     current_user: User = Depends(get_current_user),
@@ -247,26 +263,53 @@ async def update_project(
     result = await db.execute(
         select(Project).options(selectinload(Project.locations)).where(Project.id == project.id)
     )
-    return result.scalars().first()
+    updated_proj = result.scalars().first()
+    log_user_action(
+        request, "UPDATE_PROJECT",
+        user_id=current_user.id,
+        organization_id=project.organization_id,
+        project_id=project_id,
+        project_name=updated_proj.name
+    )
+    return updated_proj
+
 
 @router.delete("/{project_id}")
 async def delete_project(
+    request: Request,
     project_id: int,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
     project = await verify_project_access(project_id, current_user, db)
+    org_id = project.organization_id
+    proj_name = project.name
     await db.delete(project)
     await db.commit()
+    log_user_action(
+        request, "DELETE_PROJECT",
+        user_id=current_user.id,
+        organization_id=org_id,
+        project_id=project_id,
+        project_name=proj_name
+    )
     return {"message": "Project deleted successfully", "id": project_id}
+
 
 @router.get("/{project_id}/dashboard", response_model=DashboardSummaryOut)
 async def get_dashboard_summary(
+    request: Request,
     project_id: int,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
     project = await verify_project_access(project_id, current_user, db)
+    log_user_action(
+        request, "OPEN_DASHBOARD",
+        user_id=current_user.id,
+        organization_id=project.organization_id,
+        project_id=project_id
+    )
 
     # Fetch recent issues
     issues_res = await db.execute(
@@ -481,3 +524,57 @@ async def create_project_location(
     await db.commit()
     await db.refresh(loc)
     return loc
+
+
+@router.put("/{project_id}/locations/{location_id}", response_model=LocationOut)
+@router.patch("/{project_id}/locations/{location_id}", response_model=LocationOut)
+async def update_project_location(
+    request: Request,
+    project_id: int,
+    location_id: int,
+    location_in: LocationUpdate,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Update an existing location record for a project. Validates coordinate bounds and logs action.
+    """
+    project = await verify_project_access(project_id, current_user, db)
+    
+    stmt = select(Location).where(Location.id == location_id, Location.project_id == project_id)
+    res = await db.execute(stmt)
+    loc = res.scalars().first()
+    if not loc:
+        raise HTTPException(
+            status_code=404,
+            detail=f"LOCATION_NOT_FOUND: Location ID {location_id} does not exist in project {project_id}."
+        )
+
+    update_data = location_in.model_dump(exclude_unset=True)
+    if "latitude" in update_data and update_data["latitude"] is not None:
+        lat = update_data["latitude"]
+        if not (-90.0 <= lat <= 90.0):
+            raise HTTPException(status_code=400, detail="INVALID_LATITUDE: Latitude must be between -90 and 90 degrees.")
+    
+    if "longitude" in update_data and update_data["longitude"] is not None:
+        lng = update_data["longitude"]
+        if not (-180.0 <= lng <= 180.0):
+            raise HTTPException(status_code=400, detail="INVALID_LONGITUDE: Longitude must be between -180 and 180 degrees.")
+
+    for field, val in update_data.items():
+        setattr(loc, field, val)
+
+    await db.commit()
+    await db.refresh(loc)
+
+    log_user_action(
+        request, "SAVE_LOCATION_COORDINATES",
+        user_id=current_user.id,
+        organization_id=project.organization_id,
+        project_id=project_id,
+        location_id=location_id,
+        latitude=loc.latitude,
+        longitude=loc.longitude
+    )
+    return loc
+

@@ -1,6 +1,7 @@
 import axios, { InternalAxiosRequestConfig, AxiosResponse } from 'axios';
 
-const rawBaseUrl = (import.meta as any).env?.VITE_API_URL || 'http://127.0.0.1:8000';
+const defaultHost = typeof window !== 'undefined' && window.location ? window.location.hostname : '127.0.0.1';
+const rawBaseUrl = (import.meta as any).env?.VITE_API_URL || `http://${defaultHost}:8000`;
 const apiPrefix = String(rawBaseUrl).endsWith('/api/v1') ? '' : '/api/v1';
 const baseURL = `${String(rawBaseUrl).replace(/\/+$/, '')}${apiPrefix}`;
 

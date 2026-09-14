@@ -23,7 +23,7 @@ from app.api.v1.reports import router as reports_router
 from app.api.v1.organizations import router as organizations_router
 from app.api.v1.templates import router as templates_router
 from app.api.v1.categories import router as categories_router
-from app.api.v1.connections import router as connections_router
+from app.api.v1.connections import router as connections_router, integrations_router as google_integrations_router
 from app.api.v1.team import router as team_router
 from app.api.v1.serp import router as serp_router
 
@@ -50,11 +50,38 @@ else:
     app.add_middleware(
         CORSMiddleware,
         allow_origins=origins,
-        allow_origin_regex=r"https?://(localhost|127\.0\.0\.1)(:\d+)?",
+        allow_origin_regex=r".*",
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
     )
+
+import time
+
+@app.middleware("http")
+async def action_logging_middleware(request: Request, call_next):
+    req_id = request.headers.get("X-Request-ID") or str(uuid.uuid4())[:8]
+    request.state.request_id = req_id
+
+    path = request.url.path
+    is_asset = path.startswith("/static") or path.endswith((".js", ".css", ".ico", ".png", ".jpg"))
+
+    start_time = time.time()
+    if not is_asset:
+        logger.info(f"[API_START] request_id={req_id} method={request.method} path={path}")
+
+    try:
+        response = await call_next(request)
+        duration_ms = int((time.time() - start_time) * 1000)
+        response.headers["X-Request-ID"] = req_id
+        if not is_asset:
+            logger.info(f"[API_END] request_id={req_id} status={response.status_code} duration_ms={duration_ms}")
+        return response
+    except Exception as exc:
+        duration_ms = int((time.time() - start_time) * 1000)
+        if not is_asset:
+            logger.error(f"[API_END] request_id={req_id} status=500 duration_ms={duration_ms} error={str(exc)}")
+        raise exc
 
 # Include API Routers
 app.include_router(auth_router, prefix=settings.API_V1_STR)
@@ -71,6 +98,8 @@ app.include_router(reports_router, prefix=settings.API_V1_STR)
 app.include_router(organizations_router, prefix=settings.API_V1_STR)
 app.include_router(templates_router, prefix=settings.API_V1_STR)
 app.include_router(connections_router, prefix=settings.API_V1_STR)
+app.include_router(google_integrations_router, prefix=settings.API_V1_STR)
+app.include_router(google_integrations_router, prefix="/api")
 app.include_router(team_router, prefix=settings.API_V1_STR)
 app.include_router(serp_router, prefix=settings.API_V1_STR)
 
@@ -81,9 +110,7 @@ def _is_allowed_origin(origin: Optional[str]) -> bool:
     if clean_origin in origins:
         return True
     if settings.ENVIRONMENT.lower() != "production":
-        import re
-        if re.match(r"^https?://(localhost|127\.0\.0\.1)(:\d+)?$", clean_origin):
-            return True
+        return True
     return False
 
 def _add_cors_headers(request: Request, headers: dict = None) -> dict:
@@ -111,16 +138,19 @@ async def http_exception_handler(request: Request, exc: StarletteHTTPException):
         headers=_add_cors_headers(request, getattr(exc, "headers", None))
     )
 
+from fastapi.encoders import jsonable_encoder
+
 @app.exception_handler(RequestValidationError)
 async def validation_exception_handler(request: Request, exc: RequestValidationError):
-    req_id = str(uuid.uuid4())[:8]
+    req_id = getattr(request.state, "request_id", str(uuid.uuid4())[:8])
+    clean_errors = jsonable_encoder(exc.errors(), custom_encoder={ValueError: str, Exception: str})
     return JSONResponse(
         status_code=422,
         content={
             "error": True,
             "code": "VALIDATION_ERROR",
             "message": "Invalid request parameters.",
-            "detail": exc.errors(),
+            "detail": clean_errors,
             "request_id": req_id
         },
         headers=_add_cors_headers(request)

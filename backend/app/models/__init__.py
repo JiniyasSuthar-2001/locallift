@@ -12,6 +12,7 @@ from app.models.connections import (
     GoogleSearchConsoleProperty,
     GoogleAnalyticsProperty,
     PublicBusinessListing,
+    OrganizationSERPConfig,
 )
 from app.models.team import (
     ProjectMembership,
@@ -30,7 +31,7 @@ __all__ = [
     "GSCMetric", "GA4Metric", "Report", "ScheduledJob",
     "Template", "TemplateUsage",
     "GoogleConnection", "GoogleAdsAccount", "GoogleSearchConsoleProperty",
-    "GoogleAnalyticsProperty", "PublicBusinessListing",
+    "GoogleAnalyticsProperty", "PublicBusinessListing", "OrganizationSERPConfig",
     "ProjectMembership", "ProjectInvitation"
 ]
 

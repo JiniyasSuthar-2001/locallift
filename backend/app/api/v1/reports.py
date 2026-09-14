@@ -1,11 +1,12 @@
 from typing import List, Optional
 from datetime import datetime, timezone
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 
 from app.database import get_db
 from app.core.deps import get_current_user, verify_project_access
+from app.core.audit_logger import log_user_action
 from app.models.user import User
 from app.models.project import Project
 from app.models.audit import SEOAudit, SEOIssue, SEOTask
@@ -16,11 +17,19 @@ router = APIRouter(prefix="/reports", tags=["Reports"])
 
 @router.get("/{project_id}/executive")
 async def generate_executive_report(
+    request: Request,
     project_id: int,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
     project = await verify_project_access(project_id, current_user, db)
+    log_user_action(
+        request, "GENERATE_REPORT",
+        user_id=current_user.id,
+        organization_id=project.organization_id,
+        project_id=project_id,
+        report_type="executive"
+    )
 
     # Fetch stats
     iss_res = await db.execute(select(SEOIssue).where(SEOIssue.project_id == project_id))

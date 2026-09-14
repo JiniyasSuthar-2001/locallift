@@ -1,12 +1,13 @@
 from typing import List, Optional
 from pydantic import BaseModel
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from sqlalchemy.orm import selectinload
 
 from app.database import get_db
 from app.core.deps import get_current_user
+from app.core.audit_logger import log_user_action
 from app.models.user import User, Organization, OrganizationMember, Client, OrgRole
 
 router = APIRouter(prefix="/organizations", tags=["Organizations & Clients"])
@@ -64,6 +65,7 @@ async def list_clients(
 
 @router.post("/clients", response_model=ClientOut, status_code=status.HTTP_201_CREATED)
 async def create_client(
+    request: Request,
     client_in: ClientCreate,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
@@ -71,6 +73,7 @@ async def create_client(
     mem_res = await db.execute(select(OrganizationMember).where(OrganizationMember.user_id == current_user.id))
     mem = mem_res.scalars().first()
     if not mem:
+        log_user_action(request, "CREATE_CLIENT", user_id=current_user.id, status="failed", error="NO_ORG")
         raise HTTPException(status_code=400, detail="User is not part of an organization")
 
     client = Client(
@@ -83,6 +86,14 @@ async def create_client(
     db.add(client)
     await db.commit()
     await db.refresh(client)
+
+    log_user_action(
+        request, "CREATE_CLIENT",
+        user_id=current_user.id,
+        organization_id=mem.organization_id,
+        client_id=client.id,
+        client_name=client.name
+    )
     return {
         "id": client.id,
         "organization_id": client.organization_id,

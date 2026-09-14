@@ -23,15 +23,23 @@ if config.config_file_name is not None:
     except Exception:
         pass
 
-# Set database URL dynamically from app settings
-db_url = settings.DATABASE_URL
-if db_url.startswith("sqlite+aiosqlite:"):
-    # Alembic offline/sync operations use standard sqlite
-    sync_db_url = db_url.replace("sqlite+aiosqlite:", "sqlite:")
+# Set database URL dynamically from app settings unless explicitly overridden in config
+custom_url = config.get_main_option("sqlalchemy.url")
+if custom_url:
+    sync_db_url = custom_url
+    if sync_db_url.startswith("sqlite:") and not sync_db_url.startswith("sqlite+aiosqlite:"):
+        db_url = sync_db_url.replace("sqlite:", "sqlite+aiosqlite:", 1)
+    elif sync_db_url.startswith("postgresql:") and not sync_db_url.startswith("postgresql+asyncpg:"):
+        db_url = sync_db_url.replace("postgresql:", "postgresql+asyncpg:", 1)
+    else:
+        db_url = sync_db_url
 else:
-    sync_db_url = db_url.replace("postgresql+asyncpg:", "postgresql:")
-
-config.set_main_option("sqlalchemy.url", sync_db_url)
+    db_url = settings.DATABASE_URL
+    if db_url.startswith("sqlite+aiosqlite:"):
+        sync_db_url = db_url.replace("sqlite+aiosqlite:", "sqlite:", 1)
+    else:
+        sync_db_url = db_url.replace("postgresql+asyncpg:", "postgresql:", 1)
+    config.set_main_option("sqlalchemy.url", sync_db_url)
 
 target_metadata = Base.metadata
 
@@ -69,6 +77,7 @@ async def run_async_migrations() -> None:
 
     async with connectable.connect() as connection:
         await connection.run_sync(do_run_migrations)
+        await connection.commit()
 
     await connectable.dispose()
 

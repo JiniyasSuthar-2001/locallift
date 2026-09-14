@@ -13,39 +13,86 @@ logger = logging.getLogger("locallift.google.oauth")
 # In-memory nonce cache to prevent OAuth replay attacks (stores nonces with expiration)
 _USED_NONCES: Dict[str, datetime] = {}
 
-class GoogleOAuthService:
+
+class GoogleOAuthCore:
+    """
+    Shared Google OAuth Core responsible for:
+    - Service scope management
+    - Cryptographic state generation & verification with service binding
+    - Expiration & single-use nonce tracking
+    - Authorization code exchange
+    - Token refresh management
+    - Google user email resolution
+    """
     AUTH_ENDPOINT = "https://accounts.google.com/o/oauth2/v2/auth"
     TOKEN_ENDPOINT = "https://oauth2.googleapis.com/token"
     USERINFO_ENDPOINT = "https://www.googleapis.com/oauth2/v2/userinfo"
 
-    DEFAULT_SCOPES = [
-        "https://www.googleapis.com/auth/business.manage",
-        "https://www.googleapis.com/auth/webmasters.readonly",
-        "https://www.googleapis.com/auth/analytics.readonly",
-        "https://www.googleapis.com/auth/adwords",
-        "https://www.googleapis.com/auth/userinfo.email",
-        "https://www.googleapis.com/auth/userinfo.profile",
-        "openid"
-    ]
+    VALID_SERVICES = {
+        "business_profile": "Google Business Profile",
+        "google_ads": "Google Ads",
+        "search_console": "Google Search Console",
+        "analytics": "Google Analytics 4"
+    }
+
+    SERVICE_SCOPES = {
+        "business_profile": [
+            "https://www.googleapis.com/auth/business.manage",
+            "https://www.googleapis.com/auth/userinfo.email",
+            "https://www.googleapis.com/auth/userinfo.profile",
+            "openid"
+        ],
+        "google_ads": [
+            "https://www.googleapis.com/auth/adwords",
+            "https://www.googleapis.com/auth/userinfo.email",
+            "https://www.googleapis.com/auth/userinfo.profile",
+            "openid"
+        ],
+        "search_console": [
+            "https://www.googleapis.com/auth/webmasters.readonly",
+            "https://www.googleapis.com/auth/userinfo.email",
+            "https://www.googleapis.com/auth/userinfo.profile",
+            "openid"
+        ],
+        "analytics": [
+            "https://www.googleapis.com/auth/analytics.readonly",
+            "https://www.googleapis.com/auth/userinfo.email",
+            "https://www.googleapis.com/auth/userinfo.profile",
+            "openid"
+        ]
+    }
 
     @classmethod
     def is_configured(cls) -> bool:
         return bool(settings.GOOGLE_CLIENT_ID and settings.GOOGLE_CLIENT_SECRET)
 
     @classmethod
+    def get_service_scopes(cls, service: str) -> List[str]:
+        if service not in cls.SERVICE_SCOPES:
+            raise ValueError(f"Unsupported Google service '{service}'. Must be one of: {list(cls.VALID_SERVICES.keys())}")
+        return cls.SERVICE_SCOPES[service]
+
+    @classmethod
     def encode_oauth_state(
         cls,
-        project_id: int,
-        user_id: int,
-        organization_id: int,
+        service: str = "business_profile",
+        project_id: int = 0,
+        user_id: int = 0,
+        organization_id: int = 0,
         custom_state: Optional[str] = None
     ) -> str:
         """
-        Creates a cryptographically-signed JWT OAuth state to prevent CSRF and parameter tampering.
+        Creates a cryptographically-signed JWT OAuth state to prevent CSRF, parameter tampering, and cross-service replay attacks.
+        Strictly binds user_id, organization_id, and service name.
         """
+        if service not in cls.VALID_SERVICES:
+            raise ValueError(f"Invalid Google service for OAuth state: {service}")
+
         now = datetime.now(timezone.utc)
         nonce = str(uuid.uuid4())
         payload = {
+            "provider": "google",
+            "service": service,
             "project_id": project_id,
             "user_id": user_id,
             "organization_id": organization_id,
@@ -57,9 +104,13 @@ class GoogleOAuthService:
         return jwt.encode(payload, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
 
     @classmethod
-    def decode_and_validate_oauth_state(cls, state_str: str) -> Dict[str, Any]:
+    def decode_and_validate_oauth_state(
+        cls,
+        state_str: str,
+        expected_service: Optional[str] = None
+    ) -> Dict[str, Any]:
         """
-        Decodes and verifies cryptographic signature, expiry, and one-time nonce of OAuth state.
+        Decodes and verifies cryptographic signature, expiry, service binding, and one-time nonce of OAuth state.
         """
         if not state_str:
             raise ValueError("OAuth state parameter is missing.")
@@ -77,13 +128,24 @@ class GoogleOAuthService:
                 algorithms=[settings.ALGORITHM]
             )
         except JWTError as e:
-            logger.warning(f"OAuth state signature validation failed: {e}")
+            logger.warning(f"[OAUTH] State signature validation failed: {e}")
             raise ValueError(f"Invalid or tampered OAuth state: {str(e)}")
 
         nonce = payload.get("nonce")
         if not nonce or nonce in _USED_NONCES:
-            logger.warning(f"OAuth state replay attack detected for nonce: {nonce}")
+            logger.warning(f"[OAUTH] Replay attack detected for nonce: {nonce}")
             raise ValueError("OAuth state has already been used or is invalid.")
+
+        provider = payload.get("provider")
+        if provider != "google":
+            raise ValueError(f"Invalid OAuth provider '{provider}'. Expected 'google'.")
+
+        service = payload.get("service")
+        if not service or service not in cls.VALID_SERVICES:
+            raise ValueError(f"Invalid or unsupported Google service in OAuth state: '{service}'")
+
+        if expected_service and service != expected_service:
+            raise ValueError(f"OAuth state service mismatch: state is for '{service}', endpoint expected '{expected_service}'.")
 
         # Mark nonce as used
         _USED_NONCES[nonce] = now + timedelta(minutes=20)
@@ -92,18 +154,22 @@ class GoogleOAuthService:
     @classmethod
     def get_authorization_url(
         cls,
-        project_id: int,
-        user_id: int,
-        organization_id: int = 1,
-        custom_state: Optional[str] = None
+        service: str = "business_profile",
+        project_id: int = 0,
+        user_id: int = 0,
+        organization_id: int = 0,
+        custom_state: Optional[str] = None,
+        prompt: Optional[str] = "select_account"
     ) -> str:
         """
-        Builds the Google OAuth 2.0 consent URL with signed state and multi-service scopes.
+        Builds the service-specific Google OAuth 2.0 authorization URL with requesting scopes strictly limited to the target service.
         """
         if not cls.is_configured():
-            logger.warning("Google OAuth credentials are not configured in settings.")
+            logger.warning("[OAUTH] Google OAuth credentials are not configured in settings.")
 
+        scopes = cls.get_service_scopes(service)
         signed_state = cls.encode_oauth_state(
+            service=service,
             project_id=project_id,
             user_id=user_id,
             organization_id=organization_id,
@@ -114,20 +180,21 @@ class GoogleOAuthService:
             "client_id": settings.GOOGLE_CLIENT_ID,
             "redirect_uri": settings.GOOGLE_REDIRECT_URI,
             "response_type": "code",
-            "scope": " ".join(cls.DEFAULT_SCOPES),
+            "scope": " ".join(scopes),
             "access_type": "offline",
-            "prompt": "consent",
+            "prompt": prompt or "select_account",
             "include_granted_scopes": "true",
             "state": signed_state
         }
 
         query_str = urllib.parse.urlencode(params)
+        logger.info(f"[OAUTH] service={service} stage=authorization_started user_id={user_id} org_id={organization_id}")
         return f"{cls.AUTH_ENDPOINT}?{query_str}"
 
     @classmethod
     async def exchange_code_for_tokens(cls, code: str) -> Dict[str, Any]:
         """
-        Exchanges an OAuth 2.0 authorization code for an access token and refresh token.
+        Exchanges an OAuth 2.0 authorization code for an access token, refresh token, and user identity.
         """
         if not cls.is_configured():
             raise ValueError("Google OAuth credentials are not configured.")
@@ -143,20 +210,26 @@ class GoogleOAuthService:
         async with httpx.AsyncClient(timeout=15.0) as client:
             resp = await client.post(cls.TOKEN_ENDPOINT, data=data)
             if resp.status_code != 200:
-                logger.error(f"Google token exchange failed: {resp.status_code} - {resp.text}")
+                logger.error(f"[OAUTH] Token exchange failed: {resp.status_code} - {resp.text}")
                 raise ValueError(f"Failed to exchange Google OAuth code: {resp.text}")
             
             token_data = resp.json()
             expires_in = token_data.get("expires_in", 3600)
             token_expiry = datetime.now(timezone.utc) + timedelta(seconds=expires_in)
+            access_token = token_data.get("access_token")
+
+            user_email = None
+            if access_token:
+                user_email = await cls.get_user_email(access_token)
 
             return {
-                "access_token": token_data.get("access_token"),
+                "access_token": access_token,
                 "refresh_token": token_data.get("refresh_token"),
                 "expires_in": expires_in,
                 "token_expiry": token_expiry,
-                "scope": token_data.get("scope", "").split(" ") if token_data.get("scope") else [],
-                "token_type": token_data.get("token_type", "Bearer")
+                "scopes": token_data.get("scope", "").split(" ") if token_data.get("scope") else [],
+                "token_type": token_data.get("token_type", "Bearer"),
+                "email": user_email
             }
 
     @classmethod
@@ -177,7 +250,7 @@ class GoogleOAuthService:
         async with httpx.AsyncClient(timeout=15.0) as client:
             resp = await client.post(cls.TOKEN_ENDPOINT, data=data)
             if resp.status_code != 200:
-                logger.error(f"Google token refresh failed: {resp.status_code} - {resp.text}")
+                logger.error(f"[OAUTH] Token refresh failed: {resp.status_code} - {resp.text}")
                 raise ValueError(f"Failed to refresh Google access token: {resp.text}")
 
             token_data = resp.json()
@@ -203,5 +276,86 @@ class GoogleOAuthService:
                     data = resp.json()
                     return data.get("email")
         except Exception as e:
-            logger.error(f"Failed to fetch Google userinfo: {e}")
+            logger.error(f"[OAUTH] Failed to fetch Google userinfo: {e}")
         return None
+
+
+# Individual Service Connectors using GoogleOAuthCore
+class BusinessProfileConnector:
+    SERVICE_KEY = "business_profile"
+    SERVICE_NAME = "Google Business Profile"
+
+    @classmethod
+    def get_scopes(cls) -> List[str]:
+        return GoogleOAuthCore.get_service_scopes(cls.SERVICE_KEY)
+
+    @classmethod
+    def get_authorization_url(cls, project_id: int, user_id: int, organization_id: int, **kwargs) -> str:
+        return GoogleOAuthCore.get_authorization_url(
+            service=cls.SERVICE_KEY,
+            project_id=project_id,
+            user_id=user_id,
+            organization_id=organization_id,
+            **kwargs
+        )
+
+
+class GoogleAdsConnector:
+    SERVICE_KEY = "google_ads"
+    SERVICE_NAME = "Google Ads"
+
+    @classmethod
+    def get_scopes(cls) -> List[str]:
+        return GoogleOAuthCore.get_service_scopes(cls.SERVICE_KEY)
+
+    @classmethod
+    def get_authorization_url(cls, project_id: int, user_id: int, organization_id: int, **kwargs) -> str:
+        return GoogleOAuthCore.get_authorization_url(
+            service=cls.SERVICE_KEY,
+            project_id=project_id,
+            user_id=user_id,
+            organization_id=organization_id,
+            **kwargs
+        )
+
+
+class SearchConsoleConnector:
+    SERVICE_KEY = "search_console"
+    SERVICE_NAME = "Google Search Console"
+
+    @classmethod
+    def get_scopes(cls) -> List[str]:
+        return GoogleOAuthCore.get_service_scopes(cls.SERVICE_KEY)
+
+    @classmethod
+    def get_authorization_url(cls, project_id: int, user_id: int, organization_id: int, **kwargs) -> str:
+        return GoogleOAuthCore.get_authorization_url(
+            service=cls.SERVICE_KEY,
+            project_id=project_id,
+            user_id=user_id,
+            organization_id=organization_id,
+            **kwargs
+        )
+
+
+class AnalyticsConnector:
+    SERVICE_KEY = "analytics"
+    SERVICE_NAME = "Google Analytics 4"
+
+    @classmethod
+    def get_scopes(cls) -> List[str]:
+        return GoogleOAuthCore.get_service_scopes(cls.SERVICE_KEY)
+
+    @classmethod
+    def get_authorization_url(cls, project_id: int, user_id: int, organization_id: int, **kwargs) -> str:
+        return GoogleOAuthCore.get_authorization_url(
+            service=cls.SERVICE_KEY,
+            project_id=project_id,
+            user_id=user_id,
+            organization_id=organization_id,
+            **kwargs
+        )
+
+
+# Backward compatibility alias
+GoogleOAuthService = GoogleOAuthCore

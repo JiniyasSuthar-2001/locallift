@@ -30,27 +30,44 @@ class GeocodingService:
 
         query_str = ", ".join(parts)
 
-        # 1. Attempt geocoding via OpenStreetMap Nominatim with strict timeout & proper User-Agent
-        try:
-            headers = {
-                "User-Agent": "LocalLift-SEO-Engine/1.0 (https://locallift.io; geocoding@locallift.io)"
-            }
-            params = {
-                "q": query_str,
-                "format": "jsonv2",
-                "limit": 1
-            }
-            async with httpx.AsyncClient(timeout=4.0, headers=headers) as client:
-                resp = await client.get("https://nominatim.openstreetmap.org/search", params=params)
-                if resp.status_code == 200:
-                    data = resp.json()
-                    if isinstance(data, list) and len(data) > 0:
-                        first_match = data[0]
-                        lat = float(first_match.get("lat"))
-                        lon = float(first_match.get("lon"))
-                        logger.info(f"Geocoded '{query_str}' -> ({lat}, {lon})")
-                        return (lat, lon)
-        except Exception as e:
-            logger.warning(f"Geocoding lookup failed for '{query_str}': {e}")
+        # 1. Attempt geocoding via OpenStreetMap Nominatim with retry backoff & proper User-Agent
+        headers = {
+            "User-Agent": "LocalLift-SEO-Engine/1.0 (https://locallift.io; geocoding@locallift.io)"
+        }
+        params = {
+            "q": query_str,
+            "format": "jsonv2",
+            "limit": 1
+        }
+
+        import asyncio
+        max_attempts = 2
+        for attempt in range(1, max_attempts + 1):
+            try:
+                async with httpx.AsyncClient(timeout=5.0, headers=headers) as client:
+                    resp = await client.get("https://nominatim.openstreetmap.org/search", params=params)
+                    if resp.status_code == 200:
+                        data = resp.json()
+                        if isinstance(data, list) and len(data) > 0:
+                            first_match = data[0]
+                            lat = float(first_match.get("lat"))
+                            lon = float(first_match.get("lon"))
+                            logger.info(f"Geocoded '{query_str}' -> ({lat}, {lon})")
+                            return (lat, lon)
+                    elif resp.status_code == 429:
+                        logger.warning(f"Geocoding rate limited (429) for '{query_str}', attempt {attempt}/{max_attempts}")
+                        if attempt < max_attempts:
+                            await asyncio.sleep(1.5)
+                            continue
+                    else:
+                        logger.warning(f"Geocoding returned status {resp.status_code} for '{query_str}'")
+            except (httpx.TimeoutException, httpx.RequestError) as e:
+                logger.warning(f"Geocoding network error for '{query_str}' attempt {attempt}/{max_attempts}: {e}")
+                if attempt < max_attempts:
+                    await asyncio.sleep(1.0)
+                    continue
+            except Exception as e:
+                logger.warning(f"Geocoding lookup failed for '{query_str}': {e}")
+                break
 
         return None

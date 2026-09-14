@@ -7,7 +7,7 @@ class KeywordBase(BaseModel):
     search_intent: Optional[str] = "Commercial"
     search_volume: Optional[int] = None
     difficulty: Optional[int] = None
-    target_location: Optional[str] = "City Center"
+    target_location: Optional[str] = None
     target_rank: Optional[int] = None
     business_relevance: Optional[str] = "High"
 
@@ -76,7 +76,7 @@ class GeoGridScanRequest(BaseModel):
     keyword_id: Optional[int] = None
     keyword: Optional[str] = None
     location_id: Optional[int] = None
-    center_name: Optional[str] = "City Center"
+    center_name: Optional[str] = None
     center_lat: Optional[float] = None
     center_lng: Optional[float] = None
     radius_km: Optional[float] = 10.0

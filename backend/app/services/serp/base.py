@@ -59,3 +59,50 @@ class SERPProvider(ABC):
     def is_configured(self) -> bool:
         """Returns True if the provider has valid API credentials configured."""
         pass
+
+
+class NotConfiguredSERPProvider(SERPProvider):
+    """
+    Safe provider returned when no SERP API key has been configured for the organization.
+    Never attempts Docker or localhost calls. Returns a clean, user-facing error state.
+    """
+
+    @property
+    def is_configured(self) -> bool:
+        return False
+
+    async def search_keyword(
+        self,
+        keyword: str,
+        location: Optional[str] = None,
+        country: Optional[str] = "us",
+        language: Optional[str] = "en",
+        device: str = "desktop",
+        num_results: int = 100
+    ) -> SERPResponse:
+        return SERPResponse(
+            provider="not_configured",
+            keyword=keyword,
+            location=location,
+            success=False,
+            error_code="SERP_API_KEY_REQUIRED",
+            error_message="SERP provider not configured. Add your SerpApi API key in Settings to enable keyword tracking and Geo-Grid searches."
+        )
+
+    async def search_local_grid_point(
+        self,
+        keyword: str,
+        lat: float,
+        lng: float,
+        location_name: Optional[str] = None,
+        zoom: int = 14
+    ) -> SERPResponse:
+        return SERPResponse(
+            provider="not_configured",
+            keyword=keyword,
+            location=location_name,
+            success=False,
+            error_code="SERP_API_KEY_REQUIRED",
+            error_message="SERP provider not configured. Add your SerpApi API key in Settings to enable keyword tracking and Geo-Grid searches."
+        )
+
