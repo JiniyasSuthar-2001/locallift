@@ -55,6 +55,7 @@ class GoogleSearchConsoleProperty(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     connection_id = Column(Integer, ForeignKey("google_connections.id", ondelete="CASCADE"), nullable=False)
+    project_id = Column(Integer, ForeignKey("projects.id", ondelete="SET NULL"), nullable=True)
     
     site_url = Column(String(500), nullable=False, index=True)
     permission_level = Column(String(50), default="siteOwner")  # siteOwner, siteFullUser, siteRestrictedUser
@@ -63,12 +64,14 @@ class GoogleSearchConsoleProperty(Base):
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
     connection = relationship("GoogleConnection", back_populates="search_console_properties")
+    project = relationship("Project", lazy="selectin")
 
 class GoogleAnalyticsProperty(Base):
     __tablename__ = "google_analytics_properties"
 
     id = Column(Integer, primary_key=True, index=True)
     connection_id = Column(Integer, ForeignKey("google_connections.id", ondelete="CASCADE"), nullable=False)
+    project_id = Column(Integer, ForeignKey("projects.id", ondelete="SET NULL"), nullable=True)
     
     property_id = Column(String(50), nullable=False, index=True)
     display_name = Column(String(255), nullable=False)
@@ -78,6 +81,7 @@ class GoogleAnalyticsProperty(Base):
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
     connection = relationship("GoogleConnection", back_populates="analytics_properties")
+    project = relationship("Project", lazy="selectin")
 
 class PublicBusinessListing(Base):
     __tablename__ = "public_business_listings"

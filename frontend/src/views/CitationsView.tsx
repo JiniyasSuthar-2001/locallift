@@ -85,7 +85,7 @@ export const CitationsView: React.FC = () => {
             <span>Local Citations & Directory Distribution</span>
           </h1>
           <p className="text-xs text-slate-500 mt-1">
-            Track business listings across core directories, data aggregators, and map networks for {activeProject.domain}.
+            Track self-reported and documented directory listings across external networks for <span className="font-semibold text-slate-700">{activeProject.domain}</span>.
           </p>
         </div>
 
@@ -94,7 +94,7 @@ export const CitationsView: React.FC = () => {
           className="flex items-center space-x-2 px-5 py-2.5 btn-vibrant-primary rounded-xl text-xs font-bold shadow-md self-start transition-all"
         >
           <Plus className="w-4 h-4" />
-          <span>Add Directory Citation</span>
+          <span>Add Manual Citation</span>
         </button>
       </div>
 
@@ -103,13 +103,13 @@ export const CitationsView: React.FC = () => {
         <div className="card-vibrant p-4 space-y-1">
           <span className="text-[10px] font-black uppercase tracking-wider text-slate-500">Tracked Directories</span>
           <div className="text-2xl font-black text-slate-900">{citations.length}</div>
-          <span className="text-[11px] text-slate-500 font-medium">Core platforms scanned</span>
+          <span className="text-[11px] text-slate-500 font-medium">Documented listings</span>
         </div>
 
         <div className="card-vibrant p-4 space-y-1">
           <span className="text-[10px] font-black uppercase tracking-wider text-slate-500">Matching Listings</span>
           <div className="text-2xl font-black text-emerald-700">{matchingCount}</div>
-          <span className="text-[11px] text-slate-500 font-medium">100% NAP verification</span>
+          <span className="text-[11px] text-slate-500 font-medium">Self-verified NAP records</span>
         </div>
 
         <div className="card-vibrant p-4 space-y-1">
@@ -117,7 +117,7 @@ export const CitationsView: React.FC = () => {
           <div className="text-2xl font-black text-purple-700">
             {citations.length > 0 ? Math.round((matchingCount / citations.length) * 100) : 0}%
           </div>
-          <span className="text-[11px] text-purple-900 font-semibold">Directory trust score</span>
+          <span className="text-[11px] text-purple-900 font-semibold">Self-reported accuracy</span>
         </div>
       </div>
 
@@ -129,6 +129,7 @@ export const CitationsView: React.FC = () => {
               <thead className="bg-slate-50 text-slate-500 uppercase text-[10px] font-bold tracking-wider border-b border-slate-100">
                 <tr>
                   <th className="p-3.5">Directory / Platform</th>
+                  <th className="p-3.5">Source Type</th>
                   <th className="p-3.5">Domain Authority</th>
                   <th className="p-3.5">NAP Status</th>
                   <th className="p-3.5">Listing URL</th>
@@ -139,6 +140,11 @@ export const CitationsView: React.FC = () => {
                 {citations.map((c) => (
                   <tr key={c.id} className="hover:bg-slate-50/60 transition-colors">
                     <td className="p-3.5 font-bold text-slate-900">{c.directory_name}</td>
+                    <td className="p-3.5">
+                      <span className="px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 text-[10px] font-bold">
+                        Manual Entry
+                      </span>
+                    </td>
                     <td className="p-3.5">
                       <span className="px-2 py-0.5 rounded bg-slate-100 text-slate-700 font-mono text-[10px] font-bold">
                         DA {c.domain_authority}

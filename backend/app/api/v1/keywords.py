@@ -635,9 +635,11 @@ async def get_project_grid(
 
 @router.get("/grid-scan/{project_id}/latest", response_model=Optional[GeoGridScanOut])
 async def get_latest_grid_scan(
+    request: Request,
     project_id: int,
     keyword_id: Optional[int] = None,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
-    return await get_project_grid(project_id, keyword_id, current_user, db)
+    return await get_project_grid(request, project_id, keyword_id, current_user, db)
+

@@ -3,7 +3,7 @@ import urllib.parse
 import logging
 from typing import List, Optional
 from datetime import datetime, timezone
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from sqlalchemy.orm import selectinload
@@ -299,21 +299,87 @@ async def get_gsc_data(
     db: AsyncSession = Depends(get_db)
 ):
     """
-    Returns real Google Search Console metrics stored for the project, or a connected=False state.
+    Returns real Google Search Console metrics stored for the project, with explicit connection and sync states.
+    Never reports fake metrics or false disconnected states.
     """
-    await verify_project_access(project_id, current_user, db)
+    proj = await verify_project_access(project_id, current_user, db)
+    from app.models.connections import GoogleConnection, GoogleSearchConsoleProperty
     from app.models.analytics import GSCMetric
+    from app.services.google.connections_service import GoogleConnectionsService
+
+    # 1. Check if organization has active GSC connection
+    gsc_conn = await GoogleConnectionsService.get_connection_for_service(proj.organization_id, "search_console", db)
+    is_connected = bool(gsc_conn and gsc_conn.status == "connected" and gsc_conn.access_token)
+    conn_status = gsc_conn.status if gsc_conn else "not_connected"
+    sync_error = gsc_conn.sync_error if gsc_conn else None
+
+    # 2. Check for mapped Search Console property
+    prop_res = await db.execute(
+        select(GoogleSearchConsoleProperty).where(GoogleSearchConsoleProperty.project_id == project_id)
+    )
+    mapped_prop = prop_res.scalars().first()
+
+    # Auto-mapping fallback: if no property explicitly mapped, check if any org GSC property matches domain
+    if not mapped_prop and gsc_conn:
+        avail_props_res = await db.execute(
+            select(GoogleSearchConsoleProperty).where(GoogleSearchConsoleProperty.connection_id == gsc_conn.id)
+        )
+        for p in avail_props_res.scalars().all():
+            clean_dom = proj.domain.lower().replace("www.", "")
+            if clean_dom in p.site_url.lower():
+                p.project_id = project_id
+                mapped_prop = p
+                await db.commit()
+                break
+
+    # 3. Fetch stored GSC metrics
     res = await db.execute(
         select(GSCMetric).where(GSCMetric.project_id == project_id).order_by(GSCMetric.date.desc())
     )
     metrics = res.scalars().all()
 
+    # If connected, property mapped, but no metrics yet -> trigger initial sync automatically
+    if is_connected and mapped_prop and not metrics:
+        try:
+            from app.services.google.gsc_client import GoogleSearchConsoleClient
+            token = await GoogleConnectionsService.get_valid_access_token(gsc_conn, db)
+            await GoogleSearchConsoleClient.sync_project_gsc_metrics(
+                project_id=project_id,
+                access_token=token,
+                site_url=mapped_prop.site_url,
+                db=db
+            )
+            res = await db.execute(
+                select(GSCMetric).where(GSCMetric.project_id == project_id).order_by(GSCMetric.date.desc())
+            )
+            metrics = res.scalars().all()
+        except Exception as e:
+            logger.warning(f"[GSC_API] Background sync on fetch failed: {e}")
+
+    # Determine reporting state
+    if not gsc_conn or conn_status == "disconnected":
+        reporting_state = "not_connected"
+    elif conn_status == "expired":
+        reporting_state = "needs_reconnection"
+    elif sync_error:
+        reporting_state = "sync_failed"
+    elif not mapped_prop:
+        reporting_state = "property_not_mapped"
+    elif not metrics:
+        reporting_state = "waiting_for_data"
+    else:
+        reporting_state = "reporting_active"
+
     if not metrics:
         return {
-            "connected": False,
-            "total_clicks": 0,
-            "total_impressions": 0,
-            "average_ctr": 0.0,
+            "connected": is_connected,
+            "reporting_state": reporting_state,
+            "status": conn_status,
+            "error": sync_error,
+            "mapped_property": mapped_prop.site_url if mapped_prop else None,
+            "total_clicks": None,
+            "total_impressions": None,
+            "average_ctr": None,
             "average_position": None,
             "top_queries": [],
             "daily_history": []
@@ -327,6 +393,10 @@ async def get_gsc_data(
 
     return {
         "connected": True,
+        "reporting_state": reporting_state,
+        "status": "active" if reporting_state == "reporting_active" else conn_status,
+        "error": sync_error,
+        "mapped_property": mapped_prop.site_url if mapped_prop else None,
         "total_clicks": total_clicks,
         "total_impressions": total_imp,
         "average_ctr": avg_ctr,
@@ -342,6 +412,42 @@ async def get_gsc_data(
         ]
     }
 
+
+@router.post("/gsc/{project_id}/sync")
+async def sync_gsc_data(
+    project_id: int,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Manually triggers a fresh sync from Google Search Console Search Analytics API for the project.
+    """
+    proj = await verify_project_access(project_id, current_user, db)
+    from app.models.connections import GoogleConnection, GoogleSearchConsoleProperty
+    from app.services.google.connections_service import GoogleConnectionsService
+    from app.services.google.gsc_client import GoogleSearchConsoleClient
+
+    gsc_conn = await GoogleConnectionsService.get_connection_for_service(proj.organization_id, "search_console", db)
+    if not gsc_conn or gsc_conn.status not in ("connected", "expired"):
+        raise HTTPException(status_code=400, detail="Google Search Console is not connected for this organization.")
+
+    prop_res = await db.execute(
+        select(GoogleSearchConsoleProperty).where(GoogleSearchConsoleProperty.project_id == project_id)
+    )
+    prop = prop_res.scalars().first()
+    if not prop:
+        raise HTTPException(status_code=400, detail="No Search Console property is mapped to this project. Map a property first.")
+
+    token = await GoogleConnectionsService.get_valid_access_token(gsc_conn, db)
+    result = await GoogleSearchConsoleClient.sync_project_gsc_metrics(
+        project_id=project_id,
+        access_token=token,
+        site_url=prop.site_url,
+        db=db
+    )
+    return result
+
+
 @router.get("/ga4/{project_id}")
 async def get_ga4_data(
     project_id: int,
@@ -349,25 +455,89 @@ async def get_ga4_data(
     db: AsyncSession = Depends(get_db)
 ):
     """
-    Returns real Google Analytics 4 metrics stored for the project, or a connected=False state.
+    Returns real Google Analytics 4 metrics stored for the project, with explicit connection and sync states.
+    Never reports fake metrics or false disconnected states.
     """
-    await verify_project_access(project_id, current_user, db)
+    proj = await verify_project_access(project_id, current_user, db)
+    from app.models.connections import GoogleConnection, GoogleAnalyticsProperty
     from app.models.analytics import GA4Metric
+    from app.services.google.connections_service import GoogleConnectionsService
+
+    ga_conn = await GoogleConnectionsService.get_connection_for_service(proj.organization_id, "analytics", db)
+    is_connected = bool(ga_conn and ga_conn.status == "connected" and ga_conn.access_token)
+    conn_status = ga_conn.status if ga_conn else "not_connected"
+    sync_error = ga_conn.sync_error if ga_conn else None
+
+    prop_res = await db.execute(
+        select(GoogleAnalyticsProperty).where(GoogleAnalyticsProperty.project_id == project_id)
+    )
+    mapped_prop = prop_res.scalars().first()
+
+    # Auto-mapping fallback: check if any org GA4 property matches domain or business name
+    if not mapped_prop and ga_conn:
+        avail_props_res = await db.execute(
+            select(GoogleAnalyticsProperty).where(GoogleAnalyticsProperty.connection_id == ga_conn.id)
+        )
+        for p in avail_props_res.scalars().all():
+            clean_dom = proj.domain.lower().replace("www.", "")
+            clean_name = proj.name.lower()
+            if clean_dom in p.display_name.lower() or clean_name in p.display_name.lower():
+                p.project_id = project_id
+                mapped_prop = p
+                await db.commit()
+                break
+
     res = await db.execute(
         select(GA4Metric).where(GA4Metric.project_id == project_id).order_by(GA4Metric.date.desc())
     )
     metrics = res.scalars().all()
 
+    # If connected, property mapped, but no metrics yet -> trigger initial sync automatically
+    if is_connected and mapped_prop and not metrics:
+        try:
+            from app.services.google.ga4_client import GoogleAnalytics4Client
+            token = await GoogleConnectionsService.get_valid_access_token(ga_conn, db)
+            await GoogleAnalytics4Client.sync_project_ga4_metrics(
+                project_id=project_id,
+                access_token=token,
+                property_id=mapped_prop.property_id,
+                db=db
+            )
+            res = await db.execute(
+                select(GA4Metric).where(GA4Metric.project_id == project_id).order_by(GA4Metric.date.desc())
+            )
+            metrics = res.scalars().all()
+        except Exception as e:
+            logger.warning(f"[GA4_API] Background sync on fetch failed: {e}")
+
+    # Determine reporting state
+    if not ga_conn or conn_status == "disconnected":
+        reporting_state = "not_connected"
+    elif conn_status == "expired":
+        reporting_state = "needs_reconnection"
+    elif sync_error:
+        reporting_state = "sync_failed"
+    elif not mapped_prop:
+        reporting_state = "property_not_mapped"
+    elif not metrics:
+        reporting_state = "waiting_for_data"
+    else:
+        reporting_state = "reporting_active"
+
     if not metrics:
         return {
-            "connected": False,
-            "total_users": 0,
-            "organic_users": 0,
-            "total_sessions": 0,
-            "sessions": 0,
-            "engagement_rate": 0.0,
-            "total_conversions": 0,
-            "conversions": 0,
+            "connected": is_connected,
+            "reporting_state": reporting_state,
+            "status": conn_status,
+            "error": sync_error,
+            "mapped_property": mapped_prop.display_name if mapped_prop else None,
+            "total_users": None,
+            "organic_users": None,
+            "total_sessions": None,
+            "sessions": None,
+            "engagement_rate": None,
+            "total_conversions": None,
+            "conversions": None,
             "landing_pages": [],
             "traffic_sources": []
         }
@@ -378,6 +548,10 @@ async def get_ga4_data(
     total_c = sum(m.conversions for m in metrics)
     return {
         "connected": True,
+        "reporting_state": reporting_state,
+        "status": "active" if reporting_state == "reporting_active" else conn_status,
+        "error": sync_error,
+        "mapped_property": mapped_prop.display_name if mapped_prop else None,
         "total_users": total_u,
         "organic_users": total_u,
         "total_sessions": total_s,
@@ -389,9 +563,47 @@ async def get_ga4_data(
         "traffic_sources": latest.traffic_sources or []
     }
 
+
+@router.post("/ga4/{project_id}/sync")
+async def sync_ga4_data(
+    project_id: int,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Manually triggers a fresh sync from Google Analytics 4 Data API for the project.
+    """
+    proj = await verify_project_access(project_id, current_user, db)
+    from app.models.connections import GoogleConnection, GoogleAnalyticsProperty
+    from app.services.google.connections_service import GoogleConnectionsService
+    from app.services.google.ga4_client import GoogleAnalytics4Client
+
+    ga_conn = await GoogleConnectionsService.get_connection_for_service(proj.organization_id, "analytics", db)
+    if not ga_conn or ga_conn.status not in ("connected", "expired"):
+        raise HTTPException(status_code=400, detail="Google Analytics 4 is not connected for this organization.")
+
+    prop_res = await db.execute(
+        select(GoogleAnalyticsProperty).where(GoogleAnalyticsProperty.project_id == project_id)
+    )
+    prop = prop_res.scalars().first()
+    if not prop:
+        raise HTTPException(status_code=400, detail="No GA4 property is mapped to this project. Map a property first.")
+
+    token = await GoogleConnectionsService.get_valid_access_token(ga_conn, db)
+    result = await GoogleAnalytics4Client.sync_project_ga4_metrics(
+        project_id=project_id,
+        access_token=token,
+        property_id=prop.property_id,
+        db=db
+    )
+    return result
+
+
 google_router = APIRouter(prefix="/google", tags=["Google Integrations"])
 google_router.add_api_route("/gsc/{project_id}", get_gsc_data, methods=["GET"])
+google_router.add_api_route("/gsc/{project_id}/sync", sync_gsc_data, methods=["POST"])
 google_router.add_api_route("/ga4/{project_id}", get_ga4_data, methods=["GET"])
+google_router.add_api_route("/ga4/{project_id}/sync", sync_ga4_data, methods=["POST"])
 google_router.add_api_route("/gbp/{project_id}", get_gbp_profile, methods=["GET"])
 
 

@@ -31,7 +31,9 @@ from app.schemas.connections import (
     GoogleCallbackRequest,
     PublicMapsImportRequest,
     PublicBusinessListingOut,
-    DiscoveredGBPLocation
+    DiscoveredGBPLocation,
+    MapGSCPropertyRequest,
+    MapGA4PropertyRequest
 )
 from app.services.google import GoogleOAuthCore, GoogleOAuthService
 from app.services.google.connections_service import GoogleConnectionsService
@@ -420,7 +422,7 @@ async def discover_and_sync_google_resources(
     any_synced = False
 
     for s_key, conn in conn_map.items():
-        if conn and conn.status == "connected":
+        if conn and conn.status in ("connected", "expired"):
             res = await GoogleConnectionsService.discover_and_sync_all_resources(conn, db)
             if "gbp_locations" in res:
                 discovered_gbp.extend(res.get("gbp_locations", []))
@@ -523,4 +525,166 @@ async def list_public_monitored_businesses(
         query = query.where(PublicBusinessListing.project_id == project_id)
 
     res = await db.execute(query.order_by(PublicBusinessListing.id.desc()))
+    return res.scalars().all()
+
+
+@router.post("/gsc/map-property", response_model=GoogleSearchConsolePropertyOut)
+async def map_gsc_property_to_project(
+    req: MapGSCPropertyRequest,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Maps a Google Search Console property to a specific project.
+    Strictly verifies user has project access and property belongs to organization.
+    Triggers initial metric sync immediately.
+    """
+    proj = await verify_project_access(req.project_id, current_user, db)
+    
+    query = select(GoogleSearchConsoleProperty).join(GoogleConnection).where(
+        GoogleConnection.organization_id == proj.organization_id
+    )
+    if req.property_id:
+        query = query.where(GoogleSearchConsoleProperty.id == req.property_id)
+    elif req.site_url:
+        query = query.where(GoogleSearchConsoleProperty.site_url == req.site_url)
+    else:
+        raise HTTPException(status_code=400, detail="Either property_id or site_url is required.")
+        
+    res = await db.execute(query)
+    prop = res.scalars().first()
+    if not prop:
+        raise HTTPException(status_code=404, detail="Search Console property not found in your organization.")
+
+    # Unmap any previously mapped GSC properties for this project to maintain strict 1:1 association
+    prev_mapped = await db.execute(
+        select(GoogleSearchConsoleProperty).where(GoogleSearchConsoleProperty.project_id == proj.id)
+    )
+    for p in prev_mapped.scalars().all():
+        if p.id != prop.id:
+            p.project_id = None
+
+    prop.project_id = proj.id
+    prop.is_linked = True
+    await db.commit()
+
+    # Trigger initial sync inline
+    try:
+        from app.services.google.gsc_client import GoogleSearchConsoleClient
+        conn_res = await db.execute(select(GoogleConnection).where(GoogleConnection.id == prop.connection_id))
+        conn = conn_res.scalars().first()
+        if conn and conn.status in ("connected", "expired") and conn.access_token:
+            token = await GoogleConnectionsService.get_valid_access_token(conn, db)
+            await GoogleSearchConsoleClient.sync_project_gsc_metrics(
+                project_id=proj.id,
+                access_token=token,
+                site_url=prop.site_url,
+                db=db
+            )
+    except Exception as e:
+        logger.warning(f"[GSC_MAP] Initial sync notice for project {proj.id}: {e}")
+
+    await db.refresh(prop)
+    return prop
+
+
+@router.get("/gsc/properties/{project_id}", response_model=List[GoogleSearchConsolePropertyOut])
+async def list_gsc_properties_for_project(
+    project_id: int,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Lists all Google Search Console properties discovered for the organization of this project,
+    annotating which one is mapped to this project.
+    """
+    proj = await verify_project_access(project_id, current_user, db)
+    query = (
+        select(GoogleSearchConsoleProperty)
+        .join(GoogleConnection)
+        .where(GoogleConnection.organization_id == proj.organization_id)
+        .order_by(GoogleSearchConsoleProperty.id.asc())
+    )
+    res = await db.execute(query)
+    return res.scalars().all()
+
+
+@router.post("/ga4/map-property", response_model=GoogleAnalyticsPropertyOut)
+async def map_ga4_property_to_project(
+    req: MapGA4PropertyRequest,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Maps a Google Analytics 4 property to a specific project.
+    Strictly verifies user has project access and property belongs to organization.
+    Triggers initial metric sync immediately.
+    """
+    proj = await verify_project_access(req.project_id, current_user, db)
+    
+    query = select(GoogleAnalyticsProperty).join(GoogleConnection).where(
+        GoogleConnection.organization_id == proj.organization_id
+    )
+    if req.property_id:
+        query = query.where(GoogleAnalyticsProperty.id == req.property_id)
+    elif req.ga_property_id:
+        query = query.where(GoogleAnalyticsProperty.property_id == req.ga_property_id)
+    else:
+        raise HTTPException(status_code=400, detail="Either property_id or ga_property_id is required.")
+
+    res = await db.execute(query)
+    prop = res.scalars().first()
+    if not prop:
+        raise HTTPException(status_code=404, detail="Google Analytics property not found in your organization.")
+
+    # Unmap any previously mapped GA4 properties for this project to maintain strict 1:1 association
+    prev_mapped = await db.execute(
+        select(GoogleAnalyticsProperty).where(GoogleAnalyticsProperty.project_id == proj.id)
+    )
+    for p in prev_mapped.scalars().all():
+        if p.id != prop.id:
+            p.project_id = None
+
+    prop.project_id = proj.id
+    prop.is_linked = True
+    await db.commit()
+
+    # Trigger initial sync inline
+    try:
+        from app.services.google.ga4_client import GoogleAnalytics4Client
+        conn_res = await db.execute(select(GoogleConnection).where(GoogleConnection.id == prop.connection_id))
+        conn = conn_res.scalars().first()
+        if conn and conn.status in ("connected", "expired") and conn.access_token:
+            token = await GoogleConnectionsService.get_valid_access_token(conn, db)
+            await GoogleAnalytics4Client.sync_project_ga4_metrics(
+                project_id=proj.id,
+                access_token=token,
+                property_id=prop.property_id,
+                db=db
+            )
+    except Exception as e:
+        logger.warning(f"[GA4_MAP] Initial sync notice for project {proj.id}: {e}")
+
+    await db.refresh(prop)
+    return prop
+
+
+@router.get("/ga4/properties/{project_id}", response_model=List[GoogleAnalyticsPropertyOut])
+async def list_ga4_properties_for_project(
+    project_id: int,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Lists all Google Analytics 4 properties discovered for the organization of this project,
+    annotating which one is mapped to this project.
+    """
+    proj = await verify_project_access(project_id, current_user, db)
+    query = (
+        select(GoogleAnalyticsProperty)
+        .join(GoogleConnection)
+        .where(GoogleConnection.organization_id == proj.organization_id)
+        .order_by(GoogleAnalyticsProperty.id.asc())
+    )
+    res = await db.execute(query)
     return res.scalars().all()

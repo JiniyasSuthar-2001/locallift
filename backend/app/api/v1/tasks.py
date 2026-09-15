@@ -277,3 +277,58 @@ async def delete_task(
         task_id=task_id
     )
     return {"message": "Task deleted successfully"}
+
+
+@router.get("/scheduled/{project_id}")
+async def list_scheduled_jobs(
+    project_id: int,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Lists all scheduled background jobs for a project.
+    Auto-initializes standard jobs (crawl, rank_check, gbp_sync, review_sync, gsc_sync, ga4_sync) if not present.
+    """
+    await verify_project_access(project_id, current_user, db)
+    from app.services.scheduler import JobSchedulerService
+    jobs = await JobSchedulerService.get_or_create_project_jobs(project_id, db)
+    return [
+        {
+            "id": j.id,
+            "project_id": j.project_id,
+            "job_type": j.job_type,
+            "frequency": j.frequency,
+            "status": j.status,
+            "last_run_at": j.last_run_at.isoformat() if j.last_run_at else None,
+            "next_run_at": j.next_run_at.isoformat() if j.next_run_at else None,
+            "last_result_summary": j.last_result_summary
+        }
+        for j in jobs
+    ]
+
+
+@router.post("/scheduled/{job_id}/run")
+async def run_scheduled_job_now(
+    job_id: int,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Manually triggers execution of a scheduled job, running the real background service.
+    """
+    from app.models.analytics import ScheduledJob
+    from app.services.scheduler import JobSchedulerService
+
+    res = await db.execute(select(ScheduledJob).where(ScheduledJob.id == job_id))
+    job = res.scalars().first()
+    if not job:
+        raise HTTPException(status_code=404, detail="Scheduled job not found.")
+
+    await verify_project_access(job.project_id, current_user, db)
+
+    try:
+        outcome = await JobSchedulerService.execute_job(job_id, db)
+        return {"success": True, "result": outcome}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Job execution failed: {str(e)}")
+

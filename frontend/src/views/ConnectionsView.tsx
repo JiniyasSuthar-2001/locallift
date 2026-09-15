@@ -68,6 +68,79 @@ export const ConnectionsView: React.FC = () => {
   // Selected GBP locations for import
   const [selectedLocations, setSelectedLocations] = useState<Record<string, boolean>>({});
 
+  // Property mapping state for active project
+  const [activeGscProperty, setActiveGscProperty] = useState<string | null>(null);
+  const [activeGa4Property, setActiveGa4Property] = useState<{ property_id: string; display_name: string } | null>(null);
+  const [mappingGsc, setMappingGsc] = useState<boolean>(false);
+  const [mappingGa4, setMappingGa4] = useState<boolean>(false);
+  const [selectedGscUrl, setSelectedGscUrl] = useState<string>('');
+  const [selectedGa4PropId, setSelectedGa4PropId] = useState<string>('');
+
+  useEffect(() => {
+    if (!activeProject) return;
+    const fetchMappedProperties = async () => {
+      try {
+        const [gscRes, ga4Res] = await Promise.allSettled([
+          api.get(`/google/gsc/${activeProject.id}`),
+          api.get(`/google/ga4/${activeProject.id}`)
+        ]);
+        if (gscRes.status === 'fulfilled' && gscRes.value.data?.mapped_property) {
+          setActiveGscProperty(gscRes.value.data.mapped_property.site_url);
+        }
+        if (ga4Res.status === 'fulfilled' && ga4Res.value.data?.mapped_property) {
+          setActiveGa4Property({
+            property_id: ga4Res.value.data.mapped_property.property_id,
+            display_name: ga4Res.value.data.mapped_property.display_name || ga4Res.value.data.mapped_property.property_id
+          });
+        }
+      } catch (e) {
+        console.warn('Could not load project mapped properties:', e);
+      }
+    };
+    fetchMappedProperties();
+  }, [activeProject?.id]);
+
+  const handleMapGscProperty = async (siteUrl: string) => {
+    if (!activeProject || !siteUrl) return;
+    setMappingGsc(true);
+    setErrorMsg(null);
+    try {
+      await api.post('/connections/gsc/map-property', {
+        project_id: activeProject.id,
+        site_url: siteUrl
+      });
+      setActiveGscProperty(siteUrl);
+      setSuccessMsg(`Mapped Search Console property "${siteUrl}" to ${activeProject.name}.`);
+    } catch (e: any) {
+      setErrorMsg(getErrorMessage(e, 'Failed to map Search Console property.'));
+    } finally {
+      setMappingGsc(false);
+    }
+  };
+
+  const handleMapGa4Property = async (propId: string) => {
+    if (!activeProject || !propId) return;
+    const propObj = discoveredResources?.ga4_properties?.find(p => p.property_id === propId);
+    setMappingGa4(true);
+    setErrorMsg(null);
+    try {
+      await api.post('/connections/ga4/map-property', {
+        project_id: activeProject.id,
+        property_id: propId,
+        display_name: propObj?.property_name || propId
+      });
+      setActiveGa4Property({
+        property_id: propId,
+        display_name: propObj?.property_name || propId
+      });
+      setSuccessMsg(`Mapped Google Analytics 4 property "${propObj?.property_name || propId}" to ${activeProject.name}.`);
+    } catch (e: any) {
+      setErrorMsg(getErrorMessage(e, 'Failed to map Google Analytics 4 property.'));
+    } finally {
+      setMappingGa4(false);
+    }
+  };
+
   const fetchConnectionData = async () => {
     setLoading(true);
     setErrorMsg(null);
@@ -529,6 +602,45 @@ export const ConnectionsView: React.FC = () => {
               </div>
             )}
 
+            {gscStatus.connected && (
+              <div className="space-y-2 pt-2 border-t border-slate-100">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold text-slate-700">Active Project Property:</span>
+                  {activeGscProperty ? (
+                    <span className="px-2 py-0.5 rounded-md bg-emerald-50 text-emerald-800 border border-emerald-200 text-xs font-mono font-bold truncate max-w-[200px]" title={activeGscProperty}>
+                      {activeGscProperty}
+                    </span>
+                  ) : (
+                    <span className="text-xs text-amber-600 font-medium">No property mapped</span>
+                  )}
+                </div>
+
+                {discoveredResources && (discoveredResources.gsc_properties?.length || 0) > 0 && (
+                  <div className="flex items-center gap-2 pt-1">
+                    <select
+                      value={selectedGscUrl || activeGscProperty || ''}
+                      onChange={(e) => setSelectedGscUrl(e.target.value)}
+                      className="text-xs border border-slate-200 rounded-lg p-1.5 flex-1 bg-white text-slate-800 truncate"
+                    >
+                      <option value="">-- Select discovered property --</option>
+                      {discoveredResources.gsc_properties.map((p) => (
+                        <option key={p.site_url} value={p.site_url}>
+                          {p.site_url}
+                        </option>
+                      ))}
+                    </select>
+                    <button
+                      onClick={() => handleMapGscProperty(selectedGscUrl)}
+                      disabled={mappingGsc || !selectedGscUrl || selectedGscUrl === activeGscProperty}
+                      className="px-2.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white rounded-lg text-xs font-bold whitespace-nowrap"
+                    >
+                      {mappingGsc ? 'Mapping...' : 'Map to Project'}
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
+
             {serviceErrors.search_console && (
               <div className="p-2.5 bg-rose-50 border border-rose-200 rounded-xl text-xs text-rose-700 flex items-start space-x-2">
                 <AlertCircle className="w-3.5 h-3.5 text-rose-600 shrink-0 mt-0.5" />
@@ -599,6 +711,45 @@ export const ConnectionsView: React.FC = () => {
               <div className="p-2.5 bg-slate-50 border border-slate-100 rounded-xl text-xs text-slate-600 flex items-center space-x-1.5">
                 <span className="text-slate-400 font-medium">Connected account:</span>
                 <span className="font-bold text-slate-800">{ga4Status.google_email}</span>
+              </div>
+            )}
+
+            {ga4Status.connected && (
+              <div className="space-y-2 pt-2 border-t border-slate-100">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold text-slate-700">Active Project Property:</span>
+                  {activeGa4Property ? (
+                    <span className="px-2 py-0.5 rounded-md bg-emerald-50 text-emerald-800 border border-emerald-200 text-xs font-mono font-bold truncate max-w-[200px]" title={activeGa4Property.display_name}>
+                      {activeGa4Property.display_name}
+                    </span>
+                  ) : (
+                    <span className="text-xs text-amber-600 font-medium">No property mapped</span>
+                  )}
+                </div>
+
+                {discoveredResources && (discoveredResources.ga4_properties?.length || 0) > 0 && (
+                  <div className="flex items-center gap-2 pt-1">
+                    <select
+                      value={selectedGa4PropId || activeGa4Property?.property_id || ''}
+                      onChange={(e) => setSelectedGa4PropId(e.target.value)}
+                      className="text-xs border border-slate-200 rounded-lg p-1.5 flex-1 bg-white text-slate-800 truncate"
+                    >
+                      <option value="">-- Select discovered GA4 property --</option>
+                      {discoveredResources.ga4_properties.map((p) => (
+                        <option key={p.property_id} value={p.property_id}>
+                          {p.property_name || p.property_id}
+                        </option>
+                      ))}
+                    </select>
+                    <button
+                      onClick={() => handleMapGa4Property(selectedGa4PropId)}
+                      disabled={mappingGa4 || !selectedGa4PropId || selectedGa4PropId === activeGa4Property?.property_id}
+                      className="px-2.5 py-1.5 bg-amber-600 hover:bg-amber-700 disabled:opacity-50 text-white rounded-lg text-xs font-bold whitespace-nowrap"
+                    >
+                      {mappingGa4 ? 'Mapping...' : 'Map to Project'}
+                    </button>
+                  </div>
+                )}
               </div>
             )}
 
@@ -769,7 +920,142 @@ export const ConnectionsView: React.FC = () => {
         </div>
       )}
 
-      {/* Public Google Maps Monitoring Section */}
+      {/* Discovered Search Console Properties Table */}
+      {discoveredResources && (discoveredResources.gsc_properties?.length || 0) > 0 && (
+        <div className="card-vibrant p-6 border border-slate-200/80 rounded-2xl shadow-sm bg-white space-y-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <h3 className="text-sm font-black text-slate-900 flex items-center space-x-2">
+                <Search className="w-4 h-4 text-emerald-600" />
+                <span>Discovered Search Console Properties ({discoveredResources.gsc_properties.length})</span>
+              </h3>
+              <p className="text-xs text-slate-500 mt-0.5">
+                Verified Search Console web properties available to map directly to your LocalLift projects.
+              </p>
+            </div>
+          </div>
+
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-xs">
+              <thead className="bg-slate-50 border-y border-slate-200 text-slate-600 font-bold">
+                <tr>
+                  <th className="py-2.5 px-3">Site URL</th>
+                  <th className="py-2.5 px-3">Permission Level</th>
+                  <th className="py-2.5 px-3">Active Mapping</th>
+                  <th className="py-2.5 px-3">Action</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {discoveredResources.gsc_properties.map((p) => {
+                  const isMappedToActive = activeGscProperty === p.site_url;
+                  return (
+                    <tr key={p.site_url} className="hover:bg-slate-50/60 transition-colors">
+                      <td className="py-2.5 px-3 font-bold font-mono text-slate-900 truncate max-w-sm">
+                        {p.site_url}
+                      </td>
+                      <td className="py-2.5 px-3 text-slate-600 uppercase font-mono text-[10px]">
+                        {p.permission_level || 'siteOwner'}
+                      </td>
+                      <td className="py-2.5 px-3">
+                        {isMappedToActive ? (
+                          <span className="inline-flex items-center space-x-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800">
+                            <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                            <span>Active Project ({activeProject?.name})</span>
+                          </span>
+                        ) : p.project_id ? (
+                          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-600">
+                            Mapped to Project #{p.project_id}
+                          </span>
+                        ) : (
+                          <span className="text-slate-400 italic">Unmapped</span>
+                        )}
+                      </td>
+                      <td className="py-2.5 px-3">
+                        <button
+                          onClick={() => handleMapGscProperty(p.site_url)}
+                          disabled={mappingGsc || isMappedToActive || !activeProject}
+                          className="px-3 py-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 rounded-lg text-xs font-bold disabled:opacity-40"
+                        >
+                          {isMappedToActive ? 'Mapped' : 'Map to Current Project'}
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* Discovered GA4 Properties Table */}
+      {discoveredResources && (discoveredResources.ga4_properties?.length || 0) > 0 && (
+        <div className="card-vibrant p-6 border border-slate-200/80 rounded-2xl shadow-sm bg-white space-y-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <h3 className="text-sm font-black text-slate-900 flex items-center space-x-2">
+                <BarChart3 className="w-4 h-4 text-amber-600" />
+                <span>Discovered Google Analytics 4 Properties ({discoveredResources.ga4_properties.length})</span>
+              </h3>
+              <p className="text-xs text-slate-500 mt-0.5">
+                Google Analytics 4 reporting properties available for organic conversion and visitor tracking.
+              </p>
+            </div>
+          </div>
+
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-xs">
+              <thead className="bg-slate-50 border-y border-slate-200 text-slate-600 font-bold">
+                <tr>
+                  <th className="py-2.5 px-3">Property Name</th>
+                  <th className="py-2.5 px-3">Property ID</th>
+                  <th className="py-2.5 px-3">Active Mapping</th>
+                  <th className="py-2.5 px-3">Action</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {discoveredResources.ga4_properties.map((p) => {
+                  const isMappedToActive = activeGa4Property?.property_id === p.property_id;
+                  return (
+                    <tr key={p.property_id} className="hover:bg-slate-50/60 transition-colors">
+                      <td className="py-2.5 px-3 font-bold text-slate-900">
+                        {p.property_name || `Property ${p.property_id}`}
+                      </td>
+                      <td className="py-2.5 px-3 text-slate-600 font-mono text-[11px]">
+                        {p.property_id}
+                      </td>
+                      <td className="py-2.5 px-3">
+                        {isMappedToActive ? (
+                          <span className="inline-flex items-center space-x-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800">
+                            <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                            <span>Active Project ({activeProject?.name})</span>
+                          </span>
+                        ) : p.project_id ? (
+                          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-600">
+                            Mapped to Project #{p.project_id}
+                          </span>
+                        ) : (
+                          <span className="text-slate-400 italic">Unmapped</span>
+                        )}
+                      </td>
+                      <td className="py-2.5 px-3">
+                        <button
+                          onClick={() => handleMapGa4Property(p.property_id)}
+                          disabled={mappingGa4 || isMappedToActive || !activeProject}
+                          className="px-3 py-1 bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 rounded-lg text-xs font-bold disabled:opacity-40"
+                        >
+                          {isMappedToActive ? 'Mapped' : 'Map to Current Project'}
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
       <div className="card-vibrant p-6 border border-slate-200/80 rounded-2xl shadow-sm bg-white space-y-4">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-4">
           <div className="flex items-center space-x-3">

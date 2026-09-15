@@ -118,3 +118,4 @@ class DashboardSummaryOut(BaseModel):
     top_keywords: List[Any] = []
     gbp_summary: Optional[dict] = None
     gsc_summary: Optional[dict] = None
+    ga4_summary: Optional[dict] = None

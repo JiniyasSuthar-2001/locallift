@@ -391,6 +391,7 @@ async def list_crawled_pages(
     return result.scalars().all()
 
 @router.get("/issues/{project_id}", response_model=List[SEOIssueOut])
+@router.get("/website/{project_id}/issues", response_model=List[SEOIssueOut])
 async def list_project_issues_alias(
     project_id: int,
     category: Optional[str] = None,
@@ -411,6 +412,7 @@ async def list_project_issues_alias(
 @router.get("/{project_id}/diagnostic-summary")
 @router.get("/summary/{project_id}")
 @router.get("/diagnostic-summary/{project_id}")
+@router.get("/website/{project_id}/summary")
 async def get_diagnostic_summary(
     project_id: int,
     current_user: User = Depends(get_current_user),
@@ -534,6 +536,66 @@ async def get_diagnostic_summary(
                 "status": i.status.value if hasattr(i.status, "value") else str(i.status)
             })
 
+    pillar_weights = {
+        "crawl_health": "20%",
+        "onpage_content": "20%",
+        "schema_structured_data": "25%",
+        "gbp_alignment": "15%",
+        "citations_nap": "10%",
+        "reviews_reputation": "10%"
+    }
+
+    scoring_methodology = {
+        "crawl_health": {
+            "name": "Local Crawl Health",
+            "weight": "20%",
+            "weight_fraction": 0.20,
+            "starting_score": 100,
+            "deductions": "20 points deducted per critical HTTP error or broken page.",
+            "formula": "max(0, min(100, 100 - (critical_issues * 20)))"
+        },
+        "onpage_content": {
+            "name": "Local On-Page & Geo-Content",
+            "weight": "20%",
+            "weight_fraction": 0.20,
+            "starting_score": 100,
+            "deductions": "10 points deducted per warning (missing title, missing H1, thin content, missing meta description).",
+            "formula": "max(0, min(100, 100 - (warnings * 10)))"
+        },
+        "schema_structured_data": {
+            "name": "Schema & Structured Data",
+            "weight": "25%",
+            "weight_fraction": 0.25,
+            "starting_score": 0,
+            "deductions": "100 points awarded for validated LocalBusiness Schema.org JSON-LD with phone, address, and geo coordinates; 0 if missing.",
+            "formula": "100 if has_valid_local_schema else 0"
+        },
+        "gbp_alignment": {
+            "name": "Google Business Profile Match",
+            "weight": "15%",
+            "weight_fraction": 0.15,
+            "starting_score": 100,
+            "deductions": "30 points deducted for Name mismatch, 30 points for Phone mismatch, 20 points for Address mismatch.",
+            "formula": "100 - name_penalty(30) - phone_penalty(30) - address_penalty(20)"
+        },
+        "citations_nap": {
+            "name": "Citations & Directory NAP",
+            "weight": "10%",
+            "weight_fraction": 0.10,
+            "starting_score": 0,
+            "deductions": "Calculated as percentage of directory listings with consistent NAP details across all listed directories.",
+            "formula": "(consistent_citations / total_citations) * 100"
+        },
+        "reviews_reputation": {
+            "name": "Reviews & Reputation",
+            "weight": "10%",
+            "weight_fraction": 0.10,
+            "starting_score": 0,
+            "deductions": "70% based on average star rating (up to 5.0★) plus 30% based on response rate to customer reviews.",
+            "formula": "((avg_rating / 5.0) * 70) + ((answered_reviews / total_reviews) * 30)"
+        }
+    }
+
     return {
         "project_id": project_id,
         "overall_score": latest_audit.overall_score if latest_audit else project.health_score,
@@ -543,6 +605,8 @@ async def get_diagnostic_summary(
         "opportunities": latest_audit.opportunities if latest_audit else 0,
         "passed_checks": latest_audit.passed_checks if latest_audit else 0,
         "pillar_scores": pillar_scores,
+        "pillar_weights": pillar_weights,
+        "scoring_methodology": scoring_methodology,
         "discrepancy_matrix": discrepancy_matrix,
         "gbp_status": {
             "connected": bool(gbp),
@@ -562,3 +626,4 @@ async def get_diagnostic_summary(
         },
         "issues": issues_out
     }
+

@@ -22,6 +22,7 @@ class GoogleSearchConsolePropertyOut(BaseModel):
     site_url: str
     permission_level: str
     is_linked: bool
+    project_id: Optional[int] = None
     created_at: datetime
 
     class Config:
@@ -34,10 +35,23 @@ class GoogleAnalyticsPropertyOut(BaseModel):
     display_name: str
     account_name: str
     is_linked: bool
+    project_id: Optional[int] = None
     created_at: datetime
 
     class Config:
         from_attributes = True
+
+
+class MapGSCPropertyRequest(BaseModel):
+    project_id: int
+    property_id: Optional[int] = None
+    site_url: Optional[str] = None
+
+
+class MapGA4PropertyRequest(BaseModel):
+    project_id: int
+    property_id: Optional[int] = None
+    ga_property_id: Optional[str] = None
 
 
 class DiscoveredGBPLocation(BaseModel):

@@ -100,10 +100,22 @@ export interface DashboardSummary {
     website_clicks?: number;
   };
   gsc_summary?: {
-    clicks: number;
-    impressions: number;
-    ctr: number;
-    avg_position: number;
+    connected?: boolean;
+    has_data?: boolean;
+    clicks?: number | null;
+    impressions?: number | null;
+    ctr?: number | null;
+    avg_position?: number | null;
+    status?: string;
+  };
+  ga4_summary?: {
+    connected?: boolean;
+    has_data?: boolean;
+    organic_users?: number | null;
+    sessions?: number | null;
+    engagement_rate?: number | null;
+    conversions?: number | null;
+    status?: string;
   };
 }
 
@@ -547,19 +559,21 @@ export interface GoogleAdsAccountItem {
 }
 
 export interface GoogleSearchConsoleItem {
-  id: number;
+  id?: number;
   site_url: string;
   permission_level?: string;
-  is_active: boolean;
+  is_active?: boolean;
+  project_id?: number | null;
   last_sync_at?: string;
 }
 
 export interface GoogleAnalyticsItem {
-  id: number;
+  id?: number;
   property_id: string;
   property_name?: string;
   account_name?: string;
-  is_active: boolean;
+  is_active?: boolean;
+  project_id?: number | null;
   last_sync_at?: string;
 }
 

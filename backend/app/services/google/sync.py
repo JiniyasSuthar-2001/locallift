@@ -162,6 +162,40 @@ class GBPSyncService:
                         profile.last_synced_at = datetime.now(timezone.utc)
                         synced_profiles_count += 1
 
+                    # Fetch live reviews for this location if project_id is linked
+                    if google_account.project_id:
+                        from app.models.local_seo import Review
+                        reviews_data = await client.fetch_location_reviews(acc_name, loc_name)
+                        for rev in reviews_data:
+                            existing_rev_res = await db.execute(
+                                select(Review).where(
+                                    Review.project_id == google_account.project_id,
+                                    Review.author_name == rev["author_name"],
+                                    Review.source == "Google"
+                                )
+                            )
+                            existing_rev = existing_rev_res.scalars().first()
+                            if existing_rev:
+                                existing_rev.rating = rev["rating"]
+                                existing_rev.review_text = rev["review_text"]
+                                if rev.get("response_text"):
+                                    existing_rev.response_text = rev["response_text"]
+                                    existing_rev.response_status = rev["response_status"]
+                            else:
+                                new_rev = Review(
+                                    project_id=google_account.project_id,
+                                    source="Google",
+                                    author_name=rev["author_name"],
+                                    author_photo_url=rev.get("author_photo_url"),
+                                    rating=rev["rating"],
+                                    review_text=rev.get("review_text"),
+                                    review_date=rev.get("review_date", datetime.now(timezone.utc)),
+                                    response_text=rev.get("response_text"),
+                                    response_status=rev.get("response_status", "unanswered"),
+                                    sentiment="positive" if rev["rating"] >= 4 else ("neutral" if rev["rating"] == 3 else "negative")
+                                )
+                                db.add(new_rev)
+
             # 5. If access token was refreshed during the sync, persist updated tokens
             if client.token_refreshed:
                 google_account.access_token = client.access_token

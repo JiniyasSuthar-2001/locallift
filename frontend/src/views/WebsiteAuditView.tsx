@@ -31,6 +31,7 @@ import { WebsitePage, SEOIssue } from '../types';
 import { IssueCard } from '../components/ui/IssueCard';
 import { StatusBadge } from '../components/ui/StatusBadge';
 import { EmptyState } from '../components/ui/EmptyState';
+import { MetricDetailModal, PillarDetailContext } from '../components/audit/MetricDetailModal';
 import api from '../api/client';
 
 interface DiscrepancyField {
@@ -56,6 +57,8 @@ interface DiagnosticSummary {
     citations_nap: number;
     reviews_reputation: number;
   };
+  pillar_weights?: Record<string, string>;
+  scoring_methodology?: Record<string, any>;
   discrepancy_matrix: {
     business_name: DiscrepancyField;
     phone: DiscrepancyField;
@@ -90,6 +93,8 @@ export const WebsiteAuditView: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'issues' | 'matrix' | 'pages'>('issues');
   const [severityFilter, setSeverityFilter] = useState<string>('all');
   const [categoryFilter, setCategoryFilter] = useState<string>('all');
+  const [selectedPillarContext, setSelectedPillarContext] = useState<PillarDetailContext | null>(null);
+  const [isDetailModalOpen, setIsDetailModalOpen] = useState(false);
 
   const fetchAuditData = async () => {
     if (!activeProject) return;
@@ -144,7 +149,7 @@ export const WebsiteAuditView: React.FC = () => {
 
   const schemaCount = pages.filter(p => p.schema_types && p.schema_types.length > 0).length;
 
-  // Derive Pillar Scores (from summary or active project scores)
+  // Derive authoritative Pillar Scores & dynamic backend weights
   const pillars = summary?.pillar_scores || {
     crawl_health: activeProject?.technical_score ?? null,
     onpage_content: activeProject?.onpage_score ?? null,
@@ -152,6 +157,15 @@ export const WebsiteAuditView: React.FC = () => {
     gbp_alignment: activeProject?.gbp_score ?? null,
     citations_nap: activeProject?.citations_score ?? null,
     reviews_reputation: activeProject?.reviews_score ?? null
+  };
+
+  const backendWeights = summary?.pillar_weights || {
+    crawl_health: '20%',
+    onpage_content: '20%',
+    schema_structured_data: '25%',
+    gbp_alignment: '15%',
+    citations_nap: '10%',
+    reviews_reputation: '10%'
   };
 
   const overallAuditScore = summary?.overall_score ?? activeProject?.health_score ?? null;
@@ -163,58 +177,141 @@ export const WebsiteAuditView: React.FC = () => {
     {
       id: 'crawl',
       name: 'Local Crawl Health',
-      weight: '20%',
+      weight: backendWeights.crawl_health || '20%',
       score: pillars.crawl_health,
       desc: 'HTTP status, canonicals, and indexability',
       color: 'text-indigo-600',
-      bg: 'bg-indigo-500'
+      bg: 'bg-indigo-500',
+      whatIsThis: 'Local Crawl Health audits whether search bots and regional customers can reliably crawl your pages without encountering HTTP errors, broken redirects, or canonical conflicts.',
+      whyImportant: 'Broken URLs waste search engine crawl budgets and prevent local landing pages from being indexed and surfaced in geo-targeted queries.',
+      methodology: {
+        startingScore: 100,
+        deductions: '20 points deducted per critical HTTP error or broken crawl page. Clamped between 0 and 100.',
+        formula: 'max(0, min(100, 100 - (critical_issues * 20)))'
+      }
     },
     {
       id: 'onpage',
       name: 'Local On-Page & Geo-Content',
-      weight: '20%',
+      weight: backendWeights.onpage_content || '20%',
       score: pillars.onpage_content,
       desc: 'City/suburb keywords, local H1, meta geo signals',
       color: 'text-purple-600',
-      bg: 'bg-purple-500'
+      bg: 'bg-purple-500',
+      whatIsThis: 'Local On-Page & Geo-Content evaluates primary <title> tags, <h1> headings, local meta descriptions, thin content detection, and suburban landing page coverage.',
+      whyImportant: 'Title tags and localized H1 headings are among the highest-weight on-page ranking signals for Google Local search and maps visibility.',
+      methodology: {
+        startingScore: 100,
+        deductions: '10 points deducted per on-page warning (missing title, missing H1, thin content < 250 words, missing meta description).',
+        formula: 'max(0, min(100, 100 - (warnings * 10)))'
+      }
     },
     {
       id: 'schema',
       name: 'Schema & Structured Data',
-      weight: '25%',
+      weight: backendWeights.schema_structured_data || '25%',
       score: pillars.schema_structured_data,
       desc: 'LocalBusiness JSON-LD, geo, opening hours',
       color: 'text-fuchsia-600',
-      bg: 'bg-fuchsia-500'
+      bg: 'bg-fuchsia-500',
+      whatIsThis: 'Schema & Structured Data verifies Schema.org LocalBusiness JSON-LD implementation, validating phone, address, operating hours, and geo coordinates.',
+      whyImportant: 'Google requires valid LocalBusiness JSON-LD structured data to verify physical storefront coordinates and generate rich map pins and Knowledge Graph entries.',
+      methodology: {
+        startingScore: 0,
+        deductions: '100 points awarded if valid LocalBusiness Schema entity with required attributes is detected on primary local landing pages; 0 if missing.',
+        formula: '100 if has_valid_local_schema else 0'
+      }
     },
     {
       id: 'gbp',
       name: 'Google Business Profile Match',
-      weight: '15%',
+      weight: backendWeights.gbp_alignment || '15%',
       score: pillars.gbp_alignment,
       desc: 'Cross-alignment of Name, Phone, and Address',
       color: 'text-blue-600',
-      bg: 'bg-blue-500'
+      bg: 'bg-blue-500',
+      whatIsThis: 'Google Business Profile Match cross-compares your website canonical business name, phone number, address, and website link with your connected GBP listing.',
+      whyImportant: 'Discrepancies between your website and GBP listing directly trigger suspensions or loss of ranking in the Google Local 3-Pack.',
+      methodology: {
+        startingScore: 100,
+        deductions: '30 points deducted for Business Name discrepancy, 30 points for Phone mismatch, 20 points for Address discrepancy.',
+        formula: '100 - name_penalty(30) - phone_penalty(30) - address_penalty(20)'
+      }
     },
     {
       id: 'citations',
       name: 'Citations & Directory NAP',
-      weight: '10%',
+      weight: backendWeights.citations_nap || '10%',
       score: pillars.citations_nap,
       desc: 'Consistency across top directory listings',
       color: 'text-amber-600',
-      bg: 'bg-amber-500'
+      bg: 'bg-amber-500',
+      whatIsThis: 'Citations & Directory NAP tracks your business Name, Address, and Phone consistency across external local directories (YellowPages, Yelp, Apple Maps).',
+      whyImportant: 'Consistent citations validate your physical location to search algorithms and build local domain trust.',
+      methodology: {
+        startingScore: 0,
+        deductions: 'Score equals percentage of directory listings with consistent NAP details across all listed directories.',
+        formula: '(consistent_citations / total_citations) * 100'
+      }
     },
     {
       id: 'reviews',
       name: 'Reviews & Reputation',
-      weight: '10%',
+      weight: backendWeights.reviews_reputation || '10%',
       score: pillars.reviews_reputation,
       desc: 'Review volume, velocity, and response health',
       color: 'text-emerald-600',
-      bg: 'bg-emerald-500'
+      bg: 'bg-emerald-500',
+      whatIsThis: 'Reviews & Reputation monitors your average star rating across customer reviews and how actively your business replies to customer feedback.',
+      whyImportant: 'Google officially states that responding to customer reviews boosts local ranking prominence, and ratings above 4.4★ drive higher click-through rates.',
+      methodology: {
+        startingScore: 0,
+        deductions: '70% allocated to average star rating (out of 5★) and 30% allocated to review response rate.',
+        formula: '((avg_rating / 5.0) * 70) + ((answered_reviews / total_reviews) * 30)'
+      }
     }
   ];
+
+  const handleOpenPillarDetail = (pillarId: string) => {
+    if (pillarId === 'overall') {
+      setSelectedPillarContext({
+        id: 'overall',
+        name: 'Overall Local SEO Grade',
+        score: overallAuditScore,
+        weight: '100%',
+        weightFraction: 1.0,
+        description: 'Multi-signal local SEO health score derived across 6 weighted local ranking pillars.',
+        whatIsThis: 'Overall Local SEO Grade is your comprehensive local search health score. It evaluates crawlability, on-page keywords, Schema.org JSON-LD, GBP alignment, directory citations, and review reputation.',
+        whyImportant: 'High scores across all 6 pillars correlate directly with top placement in Google Local 3-Pack and regional organic SERPs.',
+        methodology: {
+          startingScore: 100,
+          deductions: 'Calculated by taking the weighted sum across all active pillars, normalized by total active weight.',
+          formula: 'Sum(pillar_score * weight) / Sum(active_weights)'
+        },
+        pillarScores: pillars,
+        pillarWeights: backendWeights
+      });
+    } else {
+      const card = pillarCards.find((c) => c.id === pillarId);
+      if (card) {
+        setSelectedPillarContext({
+          id: card.id,
+          name: card.name,
+          score: card.score,
+          weight: card.weight,
+          weightFraction: parseFloat(card.weight) / 100,
+          description: card.desc,
+          whatIsThis: card.whatIsThis,
+          whyImportant: card.whyImportant,
+          methodology: card.methodology,
+          pillarScores: pillars,
+          pillarWeights: backendWeights
+        });
+      }
+    }
+    setIsDetailModalOpen(true);
+  };
+
 
   if (!activeProject) {
     return (
@@ -274,9 +371,16 @@ export const WebsiteAuditView: React.FC = () => {
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-4 gap-6 relative z-10">
-          {/* Health Score Gauge */}
-          <div className="flex items-center space-x-4 md:border-r md:border-white/10 pr-4">
-            <div className="w-20 h-20 rounded-2xl bg-white/10 backdrop-blur-md flex flex-col items-center justify-center border border-white/20 shrink-0">
+          {/* Health Score Gauge (Clickable Drill-down) */}
+          <div 
+            role="button"
+            tabIndex={0}
+            onClick={() => handleOpenPillarDetail('overall')}
+            onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') handleOpenPillarDetail('overall'); }}
+            className="flex items-center space-x-4 md:border-r md:border-white/10 pr-4 cursor-pointer group transition-all duration-200 hover:opacity-90"
+            title="Click to view complete scoring methodology and pillar breakdown"
+          >
+            <div className="w-20 h-20 rounded-2xl bg-white/10 backdrop-blur-md flex flex-col items-center justify-center border border-white/20 shrink-0 group-hover:border-white/40 group-hover:bg-white/15 transition-all">
               <span className="text-3xl font-black text-white leading-none">
                 {isOverallScoreAvailable ? overallAuditScore : '—'}
               </span>
@@ -285,12 +389,13 @@ export const WebsiteAuditView: React.FC = () => {
               </span>
             </div>
             <div>
-              <div className="flex items-center space-x-1.5 text-purple-300 text-xs font-bold uppercase tracking-wider">
+              <div className="flex items-center space-x-1.5 text-purple-300 text-xs font-bold uppercase tracking-wider group-hover:text-white transition-colors">
                 <Award className="w-3.5 h-3.5" />
                 <span>Overall Local SEO Grade</span>
+                <span className="text-[10px] ml-1 opacity-75">↗</span>
               </div>
               <p className="text-xs text-slate-300 mt-1 leading-snug">
-                Derived across 6 weighted local pillars including Schema JSON-LD and NAP alignment.
+                Derived across 6 weighted local pillars. Click to inspect full breakdown & methodology.
               </p>
             </div>
           </div>
@@ -341,13 +446,24 @@ export const WebsiteAuditView: React.FC = () => {
             const score = p.score;
             const isScoreAvailable = score !== null && score !== undefined;
             return (
-              <div key={p.id} className="card-vibrant p-4 space-y-3 bg-white">
+              <div 
+                key={p.id} 
+                role="button"
+                tabIndex={0}
+                onClick={() => handleOpenPillarDetail(p.id)}
+                onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') handleOpenPillarDetail(p.id); }}
+                className="card-vibrant p-4 space-y-3 bg-white cursor-pointer hover:border-purple-300 hover:shadow-md transition-all group relative"
+                title={`Click to inspect ${p.name} metrics and issues`}
+              >
                 <div className="flex items-start justify-between">
                   <div>
-                    <span className="text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-md bg-slate-100 text-slate-600 font-mono">
+                    <span className="text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-md bg-slate-100 text-slate-600 font-mono group-hover:bg-purple-50 group-hover:text-purple-700 transition-colors">
                       Weight: {p.weight}
                     </span>
-                    <h4 className="text-xs font-bold text-slate-900 mt-1.5">{p.name}</h4>
+                    <h4 className="text-xs font-bold text-slate-900 mt-1.5 flex items-center gap-1 group-hover:text-purple-700 transition-colors">
+                      {p.name}
+                      <span className="text-[11px] opacity-0 group-hover:opacity-100 transition-opacity text-purple-600 font-mono">→</span>
+                    </h4>
                   </div>
                   <div className="text-right">
                     <span className={`text-xl font-black ${
@@ -383,9 +499,14 @@ export const WebsiteAuditView: React.FC = () => {
                   />
                 </div>
 
-                <p className="text-[11px] text-slate-500 leading-tight font-medium">
-                  {p.desc}
-                </p>
+                <div className="flex items-center justify-between pt-0.5">
+                  <p className="text-[11px] text-slate-500 leading-tight font-medium">
+                    {p.desc}
+                  </p>
+                  <span className="text-[10px] font-bold text-purple-600 opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pl-2">
+                    Inspect →
+                  </span>
+                </div>
               </div>
             );
           })}
@@ -722,6 +843,15 @@ export const WebsiteAuditView: React.FC = () => {
           )}
         </div>
       )}
+
+      {/* Metric Detail Drill-Down Modal */}
+      <MetricDetailModal
+        isOpen={isDetailModalOpen}
+        onClose={() => setIsDetailModalOpen(false)}
+        context={selectedPillarContext}
+        issues={issues}
+        onSelectPillar={handleOpenPillarDetail}
+      />
     </div>
   );
 };

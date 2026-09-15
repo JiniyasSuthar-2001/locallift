@@ -8,7 +8,8 @@ import {
   ThumbsUp,
   AlertCircle,
   Filter,
-  Check
+  Check,
+  RefreshCw
 } from 'lucide-react';
 import { useProject } from '../context/ProjectContext';
 import { Review } from '../types';
@@ -20,9 +21,11 @@ export const ReviewsView: React.FC = () => {
   const { activeProject } = useProject();
   const [reviews, setReviews] = useState<Review[]>([]);
   const [loading, setLoading] = useState(false);
+  const [syncing, setSyncing] = useState(false);
   const [draftingId, setDraftingId] = useState<number | null>(null);
   const [editingReply, setEditingReply] = useState<{ [id: number]: string }>({});
   const [filterSentiment, setFilterSentiment] = useState('all');
+  const [statusMsg, setStatusMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
   const fetchReviews = async () => {
     if (!activeProject) return;
@@ -40,6 +43,25 @@ export const ReviewsView: React.FC = () => {
   useEffect(() => {
     fetchReviews();
   }, [activeProject?.id]);
+
+  const handleSyncGBPReviews = async () => {
+    if (!activeProject) return;
+    try {
+      setSyncing(true);
+      setStatusMsg(null);
+      const resp = await api.post(`/local-seo/reviews/${activeProject.id}/sync`);
+      setStatusMsg({
+        type: 'success',
+        text: `Reviews synchronized from Google Business Profile successfully (${resp.data?.synced_count ?? 0} updated/imported).`
+      });
+      await fetchReviews();
+    } catch (e: any) {
+      const detail = e.response?.data?.detail || e.message || 'Failed to sync reviews from GBP.';
+      setStatusMsg({ type: 'error', text: detail });
+    } finally {
+      setSyncing(false);
+    }
+  };
 
   const handleGenerateReply = async (reviewId: number) => {
     try {
@@ -95,27 +117,63 @@ export const ReviewsView: React.FC = () => {
         <div>
           <h1 className="text-2xl font-black text-slate-900 tracking-tight flex items-center space-x-2">
             <Star className="w-6 h-6 text-purple-600" />
-            <span>Customer Reviews & AI Reputation</span>
+            <span>Customer Reviews & Reputation</span>
           </h1>
           <p className="text-xs text-slate-500 mt-1">
             Monitor incoming customer reviews, analyze sentiment themes, and draft approved responses before publishing.
           </p>
         </div>
 
-        <div className="flex items-center space-x-2">
-          <Filter className="w-3.5 h-3.5 text-slate-400" />
-          <select
-            value={filterSentiment}
-            onChange={(e) => setFilterSentiment(e.target.value)}
-            className="bg-white border border-slate-200 rounded-xl px-3 py-1.5 text-xs font-bold text-slate-800 focus:outline-none focus:border-purple-500 cursor-pointer"
+        <div className="flex flex-wrap items-center gap-2.5 self-start">
+          <button
+            onClick={handleSyncGBPReviews}
+            disabled={syncing}
+            className="px-3.5 py-2 bg-purple-50 hover:bg-purple-100 text-purple-700 border border-purple-200 text-xs font-bold rounded-xl transition-all flex items-center space-x-1.5 disabled:opacity-50"
+            title="Fetch live reviews directly from Google Business Profile API"
           >
-            <option value="all">All Sentiments</option>
-            <option value="positive">Positive</option>
-            <option value="neutral">Neutral</option>
-            <option value="negative">Negative</option>
-          </select>
+            <RefreshCw className={`w-3.5 h-3.5 ${syncing ? 'animate-spin' : ''}`} />
+            <span>{syncing ? 'Syncing...' : 'Sync GBP Reviews'}</span>
+          </button>
+
+          <div className="flex items-center space-x-2">
+            <Filter className="w-3.5 h-3.5 text-slate-400" />
+            <select
+              value={filterSentiment}
+              onChange={(e) => setFilterSentiment(e.target.value)}
+              className="bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold text-slate-800 focus:outline-none focus:border-purple-500 cursor-pointer"
+            >
+              <option value="all">All Sentiments</option>
+              <option value="positive">Positive</option>
+              <option value="neutral">Neutral</option>
+              <option value="negative">Negative</option>
+            </select>
+          </div>
         </div>
       </div>
+
+      {/* Notifications */}
+      {statusMsg && (
+        <div
+          className={`p-3 rounded-xl border flex items-center space-x-2.5 text-xs ${
+            statusMsg.type === 'success'
+              ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
+              : 'bg-rose-50 border-rose-200 text-rose-700'
+          }`}
+        >
+          {statusMsg.type === 'success' ? (
+            <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+          ) : (
+            <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
+          )}
+          <span className="flex-1">{statusMsg.text}</span>
+          <button
+            onClick={() => setStatusMsg(null)}
+            className="font-bold opacity-60 hover:opacity-100"
+          >
+            Dismiss
+          </button>
+        </div>
+      )}
 
       {/* Overview Stat Tiles */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
@@ -125,13 +183,15 @@ export const ReviewsView: React.FC = () => {
             <span className="text-2xl font-black text-slate-900">{avgRating}</span>
             <div className="text-amber-400 text-sm">★★★★★</div>
           </div>
-          <span className="text-[11px] text-slate-500 font-medium">Across all verified reviews</span>
+          <span className="text-[11px] text-slate-500 font-medium">Across all reviews</span>
         </div>
 
         <div className="card-vibrant p-4 space-y-1">
           <span className="text-[10px] font-black uppercase tracking-wider text-slate-500">Total Reviews</span>
           <div className="text-2xl font-black text-slate-900">{totalReviews}</div>
-          <span className="text-[11px] text-purple-700 font-bold">Google Business Profile</span>
+          <span className="text-[11px] text-purple-700 font-bold">
+            {reviews.filter(r => (r.source || '').toLowerCase().includes('google')).length} Google • {reviews.filter(r => (r.source || '').toLowerCase().includes('manual')).length} Manual
+          </span>
         </div>
 
         <div className="card-vibrant p-4 space-y-1">
@@ -149,6 +209,7 @@ export const ReviewsView: React.FC = () => {
           filtered.map((rev) => {
             const hasDraft = Boolean(rev.response_text || rev.ai_draft_response || (editingReply[rev.id] !== undefined));
             const isDrafting = draftingId === rev.id;
+            const isGoogleSource = (rev.source || '').toLowerCase().includes('google');
 
             return (
               <div
@@ -162,7 +223,18 @@ export const ReviewsView: React.FC = () => {
                       {rev.author_name ? rev.author_name[0] : 'U'}
                     </div>
                     <div>
-                      <h4 className="font-extrabold text-slate-900 text-sm">{rev.author_name}</h4>
+                      <div className="flex items-center space-x-2">
+                        <h4 className="font-extrabold text-slate-900 text-sm">{rev.author_name}</h4>
+                        <span
+                          className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                            isGoogleSource
+                              ? 'bg-purple-100 text-purple-800 border border-purple-200'
+                              : 'bg-slate-100 text-slate-600 border border-slate-200'
+                          }`}
+                        >
+                          {isGoogleSource ? 'Google Business Profile' : 'Manual Entry'}
+                        </span>
+                      </div>
                       <div className="text-[11px] text-slate-400 font-medium">
                         {rev.review_date || rev.published_at ? new Date(rev.review_date || rev.published_at || '').toLocaleDateString() : 'Recent'}
                       </div>
@@ -256,9 +328,9 @@ export const ReviewsView: React.FC = () => {
             icon={Star}
             badge="No Reviews"
             title="No Reviews Found"
-            description="Sync your Google Business Profile to import and manage live customer reviews."
-            actionText="Sync Reviews"
-            actionLink="/google/gbp"
+            description="Sync your Google Business Profile to import live customer reviews, or enter manual reviews for analysis."
+            actionText="Sync GBP Reviews"
+            onAction={handleSyncGBPReviews}
           />
         )}
       </div>

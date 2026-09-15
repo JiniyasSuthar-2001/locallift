@@ -219,6 +219,63 @@ class GoogleConnectionsService:
         return summary
 
     @classmethod
+    async def get_valid_access_token(
+        cls,
+        connection: GoogleConnection,
+        db: AsyncSession
+    ) -> str:
+        """
+        Validates token freshness, automatically refreshing expired tokens using the stored refresh token.
+        Persists newly encrypted access tokens and returns the active plaintext access token.
+        Raises ValueError with user-friendly error message if token cannot be refreshed or connection is invalid.
+        """
+        if not connection or not connection.access_token:
+            raise ValueError("Google connection has no access token.")
+
+        plain_access = decrypt_token(connection.access_token)
+        plain_refresh = decrypt_token(connection.refresh_token) if connection.refresh_token else None
+        now = datetime.now(timezone.utc)
+
+        is_expired = False
+        if connection.token_expiry:
+            expiry_dt = connection.token_expiry
+            if expiry_dt.tzinfo is None:
+                expiry_dt = expiry_dt.replace(tzinfo=timezone.utc)
+            if expiry_dt <= now + timedelta(minutes=3):
+                is_expired = True
+
+        if not is_expired and plain_access:
+            return plain_access
+
+        if not plain_refresh:
+            connection.status = "expired"
+            connection.sync_error = "Google access token has expired and no refresh token is available. Please reconnect Google."
+            await db.commit()
+            raise ValueError(connection.sync_error)
+
+        try:
+            refresh_res = await GoogleOAuthCore.refresh_access_token(plain_refresh)
+            new_access_token = refresh_res.get("access_token")
+            new_expiry = refresh_res.get("token_expiry")
+
+            if not new_access_token:
+                raise ValueError("Token refresh endpoint returned no access token.")
+
+            connection.access_token = encrypt_token(new_access_token)
+            connection.token_expiry = new_expiry
+            connection.status = "connected"
+            connection.sync_error = None
+            await db.commit()
+            logger.info(f"[OAUTH_REFRESH] Successfully refreshed access token for service={connection.service} connection_id={connection.id}")
+            return new_access_token
+        except Exception as e:
+            logger.error(f"[OAUTH_REFRESH] Failed to refresh Google token for connection {connection.id}: {e}")
+            connection.status = "expired"
+            connection.sync_error = f"Google connection expired or revoked ({str(e)}). Reconnect Google to continue syncing."
+            await db.commit()
+            raise ValueError(connection.sync_error)
+
+    @classmethod
     async def discover_and_sync_all_resources(
         cls,
         connection: GoogleConnection,
@@ -231,10 +288,15 @@ class GoogleConnectionsService:
         3. Google Ads accounts (API v18)
         4. Google Analytics 4 properties
         """
-        if not connection.access_token or connection.status != "connected":
+        if not connection.access_token or connection.status not in ("connected", "expired"):
             return {"error": "No valid access token available for synchronization."}
 
-        plain_access_token = decrypt_token(connection.access_token)
+        try:
+            plain_access_token = await cls.get_valid_access_token(connection, db)
+        except Exception as e:
+            logger.warning(f"[SERVICE_DISCOVERY] Token resolution failed: {e}")
+            return {"error": str(e), "status": connection.status}
+
         plain_refresh_token = decrypt_token(connection.refresh_token) if connection.refresh_token else None
         expiry = connection.token_expiry
         granted_scopes = connection.scopes or []
@@ -244,6 +306,7 @@ class GoogleConnectionsService:
         discovered_gsc: List[Dict[str, Any]] = []
         discovered_ads: List[Dict[str, Any]] = []
         discovered_ga4: List[Dict[str, Any]] = []
+        discovery_errors: List[str] = []
 
         # 1. Discover GBP Locations (if service == business_profile or has scope)
         if service == "business_profile" or any("business.manage" in s for s in granted_scopes):
@@ -277,7 +340,9 @@ class GoogleConnectionsService:
                             "is_verified": l.get("profile", {}).get("isVerified", True)
                         })
             except Exception as e:
-                logger.warning(f"[SERVICE_DISCOVERY] GBP discovery error: {e}")
+                err_text = f"Google Business Profile discovery error: {e}"
+                logger.warning(f"[SERVICE_DISCOVERY] {err_text}")
+                discovery_errors.append(err_text)
 
         # 2. Discover Google Search Console Properties (if service == search_console or has scope)
         if service == "search_console" or any("webmasters" in s for s in granted_scopes):
@@ -295,8 +360,14 @@ class GoogleConnectionsService:
                             perm = s.get("permissionLevel", "siteOwner")
                             if url:
                                 discovered_gsc.append({"site_url": url, "permission_level": perm})
+                    else:
+                        err_text = f"Search Console discovery error: HTTP {gsc_resp.status_code}"
+                        logger.warning(f"[SERVICE_DISCOVERY] {err_text} - {gsc_resp.text[:200]}")
+                        discovery_errors.append(err_text)
             except Exception as e:
-                logger.warning(f"[SERVICE_DISCOVERY] Search Console discovery error: {e}")
+                err_text = f"Search Console discovery error: {e}"
+                logger.warning(f"[SERVICE_DISCOVERY] {err_text}")
+                discovery_errors.append(err_text)
 
         # 3. Discover Google Ads Accounts (if service == google_ads or has scope)
         if (service == "google_ads" or any("adwords" in s for s in granted_scopes)) and settings.GOOGLE_ADS_DEVELOPER_TOKEN:
@@ -319,8 +390,14 @@ class GoogleConnectionsService:
                                 "name": f"Google Ads ({cid})",
                                 "status": "ENABLED"
                             })
+                    else:
+                        err_text = f"Google Ads discovery error: HTTP {ads_resp.status_code}"
+                        logger.warning(f"[SERVICE_DISCOVERY] {err_text}")
+                        discovery_errors.append(err_text)
             except Exception as e:
-                logger.warning(f"[SERVICE_DISCOVERY] Google Ads discovery error: {e}")
+                err_text = f"Google Ads discovery error: {e}"
+                logger.warning(f"[SERVICE_DISCOVERY] {err_text}")
+                discovery_errors.append(err_text)
 
         # 4. Discover GA4 Properties (if service == analytics or has scope)
         if service == "analytics" or any("analytics" in s for s in granted_scopes):
@@ -343,8 +420,14 @@ class GoogleConnectionsService:
                                     "display_name": p_name,
                                     "account_name": acc_title
                                 })
+                    else:
+                        err_text = f"Google Analytics discovery error: HTTP {ga_resp.status_code}"
+                        logger.warning(f"[SERVICE_DISCOVERY] {err_text} - {ga_resp.text[:200]}")
+                        discovery_errors.append(err_text)
             except Exception as e:
-                logger.warning(f"[SERVICE_DISCOVERY] Google Analytics discovery error: {e}")
+                err_text = f"Google Analytics discovery error: {e}"
+                logger.warning(f"[SERVICE_DISCOVERY] {err_text}")
+                discovery_errors.append(err_text)
 
         # Idempotent persistence of discovered properties
         if discovered_gsc:
@@ -392,7 +475,12 @@ class GoogleConnectionsService:
                     ))
 
         connection.last_sync_at = datetime.now(timezone.utc)
-        connection.sync_error = None
+        if discovery_errors:
+            connection.sync_error = "; ".join(discovery_errors)
+            connection.status = "error"
+        else:
+            connection.sync_error = None
+            connection.status = "connected"
         await db.commit()
 
         return {

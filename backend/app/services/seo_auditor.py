@@ -9,6 +9,15 @@ def _normalize_phone(phone: Optional[str]) -> str:
     return re.sub(r"[^\d+]", "", phone)
 
 class SEOAuditor:
+    PILLAR_WEIGHTS = {
+        "crawl_health": 20,
+        "onpage_seo": 20,
+        "schema_local": 25,
+        "gbp_status": 15,
+        "citations_presence": 10,
+        "reviews_rating": 10
+    }
+
     @staticmethod
     def audit_pages(
         pages: List[Dict[str, Any]],
@@ -525,14 +534,24 @@ class SEOAuditor:
             response_pts = ((total_r - unanswered_r) / total_r) * 30.0
             rev_score = max(0, min(100, int(rating_pts + response_pts)))
 
+        # Configured authoritative pillar weights (sums to exactly 1.0 / 100%)
+        configured_weights = {
+            "crawl_health": 0.20,
+            "onpage_content": 0.20,
+            "schema_structured_data": 0.25,
+            "gbp_alignment": 0.15,
+            "citations_nap": 0.10,
+            "reviews_reputation": 0.10
+        }
+
         # Composite score: dynamically normalize across measured pillars only
         pillar_weights = {
-            "crawl_health": (crawl_score, 0.25),
-            "onpage_content": (onpage_score, 0.25),
-            "schema_structured_data": (schema_score, 0.25),
-            "gbp_alignment": (gbp_score, 0.15),
-            "citations_nap": (cit_score, 0.10),
-            "reviews_reputation": (rev_score, 0.10)
+            "crawl_health": (crawl_score, configured_weights["crawl_health"]),
+            "onpage_content": (onpage_score, configured_weights["onpage_content"]),
+            "schema_structured_data": (schema_score, configured_weights["schema_structured_data"]),
+            "gbp_alignment": (gbp_score, configured_weights["gbp_alignment"]),
+            "citations_nap": (cit_score, configured_weights["citations_nap"]),
+            "reviews_reputation": (rev_score, configured_weights["reviews_reputation"])
         }
 
         total_weight = 0.0
@@ -544,12 +563,65 @@ class SEOAuditor:
 
         composite_score = int(weighted_sum / total_weight) if total_weight > 0 else 0
 
+        scoring_methodology = {
+            "crawl_health": {
+                "name": "Local Crawl Health",
+                "weight": "20%",
+                "weight_fraction": 0.20,
+                "starting_score": 100,
+                "deductions": "20 points deducted per critical HTTP error or crawl failure.",
+                "formula": "max(0, min(100, 100 - (critical_count * 20)))"
+            },
+            "onpage_content": {
+                "name": "Local On-Page & Geo-Content",
+                "weight": "20%",
+                "weight_fraction": 0.20,
+                "starting_score": 100,
+                "deductions": "10 points deducted per warning (missing title, missing H1, thin content, missing meta description).",
+                "formula": "max(0, min(100, 100 - (warning_count * 10)))"
+            },
+            "schema_structured_data": {
+                "name": "Schema & Structured Data",
+                "weight": "25%",
+                "weight_fraction": 0.25,
+                "starting_score": 0,
+                "deductions": "Full 100 points awarded if valid LocalBusiness Schema.org JSON-LD entity with phone, address, and geo coordinates is present; 0 if missing.",
+                "formula": "100 if has_valid_local_schema else 0"
+            },
+            "gbp_alignment": {
+                "name": "Google Business Profile Match",
+                "weight": "15%",
+                "weight_fraction": 0.15,
+                "starting_score": 100,
+                "deductions": "30 points deducted for Name mismatch, 30 points for Phone mismatch, 20 points for Address mismatch.",
+                "formula": "100 - name_penalty(30) - phone_penalty(30) - address_penalty(20)"
+            },
+            "citations_nap": {
+                "name": "Citations & Directory NAP",
+                "weight": "10%",
+                "weight_fraction": 0.10,
+                "starting_score": 0,
+                "deductions": "Score equals percentage of directory listings with consistent NAP details across all listed directories.",
+                "formula": "(consistent_citations / total_citations) * 100"
+            },
+            "reviews_reputation": {
+                "name": "Reviews & Reputation",
+                "weight": "10%",
+                "weight_fraction": 0.10,
+                "starting_score": 0,
+                "deductions": "70% based on average star rating (up to 5.0★) plus 30% based on response rate to customer reviews.",
+                "formula": "((avg_rating / 5.0) * 70) + ((answered_reviews / total_reviews) * 30)"
+            }
+        }
+
         return {
             "score": composite_score,
             "critical": critical_count,
             "warnings": warning_count,
             "opportunities": opportunity_count,
             "passed": passed_count,
+            "pillar_weights": {k: f"{int(v * 100)}%" for k, v in configured_weights.items()},
+            "scoring_methodology": scoring_methodology,
             "pillar_scores": {
                 "crawl_health": crawl_score,
                 "onpage_content": onpage_score,

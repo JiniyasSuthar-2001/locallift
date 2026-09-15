@@ -401,17 +401,85 @@ async def get_dashboard_summary(
         "website_clicks": gbp.website_clicks if gbp else 0
     } if gbp else {"connected": False}
 
-    # Fetch latest real GSC metrics if available
+    # Fetch latest real GSC metrics & connection status
+    from app.models.connections import GoogleConnection, GoogleSearchConsoleProperty, GoogleAnalyticsProperty
+    from app.models.analytics import GA4Metric
+    from app.services.google.connections_service import GoogleConnectionsService
+
+    gsc_conn = await GoogleConnectionsService.get_connection_for_service(project.organization_id, "search_console", db)
+    gsc_prop_res = await db.execute(
+        select(GoogleSearchConsoleProperty).where(GoogleSearchConsoleProperty.project_id == project_id)
+    )
+    gsc_prop = gsc_prop_res.scalars().first()
+
     gsc_res = await db.execute(
         select(GSCMetric).where(GSCMetric.project_id == project_id).order_by(GSCMetric.date.desc())
     )
     latest_gsc = gsc_res.scalars().first()
-    gsc_summary = {
-        "clicks": latest_gsc.clicks if latest_gsc else 0,
-        "impressions": latest_gsc.impressions if latest_gsc else 0,
-        "ctr": latest_gsc.ctr if latest_gsc else 0.0,
-        "avg_position": latest_gsc.average_position if latest_gsc else 0.0
-    }
+
+    if gsc_conn and gsc_conn.status == "connected" and latest_gsc:
+        gsc_summary = {
+            "connected": True,
+            "has_data": True,
+            "clicks": latest_gsc.clicks,
+            "impressions": latest_gsc.impressions,
+            "ctr": latest_gsc.ctr,
+            "avg_position": latest_gsc.average_position
+        }
+    elif gsc_conn and gsc_conn.status == "connected":
+        gsc_summary = {
+            "connected": True,
+            "has_data": False,
+            "clicks": None,
+            "impressions": None,
+            "ctr": None,
+            "avg_position": None,
+            "status": "waiting_for_data" if gsc_prop else "needs_property_selection"
+        }
+    else:
+        gsc_summary = {
+            "connected": False,
+            "has_data": False,
+            "clicks": None,
+            "impressions": None,
+            "ctr": None,
+            "avg_position": None
+        }
+
+    # Fetch latest real GA4 metrics & connection status
+    ga_conn = await GoogleConnectionsService.get_connection_for_service(project.organization_id, "analytics", db)
+    ga4_res = await db.execute(
+        select(GA4Metric).where(GA4Metric.project_id == project_id).order_by(GA4Metric.date.desc())
+    )
+    latest_ga4 = ga4_res.scalars().first()
+
+    if ga_conn and ga_conn.status == "connected" and latest_ga4:
+        ga4_summary = {
+            "connected": True,
+            "has_data": True,
+            "organic_users": latest_ga4.organic_users,
+            "sessions": latest_ga4.sessions,
+            "engagement_rate": latest_ga4.engagement_rate,
+            "conversions": latest_ga4.conversions
+        }
+    elif ga_conn and ga_conn.status == "connected":
+        ga4_summary = {
+            "connected": True,
+            "has_data": False,
+            "organic_users": None,
+            "sessions": None,
+            "engagement_rate": None,
+            "conversions": None
+        }
+    else:
+        ga4_summary = {
+            "connected": False,
+            "has_data": False,
+            "organic_users": None,
+            "sessions": None,
+            "engagement_rate": None,
+            "conversions": None
+        }
 
     from sqlalchemy import func
     from app.models.audit import TaskStatus
@@ -456,7 +524,8 @@ async def get_dashboard_summary(
         recent_reviews=recent_reviews,
         top_keywords=top_keywords,
         gbp_summary=gbp_summary,
-        gsc_summary=gsc_summary
+        gsc_summary=gsc_summary,
+        ga4_summary=ga4_summary
     )
 
 

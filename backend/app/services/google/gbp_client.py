@@ -184,3 +184,66 @@ class GoogleBusinessProfileClient:
             parts.append(postal_code)
 
         return ", ".join(parts)
+
+    async def fetch_location_reviews(self, account_id: str, location_id: str) -> List[Dict[str, Any]]:
+        """
+        Retrieves real customer reviews for a GBP location.
+        Endpoint: GET https://mybusiness.googleapis.com/v4/{account_id}/{location_id}/reviews
+        """
+        token = await self.ensure_valid_token()
+        headers = {"Authorization": f"Bearer {token}"}
+
+        acc_str = account_id if account_id.startswith("accounts/") else f"accounts/{account_id}"
+        loc_str = location_id.split("/")[-1]
+
+        star_map = {
+            "STAR_RATING_UNSPECIFIED": 5,
+            "ONE": 1,
+            "TWO": 2,
+            "THREE": 3,
+            "FOUR": 4,
+            "FIVE": 5
+        }
+
+        reviews_list: List[Dict[str, Any]] = []
+
+        url = f"https://mybusiness.googleapis.com/v4/{acc_str}/locations/{loc_str}/reviews"
+        try:
+            async with httpx.AsyncClient(timeout=15.0) as client:
+                resp = await client.get(url, headers=headers)
+                if resp.status_code == 200:
+                    raw_reviews = resp.json().get("reviews", [])
+                    for r in raw_reviews:
+                        reviewer = r.get("reviewer", {})
+                        author = reviewer.get("displayName") or "Google Customer"
+                        avatar = reviewer.get("profilePhotoUrl")
+                        rating_raw = r.get("starRating", "FIVE")
+                        rating = star_map.get(rating_raw, 5) if isinstance(rating_raw, str) else int(rating_raw)
+                        comment = r.get("comment", "")
+                        
+                        created_raw = r.get("createTime")
+                        try:
+                            rev_dt = datetime.fromisoformat(created_raw.replace("Z", "+00:00")) if created_raw else datetime.now(timezone.utc)
+                        except Exception:
+                            rev_dt = datetime.now(timezone.utc)
+
+                        reply_obj = r.get("reviewReply", {})
+                        reply_comment = reply_obj.get("comment") if reply_obj else None
+                        response_status = "published" if reply_comment else "unanswered"
+
+                        reviews_list.append({
+                            "author_name": author,
+                            "author_photo_url": avatar,
+                            "rating": rating,
+                            "review_text": comment,
+                            "review_date": rev_dt,
+                            "response_text": reply_comment,
+                            "response_status": response_status,
+                            "source": "Google"
+                        })
+                else:
+                    logger.info(f"[GBP_REVIEWS] Reviews endpoint returned status {resp.status_code} for {loc_str}")
+        except Exception as e:
+            logger.warning(f"[GBP_REVIEWS] Failed to query reviews: {e}")
+
+        return reviews_list

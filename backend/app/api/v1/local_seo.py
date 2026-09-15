@@ -1,9 +1,12 @@
 import json
+import logging
 from typing import List, Optional
 from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
+
+logger = logging.getLogger("locallift.local_seo")
 
 from app.database import get_db
 from app.core.deps import get_current_user, verify_project_access
@@ -40,6 +43,140 @@ async def list_reviews(
 
     result = await db.execute(query.order_by(Review.review_date.desc()))
     return result.scalars().all()
+
+@router.post("/reviews/{project_id}/sync")
+async def sync_reviews_from_gbp(
+    project_id: int,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Synchronizes live customer reviews directly from the connected Google Business Profile API.
+    Preserves manual reviews, deduplicates by author/source, and updates project reviews score.
+    """
+    proj = await verify_project_access(project_id, current_user, db)
+    from app.models.gbp import GoogleAccount, GoogleBusinessProfile
+    from app.services.google.gbp_client import GoogleBusinessProfileClient
+    from app.services.google.connections_service import GoogleConnectionsService
+    from app.core.security import decrypt_token
+
+    # 1. Retrieve GBP connection or GoogleAccount for this project/org
+    gbp_conn = await GoogleConnectionsService.get_connection_for_service(proj.organization_id, "business_profile", db)
+    
+    # Also check project GoogleAccount
+    acc_res = await db.execute(select(GoogleAccount).where(GoogleAccount.project_id == project_id))
+    g_acc = acc_res.scalars().first()
+
+    if not gbp_conn and not g_acc:
+        raise HTTPException(
+            status_code=400,
+            detail="Google Business Profile is not connected for this project. Connect Google Business Profile first to sync reviews."
+        )
+
+    # Use valid access token with auto-refresh
+    if gbp_conn and gbp_conn.status in ("connected", "expired") and gbp_conn.access_token:
+        access_token = await GoogleConnectionsService.get_valid_access_token(gbp_conn, db)
+        refresh_token = decrypt_token(gbp_conn.refresh_token) if gbp_conn.refresh_token else None
+        expiry = gbp_conn.token_expiry
+    elif g_acc and g_acc.access_token:
+        access_token = decrypt_token(g_acc.access_token)
+        refresh_token = decrypt_token(g_acc.refresh_token) if g_acc.refresh_token else None
+        expiry = g_acc.token_expiry
+    else:
+        raise HTTPException(status_code=400, detail="No active GBP authorization token available to fetch reviews.")
+
+    client = GoogleBusinessProfileClient(
+        access_token=access_token,
+        refresh_token=refresh_token,
+        token_expiry=expiry
+    )
+
+    # 2. Find location resource name
+    prof_res = await db.execute(
+        select(GoogleBusinessProfile).where(
+            (GoogleBusinessProfile.google_account_id == (g_acc.id if g_acc else -1)) |
+            (GoogleBusinessProfile.business_name.ilike(f"%{proj.name}%"))
+        )
+    )
+    profile = prof_res.scalars().first()
+
+    account_id = profile.account_id if profile and profile.account_id else "accounts/default"
+    location_name = profile.location_name if profile and profile.location_name else "locations/default"
+
+    if not profile or not profile.location_name:
+        try:
+            accs = await client.list_accounts()
+            if accs:
+                account_id = accs[0].get("name", "accounts/default")
+                locs = await client.list_locations(account_id)
+                if locs:
+                    location_name = locs[0].get("name", "locations/default")
+        except Exception as e:
+            logger.warning(f"Could not discover accounts/locations for review sync: {e}")
+
+    # 3. Fetch live reviews from Google API
+    try:
+        reviews_data = await client.fetch_location_reviews(account_id, location_name)
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Google Reviews API request failed: {str(e)}")
+
+    new_count = 0
+    updated_count = 0
+
+    for rev in reviews_data:
+        existing_res = await db.execute(
+            select(Review).where(
+                Review.project_id == project_id,
+                Review.author_name == rev["author_name"],
+                Review.source == "Google"
+            )
+        )
+        existing = existing_res.scalars().first()
+
+        if existing:
+            existing.rating = rev["rating"]
+            existing.review_text = rev["review_text"]
+            if rev.get("response_text"):
+                existing.response_text = rev["response_text"]
+                existing.response_status = rev["response_status"]
+            existing.sentiment = "positive" if rev["rating"] >= 4 else ("neutral" if rev["rating"] == 3 else "negative")
+            updated_count += 1
+        else:
+            new_rev = Review(
+                project_id=project_id,
+                source="Google",
+                author_name=rev["author_name"],
+                author_photo_url=rev.get("author_photo_url"),
+                rating=rev["rating"],
+                review_text=rev.get("review_text"),
+                review_date=rev.get("review_date", datetime.now(timezone.utc)),
+                response_text=rev.get("response_text"),
+                response_status=rev.get("response_status", "unanswered"),
+                sentiment="positive" if rev["rating"] >= 4 else ("neutral" if rev["rating"] == 3 else "negative")
+            )
+            db.add(new_rev)
+            new_count += 1
+
+    # Recalculate project reviews_score
+    all_rev_res = await db.execute(select(Review).where(Review.project_id == project_id))
+    all_reviews = all_rev_res.scalars().all()
+    if all_reviews:
+        tot = len(all_reviews)
+        answered = len([r for r in all_reviews if r.response_status in ("published", "answered")])
+        avg_r = sum(r.rating for r in all_reviews) / tot
+        new_score = max(0, min(100, int(((avg_r / 5.0) * 70.0) + ((answered / tot) * 30.0))))
+        proj.reviews_score = new_score
+
+    await db.commit()
+
+    return {
+        "success": True,
+        "message": f"Successfully synchronized {len(reviews_data)} reviews from Google Business Profile.",
+        "new_reviews": new_count,
+        "updated_reviews": updated_count,
+        "total_reviews": len(all_reviews),
+        "reviews_score": proj.reviews_score
+    }
 
 @router.post("/reviews/draft-response")
 async def draft_review_response(
