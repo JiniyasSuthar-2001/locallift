@@ -2,7 +2,7 @@ import httpx
 import json
 import logging
 import re
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 from app.services.ai.base import AIProvider
 
 logger = logging.getLogger("locallift.ai.gemini")
@@ -186,3 +186,70 @@ class GeminiAIProvider(AIProvider):
 
         draft = await self._call_gemini_api(prompt=prompt, system_instruction=system_instruction)
         return draft.strip().strip('"')
+
+    async def generate_content_opportunities(self, context: Dict[str, Any]) -> List[Dict[str, Any]]:
+        """
+        Synthesizes real project context (keywords, crawled pages, GSC queries)
+        and generates high-value content opportunity recommendations via LLM.
+        """
+        system_instruction = (
+            "You are LocalLift Content Strategist. Analyze the provided project SEO signals "
+            "(business category, location, tracked keywords, crawled pages, and search queries) "
+            "and identify high-potential content opportunities for local SEO search ranking. "
+            "Return ONLY a JSON array of objects with fields: "
+            "topic (str), page_type (str), primary_keyword (str), secondary_keywords (List[str]), "
+            "search_intent (str), business_value (str), competition_level (str), target_slug (str)."
+        )
+        prompt = f"Project Context:\n{json.dumps(context, indent=2)}\n\nGenerate 3-5 distinct, targeted content opportunities based on this project's real signals."
+        
+        try:
+            raw_text = await self._call_gemini_api(prompt, system_instruction=system_instruction)
+            cleaned = re.sub(r"^```json\s*", "", raw_text.strip(), flags=re.MULTILINE)
+            cleaned = re.sub(r"^```\s*", "", cleaned.strip(), flags=re.MULTILINE)
+            parsed = json.loads(cleaned)
+            if isinstance(parsed, list):
+                return parsed
+        except Exception as e:
+            logger.warning(f"Gemini content opportunity generation error: {e}")
+
+        # Fallback to dynamic context parsing
+        biz_name = context.get("business_name", "Local Business")
+        category = context.get("category", "Services")
+        city = context.get("city", "Local Area")
+        keywords = context.get("keywords", [])
+        
+        cat_slug = category.lower().replace(" ", "-")
+        city_slug = city.lower().replace(" ", "-")
+
+        opps = []
+        if keywords:
+            for kw in keywords[:3]:
+                kw_str = kw.get("keyword", f"{category} in {city}") if isinstance(kw, dict) else str(kw)
+                kw_slug = kw_str.lower().replace(' ', '-')
+                opps.append({
+                    "topic": f"Comprehensive Guide: {kw_str.title()} in {city}",
+                    "page_type": "Service Page",
+                    "primary_keyword": kw_str,
+                    "secondary_keywords": [f"best {category} {city}", f"licensed {category}", "near me"],
+                    "search_intent": "Transactional",
+                    "search_volume": None,
+                    "search_volume_status": "Volume unavailable — connect keyword provider",
+                    "business_value": "High",
+                    "competition_level": "Medium",
+                    "target_slug": f"/services/{kw_slug}"
+                })
+        else:
+            opps.append({
+                "topic": f"Emergency {category} Services in {city}: 24/7 Response Guide",
+                "page_type": "Location Page",
+                "primary_keyword": f"{category.lower()} in {city.lower()}",
+                "secondary_keywords": [f"24/7 {category.lower()}", f"urgent {category.lower()} service"],
+                "search_intent": "Transactional",
+                "search_volume": None,
+                "search_volume_status": "Volume unavailable — connect keyword provider",
+                "business_value": "High",
+                "competition_level": "Medium",
+                "target_slug": f"/locations/{cat_slug}-{city_slug}"
+            })
+
+        return opps

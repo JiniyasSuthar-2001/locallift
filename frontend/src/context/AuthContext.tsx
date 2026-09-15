@@ -75,7 +75,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return () => {
       isMounted = false;
     };
-  }, [token]);
+  }, []);
 
   const login = async (email: string, password: string): Promise<boolean> => {
     const formData = new URLSearchParams();

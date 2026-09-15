@@ -31,3 +31,11 @@ class AIAssistantService:
             business_name=business_name,
             business_category=business_category
         )
+
+    @staticmethod
+    async def generate_content_opportunities(project_context: Dict[str, Any]) -> list:
+        """
+        Routes content opportunity generation to the active AI LLM provider.
+        """
+        provider = get_ai_provider()
+        return await provider.generate_content_opportunities(context=project_context)

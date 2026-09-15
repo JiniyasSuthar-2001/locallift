@@ -84,11 +84,27 @@ async def run_crawler_and_audit_task(project_id: int, start_url: str, max_pages:
                 "address": loc.address if loc else None
             }
 
-        # Load GBP context via GoogleAccount
+        # Load GBP context via GoogleAccount or GoogleConnection
         acc_res = await session.execute(
             select(GoogleAccount).where(GoogleAccount.project_id == project_id)
         )
         google_account = acc_res.scalars().first()
+        if not google_account:
+            from app.services.google.connections_service import GoogleConnectionsService
+            gbp_conn = await GoogleConnectionsService.get_connection_for_service(proj.organization_id, "business_profile", session)
+            if gbp_conn and gbp_conn.status in ("connected", "expired") and gbp_conn.access_token:
+                google_account = GoogleAccount(
+                    project_id=project_id,
+                    account_email=gbp_conn.account_email or f"user-{project_id}@google.com",
+                    access_token=gbp_conn.access_token,
+                    refresh_token=gbp_conn.refresh_token,
+                    token_expiry=gbp_conn.token_expiry,
+                    scopes=gbp_conn.scopes or [],
+                    is_connected=True
+                )
+                session.add(google_account)
+                await session.flush()
+
         gbp_context = None
         if google_account:
             gbp_res = await session.execute(
@@ -170,6 +186,54 @@ async def run_crawler_and_audit_task(project_id: int, start_url: str, max_pages:
                 status=IssueStatus.OPEN
             )
             session.add(issue_obj)
+
+        # Save & Sync NAP Record for NAP Consistency View
+        from app.models.local_seo import NAPRecord
+        nap_res = await session.execute(select(NAPRecord).where(NAPRecord.project_id == project_id))
+        existing_nap = nap_res.scalars().first()
+
+        loc_phone = project_context.get("phone") or (gbp_context.get("phone") if gbp_context else None) or "—"
+        loc_address = project_context.get("address") or (gbp_context.get("address") if gbp_context else None) or "—"
+        loc_name = proj.name
+
+        mismatches = []
+        consistent_count = 0
+        total_citations = len(citations)
+        for c in citations:
+            if c.nap_status == "consistent" and c.status == "verified":
+                consistent_count += 1
+            else:
+                mismatches.append({
+                    "directory": c.directory,
+                    "field": "phone" if c.phone_listed and c.phone_listed != loc_phone else "address",
+                    "expected": loc_phone if c.phone_listed and c.phone_listed != loc_phone else loc_address,
+                    "actual": c.phone_listed or c.address_listed or "Unverified Listing",
+                    "status": "mismatch"
+                })
+
+        nap_score = int((consistent_count / total_citations) * 100) if total_citations > 0 else 100
+
+        if not existing_nap:
+            session.add(NAPRecord(
+                project_id=project_id,
+                business_name=loc_name,
+                address=loc_address,
+                phone=loc_phone,
+                website_url=f"https://{proj.domain}" if proj.domain else "",
+                total_citations=total_citations,
+                consistent_citations=consistent_count,
+                nap_score=nap_score,
+                mismatches_data=mismatches
+            ))
+        else:
+            existing_nap.business_name = loc_name
+            existing_nap.address = loc_address
+            existing_nap.phone = loc_phone
+            existing_nap.total_citations = total_citations
+            existing_nap.consistent_citations = consistent_count
+            existing_nap.nap_score = nap_score
+            existing_nap.mismatches_data = mismatches
+            existing_nap.last_audited_at = datetime.now(timezone.utc)
 
         # Save & Sync Schema Records for Schema Intelligence
         import json
@@ -438,11 +502,27 @@ async def get_diagnostic_summary(
     )
     latest_audit = audit_res.scalars().first()
 
-    # 3. Google Business Profile via GoogleAccount
+    # 3. Google Business Profile via GoogleAccount or GoogleConnection
     acc_res = await db.execute(
         select(GoogleAccount).where(GoogleAccount.project_id == project_id)
     )
     google_acc = acc_res.scalars().first()
+    if not google_acc:
+        from app.services.google.connections_service import GoogleConnectionsService
+        gbp_conn = await GoogleConnectionsService.get_connection_for_service(project.organization_id, "business_profile", db)
+        if gbp_conn and gbp_conn.status in ("connected", "expired") and gbp_conn.access_token:
+            google_acc = GoogleAccount(
+                project_id=project_id,
+                account_email=gbp_conn.account_email or f"user-{project_id}@google.com",
+                access_token=gbp_conn.access_token,
+                refresh_token=gbp_conn.refresh_token,
+                token_expiry=gbp_conn.token_expiry,
+                scopes=gbp_conn.scopes or [],
+                is_connected=True
+            )
+            db.add(google_acc)
+            await db.flush()
+
     gbp = None
     if google_acc:
         gbp_res = await db.execute(

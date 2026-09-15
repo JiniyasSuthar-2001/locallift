@@ -103,6 +103,15 @@ const AppContent: React.FC = () => {
           <div className="space-y-1">
             <h3 className="text-sm font-black text-white tracking-wider">LOCALLIFT</h3>
             <p className="text-xs text-slate-400 font-medium">Restoring secure session...</p>
+            <button
+              onClick={() => {
+                localStorage.removeItem('locallift_token');
+                window.location.reload();
+              }}
+              className="mt-3 text-[11px] font-bold text-purple-400 hover:text-purple-300 underline cursor-pointer"
+            >
+              Reset Session
+            </button>
           </div>
         </div>
       </div>

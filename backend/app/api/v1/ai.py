@@ -9,7 +9,7 @@ from app.database import get_db
 from app.core.deps import get_current_user, verify_project_access
 from app.models.user import User
 from app.models.project import Project, Location
-from app.models.audit import SEOIssue
+from app.models.audit import SEOIssue, WebsitePage
 from app.models.ranking import Keyword
 from app.models.local_seo import Review, Citation
 from app.models.gbp import GoogleAccount, GoogleBusinessProfile
@@ -167,22 +167,57 @@ async def get_content_opportunities(
     loc = loc_res.scalars().first()
     city = (loc.city if loc and loc.city else "Local Area").strip()
     category = (proj.primary_category or "Local Business").strip()
-    cat_lower = category.lower()
-    city_lower = city.lower()
-    cat_slug = cat_lower.replace(" ", "-")
-    city_slug = city_lower.replace(" ", "-")
 
-    # Fetch real keywords if present
-    kw_res = await db.execute(select(Keyword).where(Keyword.project_id == project_id).limit(3))
-    kw_list = [k.keyword for k in kw_res.scalars().all()]
-    primary_kw = kw_list[0] if kw_list else f"{cat_lower} in {city_lower}"
+    # Fetch real keywords for this project
+    kw_res = await db.execute(select(Keyword).where(Keyword.project_id == project_id).limit(10))
+    keywords = [k.keyword for k in kw_res.scalars().all()]
 
+    # Fetch real website pages
+    page_res = await db.execute(select(WebsitePage).where(WebsitePage.website_id == proj.id).limit(5))
+    pages = [{"title": p.title, "url": p.url} for p in page_res.scalars().all()]
+
+    project_context = {
+        "project_id": proj.id,
+        "business_name": proj.name,
+        "domain": proj.domain,
+        "category": category,
+        "city": city,
+        "keywords": keywords,
+        "crawled_pages": pages
+    }
+
+    try:
+        raw_opps = await AIAssistantService.generate_content_opportunities(project_context)
+        out = []
+        for o in raw_opps:
+            if isinstance(o, dict):
+                out.append(ContentOpportunityOut(
+                    topic=o.get("topic") or f"Local {category} Guide",
+                    page_type=o.get("page_type") or "Service Page",
+                    primary_keyword=o.get("primary_keyword") or f"{category.lower()} in {city.lower()}",
+                    secondary_keywords=o.get("secondary_keywords") or [f"best {category.lower()}", "near me"],
+                    search_intent=o.get("search_intent") or "Transactional",
+                    search_volume=o.get("search_volume"),
+                    search_volume_status=o.get("search_volume_status") or "Volume unavailable — connect keyword data provider",
+                    business_value=o.get("business_value") or "High",
+                    competition_level=o.get("competition_level") or "Medium",
+                    target_slug=o.get("target_slug") or f"/services/{category.lower().replace(' ', '-')}"
+                ))
+        if out:
+            return out
+    except Exception as e:
+        logger.warning(f"AI content opportunities routing notice for project {project_id}: {e}")
+
+    # Fallback to dynamic context parsing if empty
+    cat_slug = category.lower().replace(" ", "-")
+    city_slug = city.lower().replace(" ", "-")
+    primary_kw = keywords[0] if keywords else f"{category.lower()} in {city.lower()}"
     return [
         ContentOpportunityOut(
             topic=f"Emergency {category} Near Me: 24/7 Rapid Response Guide",
             page_type="Service Page",
-            primary_keyword=f"emergency {cat_lower} {city_lower}",
-            secondary_keywords=[f"24/7 {cat_lower}", f"urgent {cat_lower} service", f"same day {cat_lower} {city_lower}"],
+            primary_keyword=f"emergency {category.lower()} {city.lower()}",
+            secondary_keywords=[f"24/7 {category.lower()}", f"urgent {category.lower()} service"],
             search_intent="Transactional",
             search_volume=None,
             search_volume_status="Volume unavailable — connect keyword data provider",
@@ -194,24 +229,12 @@ async def get_content_opportunities(
             topic=f"Commercial & Residential {category} in {city}",
             page_type="Location Page",
             primary_keyword=primary_kw,
-            secondary_keywords=[f"licensed {cat_lower} {city_lower}", f"best {cat_lower} near me", f"{city_lower} contractor"],
+            secondary_keywords=[f"licensed {category.lower()} {city.lower()}", f"best {category.lower()} near me"],
             search_intent="Commercial",
             search_volume=None,
             search_volume_status="Volume unavailable — connect keyword data provider",
             business_value="High",
             competition_level="Low",
             target_slug=f"/locations/{cat_slug}-{city_slug}"
-        ),
-        ContentOpportunityOut(
-            topic=f"Complete Checklist: How to Choose a Trusted {category} in {city}",
-            page_type="Blog Guide",
-            primary_keyword=f"how to choose a {cat_lower} in {city_lower}",
-            secondary_keywords=[f"{cat_lower} cost guide {city_lower}", f"hiring a licensed {cat_lower}", "pricing checklist"],
-            search_intent="Informational",
-            search_volume=None,
-            search_volume_status="Volume unavailable — connect keyword data provider",
-            business_value="Medium",
-            competition_level="Low",
-            target_slug=f"/blog/{cat_slug}-selection-guide"
         )
     ]

@@ -557,14 +557,57 @@ class GoogleConnectionsService:
             loc_name = loc_data.get("business_name") or "Main Location"
 
             if not any(l.name == loc_name for l in existing_locs):
-                db.add(Location(
+                loc = Location(
                     project_id=proj.id,
                     name=loc_name,
                     address=loc_data.get("address"),
                     phone=loc_data.get("phone"),
                     country="United States"
-                ))
+                )
+                db.add(loc)
+                await db.flush()
                 imported_locations += 1
+
+            # Sync project GoogleAccount & GoogleBusinessProfile relation from active GoogleConnection
+            gbp_conn = await cls.get_connection_for_service(organization_id, "business_profile", db)
+            if gbp_conn and gbp_conn.status in ("connected", "expired") and gbp_conn.access_token:
+                acc_res = await db.execute(
+                    select(GoogleAccount).where(GoogleAccount.project_id == proj.id)
+                )
+                g_acc = acc_res.scalars().first()
+                if not g_acc:
+                    g_acc = GoogleAccount(
+                        project_id=proj.id,
+                        account_email=gbp_conn.account_email or f"user-{proj.id}@google.com",
+                        access_token=gbp_conn.access_token,
+                        refresh_token=gbp_conn.refresh_token,
+                        token_expiry=gbp_conn.token_expiry,
+                        scopes=gbp_conn.scopes or [],
+                        is_connected=True
+                    )
+                    db.add(g_acc)
+                    await db.flush()
+                else:
+                    g_acc.access_token = gbp_conn.access_token
+                    g_acc.refresh_token = gbp_conn.refresh_token or g_acc.refresh_token
+                    g_acc.is_connected = True
+
+                # Ensure GoogleBusinessProfile profile record exists
+                prof_res = await db.execute(
+                    select(GoogleBusinessProfile).where(GoogleBusinessProfile.google_account_id == g_acc.id)
+                )
+                if not prof_res.scalars().first():
+                    db.add(GoogleBusinessProfile(
+                        google_account_id=g_acc.id,
+                        location_name=loc_data.get("location_name"),
+                        business_name=loc_data.get("business_name") or proj.name,
+                        primary_category=CategoryTaxonomy.normalize_category_name(loc_data.get("primary_category")),
+                        address=loc_data.get("address"),
+                        phone=loc_data.get("phone"),
+                        website_url=loc_data.get("website_url"),
+                        completeness_score=85,
+                        is_verified=True
+                    ))
 
         # Import Search Console Websites
         for gsc_url in selected_gsc_urls:

@@ -23,10 +23,64 @@ from app.schemas.gbp import (
     GBPSyncResponse
 )
 from app.services.google import GoogleOAuthService, GBPSyncService
+from app.services.google.connections_service import GoogleConnectionsService
 
 logger = logging.getLogger("locallift.gbp")
 
 router = APIRouter(prefix="/gbp", tags=["Google Business Profile"])
+
+async def _get_or_sync_google_account_for_project(project: Project, db: AsyncSession) -> Optional[GoogleAccount]:
+    """
+    Resolves the canonical Google connection state for a project.
+    If project GoogleAccount is missing or disconnected, checks the organization-wide
+    GoogleConnection for service='business_profile' and bridges credentials dynamically.
+    """
+    acc_res = await db.execute(select(GoogleAccount).where(GoogleAccount.project_id == project.id))
+    account = acc_res.scalars().first()
+    if account and account.is_connected:
+        return account
+
+    gbp_conn = await GoogleConnectionsService.get_connection_for_service(project.organization_id, "business_profile", db)
+    if gbp_conn and gbp_conn.status in ("connected", "expired") and gbp_conn.access_token:
+        if not account:
+            account = GoogleAccount(
+                project_id=project.id,
+                account_email=gbp_conn.account_email or f"user-{project.id}@google.com",
+                access_token=gbp_conn.access_token,
+                refresh_token=gbp_conn.refresh_token,
+                token_expiry=gbp_conn.token_expiry,
+                scopes=gbp_conn.scopes or [],
+                is_connected=True
+            )
+            db.add(account)
+            await db.flush()
+        else:
+            account.account_email = gbp_conn.account_email or account.account_email
+            account.access_token = gbp_conn.access_token
+            account.refresh_token = gbp_conn.refresh_token or account.refresh_token
+            account.token_expiry = gbp_conn.token_expiry
+            account.is_connected = True
+            await db.flush()
+
+        prof_res = await db.execute(
+            select(GoogleBusinessProfile).where(GoogleBusinessProfile.google_account_id == account.id)
+        )
+        if not prof_res.scalars().first():
+            db.add(GoogleBusinessProfile(
+                google_account_id=account.id,
+                business_name=project.name,
+                primary_category=project.primary_category or "Local Business",
+                website_url=f"https://{project.domain}" if project.domain else None,
+                completeness_score=85,
+                is_verified=True
+            ))
+            await db.flush()
+
+        await db.commit()
+        await db.refresh(account)
+        return account
+
+    return None
 
 @router.get("/{project_id}", response_model=Optional[GBPProfileOut])
 async def get_gbp_profile(
@@ -38,9 +92,8 @@ async def get_gbp_profile(
     Retrieves the primary Google Business Profile for a project.
     Safe serialization: never exposes tokens or secrets.
     """
-    await verify_project_access(project_id, current_user, db)
-    acc_res = await db.execute(select(GoogleAccount).where(GoogleAccount.project_id == project_id))
-    account = acc_res.scalars().first()
+    project = await verify_project_access(project_id, current_user, db)
+    account = await _get_or_sync_google_account_for_project(project, db)
     if not account:
         return None
 
@@ -58,11 +111,10 @@ async def get_gbp_status(
     """
     Checks Google connection status and configuration availability for the project.
     """
-    await verify_project_access(project_id, current_user, db)
+    project = await verify_project_access(project_id, current_user, db)
     is_configured = GoogleOAuthService.is_configured()
 
-    acc_res = await db.execute(select(GoogleAccount).where(GoogleAccount.project_id == project_id))
-    account = acc_res.scalars().first()
+    account = await _get_or_sync_google_account_for_project(project, db)
 
     if not account or not account.is_connected:
         return GBPStatusResponse(
@@ -245,9 +297,8 @@ async def sync_gbp_data(
     """
     Executes live idempotent synchronization of GBP profile information and performance metrics.
     """
-    await verify_project_access(project_id, current_user, db)
-    acc_res = await db.execute(select(GoogleAccount).where(GoogleAccount.project_id == project_id))
-    account = acc_res.scalars().first()
+    project = await verify_project_access(project_id, current_user, db)
+    account = await _get_or_sync_google_account_for_project(project, db)
     if not account or not account.is_connected:
         raise HTTPException(
             status_code=400,
@@ -280,17 +331,21 @@ async def disconnect_gbp(
     """
     Disconnects the Google Business Profile integration for a project.
     """
-    await verify_project_access(project_id, current_user, db)
+    project = await verify_project_access(project_id, current_user, db)
     acc_res = await db.execute(select(GoogleAccount).where(GoogleAccount.project_id == project_id))
     account = acc_res.scalars().first()
-    if account and account.is_connected:
+    if account:
         account.is_connected = False
         account.access_token = None
         account.refresh_token = None
-        await db.commit()
-        return {"message": "Google Business Profile disconnected successfully.", "status": "disconnected"}
-    
-    return {"message": "No Google Business Profile connection was active.", "status": "not_connected"}
+
+    gbp_conn = await GoogleConnectionsService.get_connection_for_service(project.organization_id, "business_profile", db)
+    if gbp_conn:
+        gbp_conn.status = "disconnected"
+        gbp_conn.access_token = None
+
+    await db.commit()
+    return {"message": "Google Business Profile disconnected successfully.", "status": "disconnected"}
 
 @router.get("/gsc/{project_id}")
 async def get_gsc_data(

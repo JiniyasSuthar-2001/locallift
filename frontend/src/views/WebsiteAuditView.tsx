@@ -668,10 +668,10 @@ export const WebsiteAuditView: React.FC = () => {
                       </div>
                     </td>
                     <td className="p-3.5 font-mono text-slate-800">
-                      {matrix?.phone?.website || summary?.gbp_status?.phone || '+1 555-0199'}
+                      {matrix?.phone?.website || summary?.gbp_status?.phone || '—'}
                     </td>
                     <td className="p-3.5 font-mono text-slate-800">
-                      {matrix?.phone?.gbp || summary?.gbp_status?.phone || '+1 555-0199'}
+                      {matrix?.phone?.gbp || summary?.gbp_status?.phone || '—'}
                     </td>
                     <td className="p-3.5">
                       {matrix?.phone?.citations_mismatches ? (
@@ -708,10 +708,10 @@ export const WebsiteAuditView: React.FC = () => {
                       </div>
                     </td>
                     <td className="p-3.5 text-slate-800">
-                      {matrix?.address?.website || summary?.gbp_status?.address || '123 Business Way, Suite 100'}
+                      {matrix?.address?.website || summary?.gbp_status?.address || '—'}
                     </td>
                     <td className="p-3.5 text-slate-800">
-                      {matrix?.address?.gbp || summary?.gbp_status?.address || '123 Business Way, Suite 100'}
+                      {matrix?.address?.gbp || summary?.gbp_status?.address || '—'}
                     </td>
                     <td className="p-3.5">
                       {matrix?.address?.citations_mismatches ? (
@@ -783,11 +783,27 @@ export const WebsiteAuditView: React.FC = () => {
       {activeTab === 'pages' && (
         <div className="card-vibrant overflow-hidden">
           {pages.length > 0 ? (
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-xs text-slate-700">
-                <thead className="bg-slate-50 text-slate-500 uppercase text-[10px] font-bold tracking-wider border-b border-slate-100">
-                  <tr>
-                    <th className="p-3.5">URL Path</th>
+            <div>
+              <div className="p-4 bg-slate-50/70 border-b border-slate-100 flex items-center justify-between">
+                <span className="text-xs font-bold text-slate-800">
+                  Crawled Pages ({pages.length})
+                </span>
+                {(() => {
+                  const validTimes = pages.map((p) => p.load_time_ms).filter(Boolean);
+                  const avgTime = validTimes.length ? Math.round(validTimes.reduce((a, b) => a + b, 0) / validTimes.length) : null;
+                  return avgTime ? (
+                    <span className="inline-flex items-center space-x-1.5 px-3 py-1 rounded-full text-xs font-bold bg-purple-50 text-purple-800 border border-purple-200">
+                      <span>Avg Page Speed:</span>
+                      <span className="font-mono text-purple-900 font-extrabold">{avgTime} ms</span>
+                    </span>
+                  ) : null;
+                })()}
+              </div>
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs text-slate-700">
+                  <thead className="bg-slate-50 text-slate-500 uppercase text-[10px] font-bold tracking-wider border-b border-slate-100">
+                    <tr>
+                      <th className="p-3.5">URL Path</th>
                     <th className="p-3.5">Status</th>
                     <th className="p-3.5">Title Tag</th>
                     <th className="p-3.5">Schema.org Types</th>
@@ -831,6 +847,7 @@ export const WebsiteAuditView: React.FC = () => {
                 </tbody>
               </table>
             </div>
+          </div>
           ) : (
             <EmptyState
               icon={Globe}

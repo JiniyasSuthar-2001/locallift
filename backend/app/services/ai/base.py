@@ -48,3 +48,11 @@ class AIProvider(ABC):
         Generates a tailored response that directly references the actual customer review text.
         """
         pass
+
+    @abstractmethod
+    async def generate_content_opportunities(self, context: Dict[str, Any]) -> List[Dict[str, Any]]:
+        """
+        Synthesizes real project context (keywords, crawled pages, GSC queries)
+        and generates high-value content opportunity recommendations.
+        """
+        pass
