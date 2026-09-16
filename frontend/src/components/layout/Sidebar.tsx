@@ -78,6 +78,7 @@ export const Sidebar: React.FC = () => {
         { name: 'Team Directory', path: '/team', icon: Users2 },
         { name: 'Templates Hub', path: '/templates', icon: FileCode2, badge: 'New' },
         { name: 'Executive Reports', path: '/reports', icon: FileText },
+        { name: 'Integrations & APIs', path: '/connections', icon: Layers },
         { name: 'Settings', path: '/settings', icon: Settings },
       ]
     }

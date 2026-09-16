@@ -61,7 +61,7 @@ const AuthenticatedApp: React.FC = () => {
             <Route path="google/gsc" element={<GSCView />} />
             <Route path="google/ga4" element={<GA4View />} />
             <Route path="connections" element={<ConnectionsView />} />
-            <Route path="integrations" element={<ConnectionsView />} />
+            <Route path="integrations" element={<Navigate to="/connections" replace />} />
             <Route path="integrations/google/callback" element={<GoogleCallbackView />} />
 
             {/* Rankings */}

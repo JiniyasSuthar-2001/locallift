@@ -181,6 +181,7 @@ async def startup_event():
     import app.models  # noqa: F401
     from app.core.migrations import run_db_migrations
     from app.services.scheduler import start_scheduler
+    settings.validate_production_security()
     await asyncio.to_thread(run_db_migrations)
     start_scheduler()
 

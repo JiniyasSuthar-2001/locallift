@@ -26,7 +26,12 @@ export const Header: React.FC<HeaderProps> = ({ onOpenAI }) => {
 
   // Derive page title from path
   const getPageTitle = () => {
-    switch (location.pathname) {
+    const path = location.pathname;
+
+    if (path.startsWith('/projects/')) return 'Project Details';
+    if (path.startsWith('/team/')) return 'Team Member Profile';
+
+    switch (path) {
       case '/':
         return 'Overview Dashboard';
       case '/projects':
@@ -39,6 +44,13 @@ export const Header: React.FC<HeaderProps> = ({ onOpenAI }) => {
         return 'Local SEO Signals Audit';
       case '/google/gbp':
         return 'Google Business Profile Hub';
+      case '/google/gsc':
+        return 'Google Search Console Telemetry';
+      case '/google/ga4':
+        return 'Google Analytics 4 Intelligence';
+      case '/connections':
+      case '/integrations':
+        return 'Integrations & API Connections';
       case '/audits/website':
         return 'Technical Website Audit';
       case '/local/reviews':
@@ -57,6 +69,8 @@ export const Header: React.FC<HeaderProps> = ({ onOpenAI }) => {
         return 'SEO Task Operations';
       case '/team':
         return 'Team Directory';
+      case '/agency/clients':
+        return 'Agency Clients Directory';
       case '/templates':
         return 'Templates Hub';
       case '/reports':
