@@ -15,7 +15,7 @@ class Project(Base):
     domain = Column(String(255), nullable=False)
     primary_category = Column(String(255), default="Local Business")
     additional_categories = Column(JSON, default=list)
-    country = Column(String(50), default="United States")
+    country = Column(String(50), nullable=True, default=None)
     health_score = Column(Integer, nullable=True, default=None)
     
     # Detailed sub-scores
@@ -63,7 +63,7 @@ class Location(Base):
     city = Column(String(100), nullable=True)
     state = Column(String(100), nullable=True)
     postal_code = Column(String(20), nullable=True)
-    country = Column(String(100), default="United States")
+    country = Column(String(100), nullable=True, default=None)
     phone = Column(String(50), nullable=True)
     latitude = Column(Float, nullable=True)
     longitude = Column(Float, nullable=True)

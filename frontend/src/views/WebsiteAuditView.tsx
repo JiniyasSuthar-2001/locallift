@@ -23,7 +23,12 @@ import {
   ArrowRight,
   Database,
   Layers,
-  Award
+  Award,
+  Download,
+  Code,
+  Info,
+  ChevronLeft,
+  ChevronRight
 } from 'lucide-react';
 import { NavLink } from 'react-router-dom';
 import { useProject } from '../context/ProjectContext';
@@ -88,29 +93,56 @@ export const WebsiteAuditView: React.FC = () => {
   const [pages, setPages] = useState<WebsitePage[]>([]);
   const [issues, setIssues] = useState<SEOIssue[]>([]);
   const [summary, setSummary] = useState<DiagnosticSummary | null>(null);
+  const [canonicalData, setCanonicalData] = useState<any>(null);
+
   const [loading, setLoading] = useState(false);
   const [isCrawling, setIsCrawling] = useState(false);
+  const [activeJobId, setActiveJobId] = useState<number | null>(null);
+  const [jobProgress, setJobProgress] = useState<number>(0);
+  const [jobStage, setJobStage] = useState<string>('');
+  const [auditError, setAuditError] = useState<string | null>(null);
+
   const [activeTab, setActiveTab] = useState<'issues' | 'matrix' | 'pages'>('issues');
   const [severityFilter, setSeverityFilter] = useState<string>('all');
   const [categoryFilter, setCategoryFilter] = useState<string>('all');
+
+  // Modals
   const [selectedPillarContext, setSelectedPillarContext] = useState<PillarDetailContext | null>(null);
   const [isDetailModalOpen, setIsDetailModalOpen] = useState(false);
+  const [isSchemaModalOpen, setIsSchemaModalOpen] = useState(false);
+  const [isChecksModalOpen, setIsChecksModalOpen] = useState(false);
+  const [schemaModalTab, setSchemaModalTab] = useState<'summary' | 'types' | 'pages' | 'raw'>('summary');
+  const [selectedRawJson, setSelectedRawJson] = useState<string>('');
+
+  // Pagination & Filter for Pages
+  const [pageSearchQuery, setPageSearchQuery] = useState('');
+  const [currentPage, setCurrentPage] = useState(1);
+  const pageSize = 20;
 
   const fetchAuditData = async () => {
     if (!activeProject) return;
     try {
       setLoading(true);
-      const [pagesResp, issuesResp, summaryResp] = await Promise.allSettled([
+      setAuditError(null);
+      const [pagesResp, issuesResp, summaryResp, canonicalResp] = await Promise.allSettled([
         api.get(`/audits/pages/${activeProject.id}`),
         api.get(`/audits/issues/${activeProject.id}`),
-        api.get(`/audits/${activeProject.id}/diagnostic-summary`)
+        api.get(`/audits/${activeProject.id}/diagnostic-summary`),
+        api.get(`/audits/${activeProject.id}/canonical`)
       ]);
 
       if (pagesResp.status === 'fulfilled') setPages(pagesResp.value.data || []);
       if (issuesResp.status === 'fulfilled') setIssues(issuesResp.value.data || []);
       if (summaryResp.status === 'fulfilled') setSummary(summaryResp.value.data);
-    } catch (err) {
+      if (canonicalResp.status === 'fulfilled') setCanonicalData(canonicalResp.value.data);
+
+      const failures = [pagesResp, issuesResp, summaryResp, canonicalResp].filter(r => r.status === 'rejected');
+      if (failures.length === 4) {
+        setAuditError('Failed to load website audit metrics from backend server.');
+      }
+    } catch (err: any) {
       console.error('Failed to load audit data:', err);
+      setAuditError('Failed to load website audit metrics.');
     } finally {
       setLoading(false);
     }
@@ -120,20 +152,95 @@ export const WebsiteAuditView: React.FC = () => {
     fetchAuditData();
   }, [activeProject?.id]);
 
+  useEffect(() => {
+    if (!activeJobId) return;
+
+    const interval = setInterval(async () => {
+      try {
+        const resp = await api.get(`/audits/jobs/${activeJobId}`);
+        const job = resp.data;
+        setJobProgress(job.progress || 0);
+        setJobStage(job.current_stage || 'Processing...');
+
+        if (job.status === 'completed' || job.status === 'completed_with_errors') {
+          clearInterval(interval);
+          setActiveJobId(null);
+          setIsCrawling(false);
+          await fetchAuditData();
+          await refreshDashboard();
+        } else if (job.status === 'failed' || job.status === 'cancelled' || job.status === 'blocked_by_robots' || job.status === 'blocked_by_protection') {
+          clearInterval(interval);
+          setActiveJobId(null);
+          setIsCrawling(false);
+          setAuditError(job.error_message || `Audit crawl stopped: ${job.current_stage}`);
+        }
+      } catch (err: any) {
+        console.error('Job status polling error:', err);
+      }
+    }, 2000);
+
+    return () => clearInterval(interval);
+  }, [activeJobId]);
+
   const handleTriggerCrawl = async () => {
     if (!activeProject) return;
     try {
       setIsCrawling(true);
-      await api.post(`/audits/crawl/${activeProject.id}`, {
+      setAuditError(null);
+      setJobProgress(5);
+      setJobStage('Initiating crawl request...');
+
+      const resp = await api.post(`/audits/crawl/${activeProject.id}`, {
         url: `https://${activeProject.domain}`,
-        max_pages: 15
+        max_pages: 20,
+        respect_robots: true
       });
-      await fetchAuditData();
-      await refreshDashboard();
-    } catch (err) {
+
+      const jobId = resp.data?.job_id;
+      if (jobId) {
+        setActiveJobId(jobId);
+      } else {
+        await fetchAuditData();
+        await refreshDashboard();
+        setIsCrawling(false);
+      }
+    } catch (err: any) {
       console.error('Crawl execution failed:', err);
-    } finally {
+      const msg = err.response?.data?.detail || err.message || 'Crawl execution failed.';
+      setAuditError(msg);
       setIsCrawling(false);
+    }
+  };
+
+  const handleDownloadPDF = async () => {
+    if (!activeProject) return;
+    try {
+      const response = await api.get(`/reports/${activeProject.id}/pdf`, { responseType: 'blob' });
+      const url = window.URL.createObjectURL(new Blob([response.data]));
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', `SEO_Audit_Report_${activeProject.domain}.pdf`);
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+    } catch (e) {
+      console.error('PDF download error:', e);
+    }
+  };
+
+  const handleDownloadXLSX = async () => {
+    if (!activeProject) return;
+    try {
+      const response = await api.get(`/reports/${activeProject.id}/xlsx`, { responseType: 'blob' });
+      const url = window.URL.createObjectURL(new Blob([response.data]));
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', `Master_SEO_Audit_${activeProject.domain}.xlsx`);
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+    } catch (e) {
+      console.error('XLSX download error:', e);
     }
   };
 
@@ -147,9 +254,25 @@ export const WebsiteAuditView: React.FC = () => {
     return true;
   });
 
-  const schemaCount = pages.filter(p => p.schema_types && p.schema_types.length > 0).length;
+  // Canonical Result Values
+  const analyzedPages = canonicalData?.analyzed_pages ?? pages.length ?? 0;
+  const evaluatedRules = canonicalData?.evaluated_rules ?? 14;
+  const totalEvaluatedChecks = canonicalData?.total_evaluated_checks ?? (analyzedPages * evaluatedRules);
+  const scoreAvailable = canonicalData?.score_available ?? (analyzedPages > 0);
+  const healthScore = scoreAvailable ? (canonicalData?.health_score ?? activeProject?.health_score ?? null) : null;
+  const schemaSummary = canonicalData?.schema_summary || {
+    pages_scanned: analyzedPages,
+    pages_with_schema: 0,
+    pages_without_schema: analyzedPages,
+    total_schema_instances: 0,
+    unique_schema_types: 0,
+    complete_entities: 0,
+    incomplete_entities: 0,
+    potential_mismatches: 0,
+    detected_types: []
+  };
 
-  // Derive authoritative Pillar Scores & dynamic backend weights
+  // Derive Pillar Scores
   const pillars = summary?.pillar_scores || {
     crawl_health: activeProject?.technical_score ?? null,
     onpage_content: activeProject?.onpage_score ?? null,
@@ -168,9 +291,6 @@ export const WebsiteAuditView: React.FC = () => {
     reviews_reputation: '10%'
   };
 
-  const overallAuditScore = summary?.overall_score ?? activeProject?.health_score ?? null;
-  const isOverallScoreAvailable = overallAuditScore !== null && overallAuditScore !== undefined;
-
   const matrix = summary?.discrepancy_matrix;
 
   const pillarCards = [
@@ -183,7 +303,7 @@ export const WebsiteAuditView: React.FC = () => {
       color: 'text-indigo-600',
       bg: 'bg-indigo-500',
       whatIsThis: 'Local Crawl Health audits whether search bots and regional customers can reliably crawl your pages without encountering HTTP errors, broken redirects, or canonical conflicts.',
-      whyImportant: 'Broken URLs waste search engine crawl budgets and prevent local landing pages from being indexed and surfaced in geo-targeted queries.',
+      whyImportant: 'Broken URLs waste search engine crawl budgets and prevent local landing pages from being indexed in geo-targeted queries.',
       methodology: {
         startingScore: 100,
         deductions: '20 points deducted per critical HTTP error or broken crawl page. Clamped between 0 and 100.',
@@ -215,10 +335,10 @@ export const WebsiteAuditView: React.FC = () => {
       color: 'text-fuchsia-600',
       bg: 'bg-fuchsia-500',
       whatIsThis: 'Schema & Structured Data verifies Schema.org LocalBusiness JSON-LD implementation, validating phone, address, operating hours, and geo coordinates.',
-      whyImportant: 'Google requires valid LocalBusiness JSON-LD structured data to verify physical storefront coordinates and generate rich map pins and Knowledge Graph entries.',
+      whyImportant: 'Google requires valid LocalBusiness JSON-LD structured data to verify physical storefront coordinates and generate rich map pins.',
       methodology: {
         startingScore: 0,
-        deductions: '100 points awarded if valid LocalBusiness Schema entity with required attributes is detected on primary local landing pages; 0 if missing.',
+        deductions: '100 points awarded if valid LocalBusiness Schema entity with required attributes is detected; 0 if missing.',
         formula: '100 if has_valid_local_schema else 0'
       }
     },
@@ -277,7 +397,7 @@ export const WebsiteAuditView: React.FC = () => {
       setSelectedPillarContext({
         id: 'overall',
         name: 'Overall Local SEO Grade',
-        score: overallAuditScore,
+        score: healthScore,
         weight: '100%',
         weightFraction: 1.0,
         description: 'Multi-signal local SEO health score derived across 6 weighted local ranking pillars.',
@@ -312,6 +432,36 @@ export const WebsiteAuditView: React.FC = () => {
     setIsDetailModalOpen(true);
   };
 
+  // Crawled Pages Pagination & Filtering
+  const filteredPagesList = pages.filter((p) => {
+    if (!pageSearchQuery) return true;
+    const q = pageSearchQuery.toLowerCase();
+    return (
+      (p.url && p.url.toLowerCase().includes(q)) ||
+      (p.title && p.title.toLowerCase().includes(q)) ||
+      (p.status_code && String(p.status_code).includes(q))
+    );
+  });
+
+  const totalPagesCount = Math.ceil(filteredPagesList.length / pageSize) || 1;
+  const paginatedPages = filteredPagesList.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+
+  const renderStatusBadge = (status: string) => {
+    const s = (status || '').toLowerCase();
+    if (s.includes('supported')) {
+      return <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-800 border border-emerald-200">Supported</span>;
+    }
+    if (s.includes('detected') || s.includes('parsed') || s.includes('recognized')) {
+      return <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-50 text-blue-800 border border-blue-200">{status}</span>;
+    }
+    if (s.includes('partial') || s.includes('incomplete')) {
+      return <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-50 text-amber-800 border border-amber-200">{status}</span>;
+    }
+    if (s.includes('mismatch')) {
+      return <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-50 text-rose-800 border border-rose-200">{status}</span>;
+    }
+    return <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-700 border border-slate-200">{status || 'Unable to Verify'}</span>;
+  };
 
   if (!activeProject) {
     return (
@@ -335,28 +485,44 @@ export const WebsiteAuditView: React.FC = () => {
             </div>
             <div>
               <h1 className="text-2xl font-black text-slate-900 tracking-tight">
-                Local Website & Local SEO Audit
+                Local Website & Technical Audit
               </h1>
               <p className="text-xs text-slate-500 mt-0.5">
-                Multi-signal local audit verifying on-page NAP consistency, Schema.org LocalBusiness JSON-LD, GBP alignment, and suburban landing pages for <span className="font-semibold text-slate-700">{activeProject.domain}</span>.
+                Canonical audit result for <span className="font-semibold text-slate-700">{activeProject.domain}</span> &bull; {analyzedPages} analyzed pages &bull; {evaluatedRules} evaluated rules &bull; {totalEvaluatedChecks} total checks.
               </p>
             </div>
           </div>
         </div>
 
-        <div className="flex items-center space-x-2.5 self-start shrink-0">
-          <NavLink
-            to="/templates"
-            className="flex items-center space-x-1.5 px-4 py-2.5 bg-white border border-slate-200 hover:border-purple-300 text-slate-700 hover:text-purple-700 rounded-xl text-xs font-bold shadow-sm transition-all"
+        <div className="flex flex-wrap items-center gap-2 self-start shrink-0">
+          <button
+            onClick={() => setIsChecksModalOpen(true)}
+            className="flex items-center space-x-1.5 px-3.5 py-2 bg-white border border-slate-200 hover:border-purple-300 text-slate-700 hover:text-purple-700 rounded-xl text-xs font-bold shadow-sm transition-all"
           >
-            <FileCode2 className="w-4 h-4 text-purple-600" />
-            <span>Local SEO Templates</span>
-          </NavLink>
+            <Info className="w-4 h-4 text-purple-600" />
+            <span>Checks Performed ({totalEvaluatedChecks})</span>
+          </button>
+
+          <button
+            onClick={handleDownloadPDF}
+            className="flex items-center space-x-1.5 px-3.5 py-2 bg-white border border-slate-200 hover:border-purple-300 text-slate-700 hover:text-purple-700 rounded-xl text-xs font-bold shadow-sm transition-all"
+          >
+            <Download className="w-4 h-4 text-purple-600" />
+            <span>Download PDF</span>
+          </button>
+
+          <button
+            onClick={handleDownloadXLSX}
+            className="flex items-center space-x-1.5 px-3.5 py-2 bg-white border border-slate-200 hover:border-purple-300 text-slate-700 hover:text-purple-700 rounded-xl text-xs font-bold shadow-sm transition-all"
+          >
+            <FileText className="w-4 h-4 text-emerald-600" />
+            <span>Export Master XLSX</span>
+          </button>
 
           <button
             onClick={handleTriggerCrawl}
             disabled={isCrawling}
-            className="flex items-center space-x-2 px-5 py-2.5 btn-vibrant-primary rounded-xl text-xs font-bold shadow-md transition-all disabled:opacity-50"
+            className="flex items-center space-x-2 px-4 py-2 btn-vibrant-primary rounded-xl text-xs font-bold shadow-md transition-all disabled:opacity-50"
           >
             <Play className={`w-4 h-4 fill-current ${isCrawling ? 'animate-spin' : ''}`} />
             <span>{isCrawling ? 'Auditing Local Signals...' : 'Run Local Audit'}</span>
@@ -364,14 +530,52 @@ export const WebsiteAuditView: React.FC = () => {
         </div>
       </div>
 
-      {/* Top Banner: Overall Score & Quick Local Stats */}
+      {/* Active Job Progress Banner */}
+      {isCrawling && (
+        <div className="card-vibrant p-4 bg-purple-900 text-white rounded-2xl shadow-md border-0 space-y-2 animate-pulse">
+          <div className="flex items-center justify-between text-xs font-bold">
+            <div className="flex items-center space-x-2">
+              <RotateCw className="w-4 h-4 animate-spin text-purple-300" />
+              <span>{jobStage || 'Auditing Local Website & Building Link Graph...'}</span>
+            </div>
+            <span className="font-mono text-purple-200">{Math.round(jobProgress)}%</span>
+          </div>
+          <div className="w-full bg-white/20 rounded-full h-2 overflow-hidden">
+            <div
+              className="bg-emerald-400 h-2 rounded-full transition-all duration-300"
+              style={{ width: `${Math.max(5, Math.min(100, jobProgress))}%` }}
+            />
+          </div>
+        </div>
+      )}
+
+      {/* Error Alert Banner */}
+      {auditError && (
+        <div className="p-4 bg-rose-50 border border-rose-200 text-rose-800 rounded-2xl flex items-start justify-between space-x-3 shadow-sm">
+          <div className="flex items-start space-x-3">
+            <AlertTriangle className="w-5 h-5 text-rose-600 shrink-0 mt-0.5" />
+            <div>
+              <h4 className="text-xs font-extrabold uppercase tracking-wider text-rose-900">Audit Operation Error</h4>
+              <p className="text-xs mt-0.5 font-medium">{auditError}</p>
+            </div>
+          </div>
+          <button
+            onClick={handleTriggerCrawl}
+            className="px-3 py-1.5 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-bold shadow-xs shrink-0 transition-all cursor-pointer"
+          >
+            Retry Audit
+          </button>
+        </div>
+      )}
+
+      {/* Top Banner: Overall Score & Canonical Totals */}
       <div className="card-vibrant p-5 bg-gradient-to-r from-purple-900 via-indigo-950 to-slate-900 text-white rounded-2xl relative overflow-hidden shadow-lg border-0">
         <div className="absolute right-0 top-0 bottom-0 opacity-10 pointer-events-none flex items-center pr-8">
           <ShieldCheck className="w-64 h-64 text-white" />
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-4 gap-6 relative z-10">
-          {/* Health Score Gauge (Clickable Drill-down) */}
+          {/* Health Score Gauge */}
           <div 
             role="button"
             tabIndex={0}
@@ -382,53 +586,132 @@ export const WebsiteAuditView: React.FC = () => {
           >
             <div className="w-20 h-20 rounded-2xl bg-white/10 backdrop-blur-md flex flex-col items-center justify-center border border-white/20 shrink-0 group-hover:border-white/40 group-hover:bg-white/15 transition-all">
               <span className="text-3xl font-black text-white leading-none">
-                {isOverallScoreAvailable ? overallAuditScore : '—'}
+                {scoreAvailable && healthScore !== null ? healthScore : '—'}
               </span>
               <span className="text-[10px] font-bold text-purple-200 mt-1 uppercase tracking-wider">
-                {isOverallScoreAvailable ? '/ 100' : 'Awaiting Audit'}
+                {scoreAvailable && healthScore !== null ? '/ 100' : 'Not Yet Scored'}
               </span>
             </div>
             <div>
               <div className="flex items-center space-x-1.5 text-purple-300 text-xs font-bold uppercase tracking-wider group-hover:text-white transition-colors">
                 <Award className="w-3.5 h-3.5" />
-                <span>Overall Local SEO Grade</span>
+                <span>Health Score</span>
                 <span className="text-[10px] ml-1 opacity-75">↗</span>
               </div>
               <p className="text-xs text-slate-300 mt-1 leading-snug">
-                Derived across 6 weighted local pillars. Click to inspect full breakdown & methodology.
+                {scoreAvailable && healthScore !== null ? `Actual Score: ${healthScore}/100` : 'Not Yet Scored — Awaiting Crawl'}
               </p>
             </div>
           </div>
 
-          {/* Metric 1 */}
+          {/* Metric 1: Analyzed Pages */}
           <div className="space-y-1">
-            <span className="text-[11px] font-bold uppercase tracking-wider text-purple-200/80">Crawled Pages</span>
-            <div className="text-2xl font-black text-white">{pages.length}</div>
+            <span className="text-[11px] font-bold uppercase tracking-wider text-purple-200/80">Analyzed Pages</span>
+            <div className="text-2xl font-black text-white">{analyzedPages}</div>
             <p className="text-xs text-slate-300">
-              {pages.filter(p => p.status_code === 200).length} indexable 200 OK pages
+              Crawled HTML pages inspected
             </p>
           </div>
 
-          {/* Metric 2 */}
+          {/* Metric 2: Evaluated Rules */}
           <div className="space-y-1">
-            <span className="text-[11px] font-bold uppercase tracking-wider text-purple-200/80">Schema.org Adoption</span>
-            <div className="text-2xl font-black text-emerald-400">
-              {pages.length > 0 ? Math.round((schemaCount / pages.length) * 100) : 0}%
-            </div>
+            <span className="text-[11px] font-bold uppercase tracking-wider text-purple-200/80">Evaluated Rules</span>
+            <div className="text-2xl font-black text-emerald-400">{evaluatedRules}</div>
             <p className="text-xs text-slate-300">
-              {schemaCount} of {pages.length} pages have valid JSON-LD
+              Active audit rules executed
             </p>
           </div>
 
-          {/* Metric 3 */}
+          {/* Metric 3: Total Checks */}
           <div className="space-y-1">
-            <span className="text-[11px] font-bold uppercase tracking-wider text-purple-200/80">Open Remediation Items</span>
-            <div className="text-2xl font-black text-rose-400">{issues.length}</div>
-            <p className="text-xs text-slate-300">
-              {issues.filter(i => i.severity === 'critical').length} critical blockers detected
+            <span className="text-[11px] font-bold uppercase tracking-wider text-purple-200/80">Total Evaluated Checks</span>
+            <div className="text-2xl font-black text-purple-300">{totalEvaluatedChecks}</div>
+            <p className="text-xs text-slate-300 font-mono">
+              {analyzedPages} pages × {evaluatedRules} rules
             </p>
           </div>
         </div>
+      </div>
+
+      {/* Upgrade: Schema & Structured Data Evidence Box (Requirement 3, 4, 5) */}
+      <div 
+        onClick={() => setIsSchemaModalOpen(true)}
+        className="card-vibrant p-5 bg-white border border-purple-200 hover:border-purple-400 shadow-sm hover:shadow-md transition-all cursor-pointer group space-y-4"
+      >
+        <div className="flex items-center justify-between">
+          <div className="flex items-center space-x-2">
+            <div className="p-2 bg-purple-50 text-purple-700 rounded-xl">
+              <FileCode2 className="w-5 h-5" />
+            </div>
+            <div>
+              <h3 className="text-base font-extrabold text-slate-900 group-hover:text-purple-700 transition-colors flex items-center space-x-1.5">
+                <span>Structured Data / Schema Evidence</span>
+                <span className="text-xs font-normal text-purple-600 bg-purple-50 px-2 py-0.5 rounded-full border border-purple-200">
+                  Click for detailed evidence modal →
+                </span>
+              </h3>
+              <p className="text-xs text-slate-500">
+                Evidence-based Schema.org JSON-LD extraction across all scanned website pages.
+              </p>
+            </div>
+          </div>
+        </div>
+
+        {/* 8 Metric Summary Grid */}
+        <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-3 text-center">
+          <div className="p-3 bg-slate-50 rounded-xl border border-slate-200">
+            <span className="text-[10px] font-extrabold uppercase text-slate-500 block">Pages Scanned</span>
+            <span className="text-lg font-black text-slate-900 block mt-0.5">{schemaSummary.pages_scanned}</span>
+          </div>
+
+          <div className="p-3 bg-emerald-50/60 rounded-xl border border-emerald-200">
+            <span className="text-[10px] font-extrabold uppercase text-emerald-800 block">With Schema</span>
+            <span className="text-lg font-black text-emerald-900 block mt-0.5">{schemaSummary.pages_with_schema}</span>
+          </div>
+
+          <div className="p-3 bg-slate-50 rounded-xl border border-slate-200">
+            <span className="text-[10px] font-extrabold uppercase text-slate-500 block">Without Schema</span>
+            <span className="text-lg font-black text-slate-900 block mt-0.5">{schemaSummary.pages_without_schema}</span>
+          </div>
+
+          <div className="p-3 bg-purple-50/60 rounded-xl border border-purple-200">
+            <span className="text-[10px] font-extrabold uppercase text-purple-800 block">Total Instances</span>
+            <span className="text-lg font-black text-purple-900 block mt-0.5">{schemaSummary.total_schema_instances}</span>
+          </div>
+
+          <div className="p-3 bg-indigo-50/60 rounded-xl border border-indigo-200">
+            <span className="text-[10px] font-extrabold uppercase text-indigo-800 block">Unique Types</span>
+            <span className="text-lg font-black text-indigo-900 block mt-0.5">{schemaSummary.unique_schema_types}</span>
+          </div>
+
+          <div className="p-3 bg-emerald-50/60 rounded-xl border border-emerald-200">
+            <span className="text-[10px] font-extrabold uppercase text-emerald-800 block">Complete</span>
+            <span className="text-lg font-black text-emerald-900 block mt-0.5">{schemaSummary.complete_entities}</span>
+          </div>
+
+          <div className="p-3 bg-amber-50/60 rounded-xl border border-amber-200">
+            <span className="text-[10px] font-extrabold uppercase text-amber-800 block">Incomplete</span>
+            <span className="text-lg font-black text-amber-900 block mt-0.5">{schemaSummary.incomplete_entities}</span>
+          </div>
+
+          <div className="p-3 bg-rose-50/60 rounded-xl border border-rose-200">
+            <span className="text-[10px] font-extrabold uppercase text-rose-800 block">Mismatches</span>
+            <span className="text-lg font-black text-rose-900 block mt-0.5">{schemaSummary.potential_mismatches}</span>
+          </div>
+        </div>
+
+        {/* Detected Schema Types List */}
+        {schemaSummary.detected_types && schemaSummary.detected_types.length > 0 && (
+          <div className="pt-2 border-t border-slate-100 flex flex-wrap items-center gap-2 text-xs">
+            <span className="font-extrabold text-slate-700 uppercase tracking-wider text-[10px]">Detected Schema Types:</span>
+            {schemaSummary.detected_types.map((dt: any, idx: number) => (
+              <span key={idx} className="px-2.5 py-1 bg-purple-50 text-purple-900 border border-purple-200 rounded-lg font-semibold text-[11px] flex items-center space-x-1">
+                <span className="font-bold">{dt.type}</span>
+                <span className="text-purple-600 font-mono">({dt.page_count} {dt.page_count === 1 ? 'page' : 'pages'})</span>
+              </span>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* 6 Pillars Scoring Grid */}
@@ -779,39 +1062,69 @@ export const WebsiteAuditView: React.FC = () => {
         </div>
       )}
 
-      {/* Tab 3: Crawled Pages Table */}
+      {/* Tab 3: Crawled Pages Table with 20-Row Limit Pagination (Requirement 23) */}
       {activeTab === 'pages' && (
-        <div className="card-vibrant overflow-hidden">
-          {pages.length > 0 ? (
-            <div>
-              <div className="p-4 bg-slate-50/70 border-b border-slate-100 flex items-center justify-between">
-                <span className="text-xs font-bold text-slate-800">
-                  Crawled Pages ({pages.length})
-                </span>
-                {(() => {
-                  const validTimes = pages.map((p) => p.load_time_ms).filter(Boolean);
-                  const avgTime = validTimes.length ? Math.round(validTimes.reduce((a, b) => a + b, 0) / validTimes.length) : null;
-                  return avgTime ? (
-                    <span className="inline-flex items-center space-x-1.5 px-3 py-1 rounded-full text-xs font-bold bg-purple-50 text-purple-800 border border-purple-200">
-                      <span>Avg Page Speed:</span>
-                      <span className="font-mono text-purple-900 font-extrabold">{avgTime} ms</span>
-                    </span>
-                  ) : null;
-                })()}
+        <div className="card-vibrant overflow-hidden space-y-3">
+          <div className="p-4 bg-slate-50/70 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div className="flex items-center space-x-2">
+              <span className="text-xs font-bold text-slate-800">
+                Crawled Pages ({filteredPagesList.length})
+              </span>
+              <span className="text-[11px] font-medium text-slate-500">
+                (Page {currentPage} of {totalPagesCount})
+              </span>
+            </div>
+
+            <div className="flex items-center space-x-3">
+              <div className="relative">
+                <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-2.5" />
+                <input
+                  type="text"
+                  placeholder="Filter pages..."
+                  value={pageSearchQuery}
+                  onChange={(e) => { setPageSearchQuery(e.target.value); setCurrentPage(1); }}
+                  className="pl-8 pr-3 py-1.5 bg-white border border-slate-200 rounded-xl text-xs font-medium text-slate-800 focus:outline-none focus:border-purple-500 w-48"
+                />
               </div>
-              <div className="overflow-x-auto">
-                <table className="w-full text-left text-xs text-slate-700">
-                  <thead className="bg-slate-50 text-slate-500 uppercase text-[10px] font-bold tracking-wider border-b border-slate-100">
-                    <tr>
-                      <th className="p-3.5">URL Path</th>
+
+              {/* Pagination controls */}
+              <div className="flex items-center space-x-1">
+                <button
+                  disabled={currentPage <= 1}
+                  onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                  className="p-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 disabled:opacity-40 text-slate-700"
+                >
+                  <ChevronLeft className="w-4 h-4" />
+                </button>
+                <span className="text-xs font-bold text-slate-700 px-2 font-mono">
+                  {currentPage} / {totalPagesCount}
+                </span>
+                <button
+                  disabled={currentPage >= totalPagesCount}
+                  onClick={() => setCurrentPage(p => Math.min(totalPagesCount, p + 1))}
+                  className="p-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 disabled:opacity-40 text-slate-700"
+                >
+                  <ChevronRight className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {paginatedPages.length > 0 ? (
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs text-slate-700">
+                <thead className="bg-slate-50 text-slate-500 uppercase text-[10px] font-bold tracking-wider border-b border-slate-100">
+                  <tr>
+                    <th className="p-3.5">URL Path</th>
                     <th className="p-3.5">Status</th>
                     <th className="p-3.5">Title Tag</th>
                     <th className="p-3.5">Schema.org Types</th>
+                    <th className="p-3.5">Word Count</th>
                     <th className="p-3.5">Load Time</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
-                  {pages.map((p) => (
+                  {paginatedPages.map((p) => (
                     <tr key={p.id} className="hover:bg-slate-50/60 transition-colors">
                       <td className="p-3.5 font-mono text-slate-900 font-semibold max-w-xs truncate">
                         {p.url}
@@ -839,6 +1152,9 @@ export const WebsiteAuditView: React.FC = () => {
                           <span className="text-slate-400 font-medium">None</span>
                         )}
                       </td>
+                      <td className="p-3.5 font-mono text-slate-700 font-semibold">
+                        {p.word_count || 0} words
+                      </td>
                       <td className="p-3.5 font-mono text-slate-500">
                         {p.load_time_ms ? `${p.load_time_ms}ms` : '—'}
                       </td>
@@ -847,17 +1163,302 @@ export const WebsiteAuditView: React.FC = () => {
                 </tbody>
               </table>
             </div>
-          </div>
           ) : (
             <EmptyState
               icon={Globe}
               badge="No Pages Crawled"
-              title="No Crawled Pages Yet"
-              description="Run the automated crawler to scan your website structure, NAP visibility, and LocalBusiness schemas."
+              title="No Matching Crawled Pages"
+              description="No pages match the active search filter or no completed crawl is available."
               actionText="Start Local Page Crawl"
               onAction={handleTriggerCrawl}
             />
           )}
+
+          {/* Footer pagination info */}
+          <div className="p-3 bg-slate-50/50 border-t border-slate-100 flex items-center justify-between text-xs text-slate-500 font-medium">
+            <span>
+              Showing {filteredPagesList.length > 0 ? (currentPage - 1) * pageSize + 1 : 0} to {Math.min(currentPage * pageSize, filteredPagesList.length)} of {filteredPagesList.length} pages
+            </span>
+            <span>Maximum 20 rows per page</span>
+          </div>
+        </div>
+      )}
+
+      {/* =================================================================== */}
+      {/* SCHEMA DETAIL MODAL (Requirement 5)                                */}
+      {/* =================================================================== */}
+      {isSchemaModalOpen && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl max-w-4xl w-full max-h-[90vh] overflow-hidden flex flex-col shadow-2xl border border-purple-100 animate-scale-in">
+            {/* Modal Header */}
+            <div className="p-5 border-b border-slate-200 flex items-center justify-between bg-purple-900 text-white">
+              <div>
+                <span className="text-[10px] font-black uppercase tracking-wider text-purple-300">Technical Audit Evidence</span>
+                <h3 className="text-lg font-black mt-0.5">Schema & Structured Data Deep Detail</h3>
+              </div>
+              <button
+                onClick={() => setIsSchemaModalOpen(false)}
+                className="p-1.5 rounded-xl hover:bg-white/10 text-slate-300 hover:text-white transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Modal Tabs */}
+            <div className="flex border-b border-slate-200 bg-slate-50 px-5 gap-2 pt-2">
+              <button
+                onClick={() => setSchemaModalTab('summary')}
+                className={`px-4 py-2 text-xs font-bold rounded-t-xl border-b-2 transition-all ${
+                  schemaModalTab === 'summary'
+                    ? 'border-purple-600 text-purple-900 bg-white shadow-xs'
+                    : 'border-transparent text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                Summary
+              </button>
+              <button
+                onClick={() => setSchemaModalTab('types')}
+                className={`px-4 py-2 text-xs font-bold rounded-t-xl border-b-2 transition-all ${
+                  schemaModalTab === 'types'
+                    ? 'border-purple-600 text-purple-900 bg-white shadow-xs'
+                    : 'border-transparent text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                Type Breakdown
+              </button>
+              <button
+                onClick={() => setSchemaModalTab('pages')}
+                className={`px-4 py-2 text-xs font-bold rounded-t-xl border-b-2 transition-all ${
+                  schemaModalTab === 'pages'
+                    ? 'border-purple-600 text-purple-900 bg-white shadow-xs'
+                    : 'border-transparent text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                Page Evidence
+              </button>
+              <button
+                onClick={() => setSchemaModalTab('raw')}
+                className={`px-4 py-2 text-xs font-bold rounded-t-xl border-b-2 transition-all ${
+                  schemaModalTab === 'raw'
+                    ? 'border-purple-600 text-purple-900 bg-white shadow-xs'
+                    : 'border-transparent text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                Raw JSON-LD
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div className="p-6 overflow-y-auto flex-1 space-y-5 text-slate-800 text-xs">
+              {schemaModalTab === 'summary' && (
+                <div className="space-y-4">
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                    <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200 text-center">
+                      <span className="text-[10px] font-bold text-slate-500 uppercase block">Pages Scanned</span>
+                      <span className="text-2xl font-black text-slate-900 block mt-1">{schemaSummary.pages_scanned}</span>
+                    </div>
+                    <div className="p-4 bg-emerald-50/70 rounded-2xl border border-emerald-200 text-center">
+                      <span className="text-[10px] font-bold text-emerald-800 uppercase block">Pages With Schema</span>
+                      <span className="text-2xl font-black text-emerald-900 block mt-1">{schemaSummary.pages_with_schema}</span>
+                    </div>
+                    <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200 text-center">
+                      <span className="text-[10px] font-bold text-slate-500 uppercase block">Pages Without Schema</span>
+                      <span className="text-2xl font-black text-slate-900 block mt-1">{schemaSummary.pages_without_schema}</span>
+                    </div>
+                    <div className="p-4 bg-purple-50/70 rounded-2xl border border-purple-200 text-center">
+                      <span className="text-[10px] font-bold text-purple-800 uppercase block">Total Schema Instances</span>
+                      <span className="text-2xl font-black text-purple-900 block mt-1">{schemaSummary.total_schema_instances}</span>
+                    </div>
+                  </div>
+
+                  <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200 space-y-2">
+                    <h4 className="font-extrabold text-slate-900 text-xs uppercase tracking-wider">Validation Overview</h4>
+                    <p className="text-slate-600 leading-relaxed">
+                      Crawler scanned {schemaSummary.pages_scanned} pages and identified {schemaSummary.total_schema_instances} JSON-LD instances across {schemaSummary.unique_schema_types} schema types.
+                      Entity completeness score: <b>{schemaSummary.complete_entities} complete</b>, <b>{schemaSummary.incomplete_entities} incomplete</b>, and <b>{schemaSummary.potential_mismatches} potential mismatches</b>.
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              {schemaModalTab === 'types' && (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left border-collapse">
+                    <thead className="bg-slate-50 text-slate-500 uppercase text-[10px] font-bold border-b border-slate-200">
+                      <tr>
+                        <th className="p-3">Schema Type</th>
+                        <th className="p-3">Page Count</th>
+                        <th className="p-3">Instance Count</th>
+                        <th className="p-3">Validation Status</th>
+                        <th className="p-3">Completeness</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {(schemaSummary.detected_types || []).map((dt: any, idx: number) => (
+                        <tr key={idx} className="hover:bg-slate-50/60">
+                          <td className="p-3 font-bold text-slate-900">{dt.type}</td>
+                          <td className="p-3 font-mono">{dt.page_count} pages</td>
+                          <td className="p-3 font-mono">{dt.instance_count} instances</td>
+                          <td className="p-3">{renderStatusBadge(dt.page_count > 0 ? 'Supported' : 'Detected')}</td>
+                          <td className="p-3 font-semibold">{dt.page_count > 0 ? 'Complete' : 'Incomplete'}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+
+              {schemaModalTab === 'pages' && (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left border-collapse">
+                    <thead className="bg-slate-50 text-slate-500 uppercase text-[10px] font-bold border-b border-slate-200">
+                      <tr>
+                        <th className="p-3">URL</th>
+                        <th className="p-3">Schema Type</th>
+                        <th className="p-3">Validation Status</th>
+                        <th className="p-3">Important Properties</th>
+                        <th className="p-3">Missing Properties</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {(canonicalData?.schema_evidence || []).map((se: any, idx: number) => (
+                        <tr key={idx} className="hover:bg-slate-50/60">
+                          <td className="p-3 font-mono text-slate-900 max-w-xs truncate">{se.url}</td>
+                          <td className="p-3 font-semibold">{se.schema_type}</td>
+                          <td className="p-3">{renderStatusBadge(se.validation_status)}</td>
+                          <td className="p-3 font-mono text-[11px]">
+                            {JSON.stringify(se.important_properties || {})}
+                          </td>
+                          <td className="p-3 text-rose-600 font-semibold">
+                            {(se.missing_properties || []).join(', ') || 'None'}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+
+              {schemaModalTab === 'raw' && (
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <span className="font-bold text-slate-800">Raw JSON-LD Script Payload</span>
+                    <span className="text-[10px] text-slate-500 font-mono">Unmodified technical evidence</span>
+                  </div>
+                  <pre className="p-4 bg-slate-900 text-emerald-400 rounded-2xl text-[11px] font-mono overflow-x-auto max-h-96 leading-relaxed">
+                    {canonicalData?.schema_evidence && canonicalData.schema_evidence.length > 0
+                      ? canonicalData.schema_evidence.map((se: any) => `// URL: ${se.url}\n${se.raw_json_ld || 'No raw JSON-LD'}`).join('\n\n')
+                      : 'No raw JSON-LD markup detected.'}
+                  </pre>
+                </div>
+              )}
+            </div>
+
+            {/* Modal Footer */}
+            <div className="p-4 border-t border-slate-200 bg-slate-50 text-right">
+              <button
+                onClick={() => setIsSchemaModalOpen(false)}
+                className="px-5 py-2 bg-slate-800 hover:bg-slate-900 text-white rounded-xl text-xs font-bold shadow-sm transition-all"
+              >
+                Close Modal
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* =================================================================== */}
+      {/* CHECKS PERFORMED POPUP (Requirement 6, 7, 8, 9, 10)                 */}
+      {/* =================================================================== */}
+      {isChecksModalOpen && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl max-w-5xl w-full max-h-[90vh] overflow-hidden flex flex-col shadow-2xl border border-purple-100 animate-scale-in">
+            {/* Header */}
+            <div className="p-5 border-b border-slate-200 flex items-center justify-between bg-slate-900 text-white">
+              <div>
+                <div className="text-[10px] font-black uppercase tracking-wider text-purple-400">AUDIT RULE BREAKDOWN</div>
+                <h3 className="text-lg font-black mt-0.5">Checks & Rules Evaluated</h3>
+              </div>
+              <button
+                onClick={() => setIsChecksModalOpen(false)}
+                className="p-1.5 rounded-xl hover:bg-white/10 text-slate-300 hover:text-white transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Context Header */}
+            <div className="p-5 bg-purple-50/70 border-b border-purple-100 grid grid-cols-2 sm:grid-cols-4 gap-4 text-xs">
+              <div>
+                <span className="text-[10px] font-extrabold uppercase text-purple-800 block">Domain</span>
+                <span className="font-mono font-bold text-slate-900 block mt-0.5">{activeProject.domain}</span>
+              </div>
+              <div>
+                <span className="text-[10px] font-extrabold uppercase text-purple-800 block">Crawl ID</span>
+                <span className="font-mono font-bold text-slate-900 block mt-0.5">{canonicalData?.crawl_id || 'N/A'}</span>
+              </div>
+              <div>
+                <span className="text-[10px] font-extrabold uppercase text-purple-800 block">Evaluated Rules</span>
+                <span className="font-mono font-bold text-slate-900 block mt-0.5">{evaluatedRules} Rules</span>
+              </div>
+              <div>
+                <span className="text-[10px] font-extrabold uppercase text-purple-800 block">Total Checks</span>
+                <span className="font-mono font-bold text-purple-900 block mt-0.5">{analyzedPages} pages × {evaluatedRules} rules = <b>{totalEvaluatedChecks} checks</b></span>
+              </div>
+            </div>
+
+            {/* Rule Table */}
+            <div className="p-6 overflow-y-auto flex-1">
+              <table className="w-full text-left text-xs border-collapse">
+                <thead className="bg-slate-100 text-slate-700 uppercase text-[10px] font-bold border-b border-slate-200">
+                  <tr>
+                    <th className="p-3">Rule ID</th>
+                    <th className="p-3">Category</th>
+                    <th className="p-3">Rule Name</th>
+                    <th className="p-3">What Was Checked</th>
+                    <th className="p-3">Validation Method</th>
+                    <th className="p-3">Pages</th>
+                    <th className="p-3">Passed</th>
+                    <th className="p-3">Problems</th>
+                    <th className="p-3">Status</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 text-slate-800">
+                  {(canonicalData?.rule_execution_results || []).map((r: any, idx: number) => (
+                    <tr key={idx} className="hover:bg-slate-50/70">
+                      <td className="p-3 font-mono font-bold text-purple-700">{r.rule_id}</td>
+                      <td className="p-3 font-semibold text-slate-700">{r.category}</td>
+                      <td className="p-3 font-bold text-slate-900">{r.rule_name}</td>
+                      <td className="p-3 text-slate-600 max-w-xs">{r.what_was_checked}</td>
+                      <td className="p-3 font-mono text-[11px] text-slate-500">{r.validation_method}</td>
+                      <td className="p-3 font-mono font-bold">{r.pages_checked}</td>
+                      <td className="p-3 font-mono text-emerald-700 font-bold">{r.passed}</td>
+                      <td className="p-3 font-mono text-rose-600 font-bold">{r.problems}</td>
+                      <td className="p-3">
+                        {r.status === 'Not Evaluated' ? (
+                          <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-slate-100 text-slate-600 border border-slate-200">Not Evaluated</span>
+                        ) : r.problems === 0 ? (
+                          <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-50 text-emerald-800 border border-emerald-200">Passed</span>
+                        ) : (
+                          <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-rose-50 text-rose-800 border border-rose-200">Issues Found</span>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Footer */}
+            <div className="p-4 border-t border-slate-200 bg-slate-50 text-right">
+              <button
+                onClick={() => setIsChecksModalOpen(false)}
+                className="px-5 py-2 bg-slate-800 hover:bg-slate-900 text-white rounded-xl text-xs font-bold shadow-sm transition-all"
+              >
+                Close Rule Table
+              </button>
+            </div>
+          </div>
         </div>
       )}
 

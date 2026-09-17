@@ -30,6 +30,7 @@ export const OnboardingWizard: React.FC = () => {
   const [city, setCity] = useState('');
   const [state, setState] = useState('');
   const [postalCode, setPostalCode] = useState('');
+  const [country, setCountry] = useState('Australia');
   const [phone, setPhone] = useState('');
   const [keywordInput, setKeywordInput] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -38,14 +39,23 @@ export const OnboardingWizard: React.FC = () => {
   const handleFinishOnboarding = async () => {
     if (isSubmitting) return;
     setErrorMessage(null);
+    
+    const cleanDomain = domain.trim().replace(/^https?:\/\//i, '').split('/')[0];
+    if (!cleanDomain || cleanDomain.includes(' ')) {
+      setErrorMessage('Please enter a valid website domain name before completing onboarding.');
+      return;
+    }
+
+    const selectedCountry = country.trim() || 'Australia';
+
     try {
       setIsSubmitting(true);
       const projResp = await api.post('/projects', {
-        name: projectName.trim() || 'My Business Project',
-        domain: domain.trim() || 'example.com',
+        name: projectName.trim() || cleanDomain,
+        domain: cleanDomain,
         primary_category: category || 'Local Business',
         additional_categories: additionalCategories,
-        country: 'United States',
+        country: selectedCountry,
         location: {
           name: 'Main Location',
           address: address.trim() || undefined,
@@ -53,7 +63,7 @@ export const OnboardingWizard: React.FC = () => {
           state: state.trim() || undefined,
           postal_code: postalCode.trim() || undefined,
           phone: phone.trim() || undefined,
-          country: 'United States'
+          country: selectedCountry
         }
       });
 
@@ -63,7 +73,7 @@ export const OnboardingWizard: React.FC = () => {
         console.info('[ONBOARDING] Coordinates not automatically resolved. User can configure coordinates in Project Settings.');
       }
 
-      // Add keywords if entered
+      // Add keywords if entered (search_volume set to null if unavailable)
       if (keywordInput.trim()) {
         const kws = keywordInput.split('\n').filter((k) => k.trim());
         for (const kw of kws) {
@@ -73,7 +83,7 @@ export const OnboardingWizard: React.FC = () => {
               keyword: kw.trim(),
               target_location: city.trim() || undefined,
               search_intent: 'Commercial',
-              search_volume: 450
+              search_volume: null
             });
           } catch (kwErr) {
             console.warn('Keyword creation skipped/failed:', kwErr);
@@ -81,10 +91,10 @@ export const OnboardingWizard: React.FC = () => {
         }
       }
 
-      // Trigger initial crawl in background
+      // Trigger initial crawl in background with valid domain
       try {
         await api.post(`/audits/crawl/${newProjectId}`, {
-          url: `https://${domain.trim() || 'example.com'}`,
+          url: `https://${cleanDomain}`,
           max_pages: 5
         });
       } catch (crawlErr) {

@@ -100,7 +100,7 @@ export const LocalGridRankingsView: React.FC = () => {
             <span>5x5 Geo-Grid Rankings Map</span>
           </h1>
           <p className="text-xs text-slate-500 mt-1">
-            Simulate localized Google Maps search rankings across a 5x5 geographic matrix centered at your canonical business coordinates.
+            Live local search scan: localized Google Maps search rankings across a 5x5 geographic matrix centered at your canonical business coordinates.
           </p>
         </div>
       </div>

@@ -146,3 +146,42 @@ async def generate_executive_report(
         },
         "next_month_recommendations": final_recommendations
     }
+
+from fastapi import Response
+from app.api.v1.audits import get_canonical_audit
+from app.services.reports.pdf_service import AuditPDFService
+from app.services.reports.xlsx_service import MasterXLSXService
+
+@router.get("/{project_id}/pdf")
+async def download_audit_pdf(
+    project_id: int,
+    crawl_id: Optional[int] = None,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    canonical_data = await get_canonical_audit(project_id=project_id, crawl_id=crawl_id, current_user=current_user, db=db)
+    pdf_bytes = AuditPDFService.generate_pdf(canonical_data)
+    domain = canonical_data.get("domain", "audit").replace("https://", "").replace("http://", "").replace("/", "")
+    filename = f"SEO_Audit_Report_{domain}_{canonical_data.get('crawl_id') or 'latest'}.pdf"
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f"attachment; filename={filename}"}
+    )
+
+@router.get("/{project_id}/xlsx")
+async def download_audit_xlsx(
+    project_id: int,
+    crawl_id: Optional[int] = None,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    canonical_data = await get_canonical_audit(project_id=project_id, crawl_id=crawl_id, current_user=current_user, db=db)
+    xlsx_bytes = MasterXLSXService.generate_xlsx(canonical_data)
+    domain = canonical_data.get("domain", "audit").replace("https://", "").replace("http://", "").replace("/", "")
+    filename = f"Master_SEO_Audit_{domain}_{canonical_data.get('crawl_id') or 'latest'}.xlsx"
+    return Response(
+        content=xlsx_bytes,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f"attachment; filename={filename}"}
+    )

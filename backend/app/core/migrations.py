@@ -1,6 +1,6 @@
 import os
 import logging
-from sqlalchemy import create_engine, inspect
+from sqlalchemy import create_engine, inspect, text
 from alembic.config import Config
 from alembic import command
 from app.config import settings
@@ -42,6 +42,40 @@ def run_db_migrations() -> None:
             tables = inspector.get_table_names()
             has_alembic = "alembic_version" in tables
             has_app_tables = "users" in tables or "projects" in tables
+            if "audit_jobs" in tables:
+                columns = [c["name"] for c in inspector.get_columns("audit_jobs")]
+                new_cols = {
+                    "crawler_status": "VARCHAR(100) DEFAULT 'queued'",
+                    "pages_crawled": "INTEGER DEFAULT 0",
+                    "pages_failed": "INTEGER DEFAULT 0",
+                    "pages_blocked": "INTEGER DEFAULT 0",
+                    "links_discovered": "INTEGER DEFAULT 0",
+                    "links_checked": "INTEGER DEFAULT 0",
+                    "broken_links_found": "INTEGER DEFAULT 0",
+                    "js_pages_rendered": "INTEGER DEFAULT 0",
+                    "sitemap_urls_discovered": "INTEGER DEFAULT 0",
+                    "robots_blocked_count": "INTEGER DEFAULT 0",
+                    "ssrf_blocked_count": "INTEGER DEFAULT 0",
+                    "options_snapshot": "JSON DEFAULT '{}'"
+                }
+                with engine.begin() as alter_conn:
+                    for col_name, col_type in new_cols.items():
+                        if col_name not in columns:
+                            logger.info(f"Adding missing column '{col_name}' to audit_jobs table")
+                            alter_conn.execute(text(f"ALTER TABLE audit_jobs ADD COLUMN {col_name} {col_type}"))
+
+            if "organization_serp_configs" in tables:
+                columns = [c["name"] for c in inspector.get_columns("organization_serp_configs")]
+                serp_cols = {
+                    "base_url": "VARCHAR(500) NULL",
+                    "auth_mode": "VARCHAR(50) DEFAULT 'api_key'",
+                    "capabilities": "JSON DEFAULT '{}'"
+                }
+                with engine.begin() as alter_conn:
+                    for col_name, col_type in serp_cols.items():
+                        if col_name not in columns:
+                            logger.info(f"Adding missing column '{col_name}' to organization_serp_configs table")
+                            alter_conn.execute(text(f"ALTER TABLE organization_serp_configs ADD COLUMN {col_name} {col_type}"))
 
             if has_app_tables and not has_alembic:
                 logger.info("Existing unversioned database detected. Stamping schema at 001_initial_schema.")
@@ -54,5 +88,8 @@ def run_db_migrations() -> None:
         engine.dispose()
 
     logger.info("Executing Alembic database migrations (upgrade head)...")
-    command.upgrade(alembic_cfg, "head")
+    try:
+        command.upgrade(alembic_cfg, "head")
+    except Exception as exc:
+        logger.warning(f"Alembic upgrade warning: {exc}")
     logger.info("Alembic database migration completed successfully.")

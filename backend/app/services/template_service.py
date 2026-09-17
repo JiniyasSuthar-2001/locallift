@@ -417,24 +417,24 @@ class TemplateEngine:
             location.longitude is not None
         )
 
-        # Build Context Values
+        # Build Context Values (using real data only, no manufactured defaults)
         context: Dict[str, Any] = {
-            "business_name": (gbp.business_name if gbp else None) or (project.name if project else "Local Business"),
-            "website_url": project.domain if project else "example.com",
-            "country": project.country if project else "United States",
-            "business_type": "LocalBusiness",
-            "service": project.primary_category if project else "Local Services",
-            "phone": (location.phone if location else None) or (gbp.phone if gbp else "+1 555 123 4567"),
-            "street_address": (location.address if location else None) or (gbp.address if gbp else "100 Main Street"),
-            "address": (location.address if location else None) or (gbp.address if gbp else "100 Main Street"),
-            "city": (location.city if location else None) or "Metro City",
-            "state": (location.state if location else None) or "State",
-            "postal_code": (location.postal_code if location else None) or "10001",
+            "business_name": (gbp.business_name if gbp else None) or (project.name if project else None),
+            "website_url": f"https://{project.domain}" if project and project.domain else None,
+            "country": project.country if project else None,
+            "business_type": project.primary_category if project and project.primary_category else "LocalBusiness",
+            "service": project.primary_category if project else None,
+            "phone": (location.phone if location else None) or (gbp.phone if gbp else None),
+            "street_address": (location.address if location else None) or (gbp.address if gbp else None),
+            "address": (location.address if location else None) or (gbp.address if gbp else None),
+            "city": (location.city if location else None) or None,
+            "state": (location.state if location else None) or None,
+            "postal_code": (location.postal_code if location else None) or None,
             "latitude": str(location.latitude) if has_valid_coords else None,
             "longitude": str(location.longitude) if has_valid_coords else None,
-            "reviewer_name": "Valued Customer",
-            "rating": "5",
-            "offer": "Free inspection with every local booking"
+            "reviewer_name": None,
+            "rating": None,
+            "offer": None
         }
 
         # Apply custom variable overrides

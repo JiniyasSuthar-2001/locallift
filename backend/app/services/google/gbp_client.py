@@ -185,9 +185,10 @@ class GoogleBusinessProfileClient:
 
         return ", ".join(parts)
 
-    async def fetch_location_reviews(self, account_id: str, location_id: str) -> List[Dict[str, Any]]:
+    async def fetch_location_reviews(self, account_id: str, location_id: str) -> Dict[str, Any]:
         """
         Retrieves real customer reviews for a GBP location.
+        Returns structured dictionary containing status, reviews list, and error diagnostic details.
         Endpoint: GET https://mybusiness.googleapis.com/v4/{account_id}/{location_id}/reviews
         """
         token = await self.ensure_valid_token()
@@ -241,9 +242,28 @@ class GoogleBusinessProfileClient:
                             "response_status": response_status,
                             "source": "Google"
                         })
+                    return {
+                        "success": True,
+                        "reviews": reviews_list,
+                        "error": None,
+                        "status_code": 200,
+                        "error_type": None
+                    }
                 else:
-                    logger.info(f"[GBP_REVIEWS] Reviews endpoint returned status {resp.status_code} for {loc_str}")
+                    logger.warning(f"[GBP_REVIEWS] Reviews endpoint returned status {resp.status_code} for {loc_str}")
+                    return {
+                        "success": False,
+                        "reviews": [],
+                        "error": f"Google API returned HTTP {resp.status_code}",
+                        "status_code": resp.status_code,
+                        "error_type": "google_api_error"
+                    }
         except Exception as e:
             logger.warning(f"[GBP_REVIEWS] Failed to query reviews: {e}")
-
-        return reviews_list
+            return {
+                "success": False,
+                "reviews": [],
+                "error": str(e),
+                "status_code": 500,
+                "error_type": "network_or_client_error"
+            }

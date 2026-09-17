@@ -1,7 +1,7 @@
 import asyncio
 import json
 from datetime import datetime, timezone
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, patch, MagicMock
 
 from fastapi import HTTPException
 from sqlalchemy.future import select
@@ -31,11 +31,8 @@ from app.models.template import Template
 # Setup DB Schema
 # ---------------------------------------------------------------------------
 async def setup_test_environment():
-    from app.main import _sync_sqlite_schema
-    import app.models
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
-        await conn.run_sync(_sync_sqlite_schema)
 
 # ---------------------------------------------------------------------------
 # 1. AI UNCONFIGURED TEST
@@ -322,7 +319,7 @@ def test_multi_tenant_idor_security_isolation():
             user_a_kw_blocked = False
             try:
                 kw_in = KeywordCreate(project_id=proj_b.id, keyword="illegal keyword")
-                await add_keyword(kw_in=kw_in, current_user=user_a, db=session)
+                await add_keyword(request=MagicMock(), kw_in=kw_in, current_user=user_a, db=session)
             except HTTPException as e:
                 if e.status_code == 403:
                     user_a_kw_blocked = True
@@ -331,7 +328,7 @@ def test_multi_tenant_idor_security_isolation():
             # Test 4: User A trying to delete Project B
             user_a_delete_blocked = False
             try:
-                await delete_project(project_id=proj_b.id, current_user=user_a, db=session)
+                await delete_project(request=MagicMock(), project_id=proj_b.id, current_user=user_a, db=session)
             except HTTPException as e:
                 if e.status_code == 403:
                     user_a_delete_blocked = True

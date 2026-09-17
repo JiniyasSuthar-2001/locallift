@@ -51,6 +51,7 @@ class Settings(BaseSettings):
     GOOGLE_CLIENT_SECRET: str = ""
     GOOGLE_REDIRECT_URI: str = "http://localhost:8000/api/v1/connections/google/callback"
     GOOGLE_ADS_DEVELOPER_TOKEN: str = ""
+    GOOGLE_PLACES_API_KEY: str = ""
     
     # Integrations - SERP / Rank Tracking
     SERP_PROVIDER: str = "serpapi"  # serpapi (default organization user key), openserp (optional self-hosted), mock (testing only)

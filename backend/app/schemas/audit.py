@@ -74,3 +74,56 @@ class CrawlRequest(BaseModel):
     url: str
     max_pages: Optional[int] = 25
     respect_robots: Optional[bool] = True
+    crawl_delay_ms: Optional[int] = 200
+    follow_redirects: Optional[bool] = True
+    allow_local_dev: Optional[bool] = False
+    include_patterns: Optional[List[str]] = None
+    exclude_patterns: Optional[List[str]] = None
+    max_depth: Optional[int] = 5
+    enable_js_rendering: Optional[bool] = False
+    check_external_links: Optional[bool] = True
+    max_external_links: Optional[int] = 50
+
+class AuditJobOut(BaseModel):
+    id: int
+    project_id: int
+    organization_id: Optional[int] = None
+    job_type: str
+    status: str
+    crawler_status: Optional[str] = "queued"
+    progress: float
+    current_stage: str
+    
+    pages_discovered: int = 0
+    pages_crawled: int = 0
+    pages_processed: int = 0
+    pages_failed: int = 0
+    pages_blocked: int = 0
+    links_discovered: int = 0
+    links_checked: int = 0
+    broken_links_found: int = 0
+    js_pages_rendered: int = 0
+    sitemap_urls_discovered: int = 0
+    robots_blocked_count: int = 0
+    ssrf_blocked_count: int = 0
+    
+    broken_link_check_status: str = "not_started"
+    broken_link_check_error: Optional[str] = None
+    links_skipped: int = 0
+    runtime_limit_reached: bool = False
+    redirect_limit_reached: bool = False
+    browser_rendering_unavailable: bool = False
+    
+    start_url: Optional[str] = None
+    started_at: Optional[datetime] = None
+    completed_at: Optional[datetime] = None
+    failed_at: Optional[datetime] = None
+    error_message: Optional[str] = None
+    error_code: Optional[str] = None
+    options_snapshot: Dict[str, Any] = {}
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True
+

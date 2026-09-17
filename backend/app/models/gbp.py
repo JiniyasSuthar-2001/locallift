@@ -73,3 +73,39 @@ class GBPChange(Base):
     detected_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
     gbp_profile = relationship("GoogleBusinessProfile", back_populates="changes")
+
+class GooglePostObservation(Base):
+    """
+    Publicly observed Google business posts / updates.
+    """
+    __tablename__ = "google_post_observations"
+
+    id = Column(Integer, primary_key=True, index=True)
+    project_id = Column(Integer, ForeignKey("projects.id", ondelete="CASCADE"), nullable=False, index=True)
+    business_identifier = Column(String(255), nullable=True)
+    post_type = Column(String(50), default="UPDATE")  # UPDATE, OFFER, EVENT
+    content_summary = Column(Text, nullable=False)
+    action_url = Column(String(500), nullable=True)
+    published_at = Column(DateTime, nullable=True)
+    observed_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), index=True)
+    source = Column(String(100), default="Public Business Observation")
+
+    project = relationship("Project", backref="post_observations")
+
+class GoogleObservedChange(Base):
+    """
+    Publicly observed business profile attribute changes over time.
+    """
+    __tablename__ = "google_observed_changes"
+
+    id = Column(Integer, primary_key=True, index=True)
+    project_id = Column(Integer, ForeignKey("projects.id", ondelete="CASCADE"), nullable=False, index=True)
+    field_name = Column(String(100), nullable=False)
+    old_value = Column(Text, nullable=True)
+    new_value = Column(Text, nullable=True)
+    observed_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), index=True)
+    source = Column(String(100), default="Public Search Observation")
+    confidence = Column(String(50), default="Observed")
+
+    project = relationship("Project", backref="observed_changes")
+

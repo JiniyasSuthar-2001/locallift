@@ -2,8 +2,9 @@ import logging
 import httpx
 from typing import Optional, Dict, Any, List
 from datetime import datetime, timezone
-from app.services.serp.base import SERPProvider, SERPResponse, SERPItem
+from app.services.serp.base import SERPProvider, SERPResponse, SERPItem, SERPCapabilities
 from app.services.serp.matcher import DomainMatcher
+from app.services.serp.normalizer import SERPNormalizer
 
 logger = logging.getLogger("locallift.serp.serpapi")
 
@@ -11,11 +12,23 @@ class SerpApiProvider(SERPProvider):
     BASE_URL = "https://serpapi.com/search.json"
 
     def __init__(self, api_key: Optional[str] = None):
-        self.api_key = (api_key or "").strip()
+        self.api_key = (api_key or "").strip().strip("'\"").strip()
+
+    @property
+    def capabilities(self) -> SERPCapabilities:
+        if not self.is_configured:
+            return SERPCapabilities()
+        return SERPCapabilities(
+            organic_search=True,
+            local_search=True,
+            maps_search=True,
+            coordinate_search=True,
+            geo_grid=True
+        )
 
     @property
     def is_configured(self) -> bool:
-        return bool(self.api_key and len(self.api_key) > 5)
+        return bool(self.api_key and len(self.api_key) > 5 and not any(c in self.api_key for c in ("•", "*")))
 
     async def search_keyword(
         self,
@@ -50,20 +63,33 @@ class SerpApiProvider(SERPProvider):
         if location:
             params["location"] = location
 
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
+        }
+
         try:
             async with httpx.AsyncClient(timeout=25.0) as client:
                 logger.info(f"Executing SERP lookup for keyword='{keyword}' location='{location}' gl='{country}'")
-                response = await client.get(self.BASE_URL, params=params)
+                response = await client.get(self.BASE_URL, params=params, headers=headers)
+
+                raw_json = {}
+                try:
+                    raw_json = response.json()
+                except Exception:
+                    pass
+
+                api_err = raw_json.get("error") if isinstance(raw_json, dict) else None
 
                 if response.status_code in (401, 403):
-                    logger.error("SerpApi authentication error.")
+                    err_detail = str(api_err) if api_err else "SerpApi authentication error."
+                    logger.error(f"SerpApi authentication error: {err_detail}")
                     return SERPResponse(
                         provider="serpapi",
                         keyword=keyword,
                         location=location,
                         success=False,
                         error_code="SERP_PROVIDER_AUTH_ERROR",
-                        error_message="SerpApi rejected the configured API key. Please verify your SerpApi credentials."
+                        error_message=f"SerpApi rejected the API key: {err_detail}"
                     )
 
                 if response.status_code == 429:
@@ -151,19 +177,32 @@ class SerpApiProvider(SERPProvider):
             "output": "json"
         }
 
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
+        }
+
         try:
             async with httpx.AsyncClient(timeout=25.0) as client:
                 logger.info(f"Executing Geo-Grid point search keyword='{keyword}' coords=({lat}, {lng})")
-                response = await client.get(self.BASE_URL, params=params)
+                response = await client.get(self.BASE_URL, params=params, headers=headers)
+
+                raw_json = {}
+                try:
+                    raw_json = response.json()
+                except Exception:
+                    pass
+
+                api_err = raw_json.get("error") if isinstance(raw_json, dict) else None
 
                 if response.status_code in (401, 403):
+                    err_detail = str(api_err) if api_err else "SerpApi authentication error."
                     return SERPResponse(
                         provider="serpapi",
                         keyword=keyword,
                         location=f"@{lat},{lng}",
                         success=False,
                         error_code="SERP_PROVIDER_AUTH_ERROR",
-                        error_message="SerpApi rejected the configured API key. Please verify your SerpApi credentials."
+                        error_message=f"SerpApi rejected the API key: {err_detail}"
                     )
 
                 if response.status_code == 429:

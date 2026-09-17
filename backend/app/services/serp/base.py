@@ -3,6 +3,13 @@ from typing import List, Optional, Dict, Any
 from pydantic import BaseModel, Field
 from datetime import datetime, timezone
 
+class SERPCapabilities(BaseModel):
+    organic_search: bool = False
+    local_search: bool = False
+    maps_search: bool = False
+    coordinate_search: bool = False
+    geo_grid: bool = False
+
 class SERPItem(BaseModel):
     position: int
     title: str
@@ -27,8 +34,25 @@ class SERPResponse(BaseModel):
     error_code: Optional[str] = None
     error_message: Optional[str] = None
     raw_data: Optional[Dict[str, Any]] = None
+    primary_provider: Optional[str] = None
+    primary_error: Optional[str] = None
+    fallback_provider: Optional[str] = None
+    fallback_result: Optional[str] = None
+    final_state: Optional[str] = None
 
 class SERPProvider(ABC):
+    @property
+    @abstractmethod
+    def capabilities(self) -> SERPCapabilities:
+        """Returns explicitly declared provider capabilities."""
+        pass
+
+    @property
+    @abstractmethod
+    def is_configured(self) -> bool:
+        """Returns True if the provider has valid API credentials or endpoint configured."""
+        pass
+
     @abstractmethod
     async def search_keyword(
         self,
@@ -54,11 +78,48 @@ class SERPProvider(ABC):
         """Search Google Local/Maps at specific coordinates."""
         pass
 
-    @property
-    @abstractmethod
-    def is_configured(self) -> bool:
-        """Returns True if the provider has valid API credentials configured."""
-        pass
+    async def search_organic(
+        self,
+        keyword: str,
+        location: Optional[str] = None,
+        country: Optional[str] = "us",
+        language: Optional[str] = "en",
+        device: str = "desktop",
+        num_results: int = 100
+    ) -> SERPResponse:
+        """Unified method for organic web search."""
+        return await self.search_keyword(keyword, location, country, language, device, num_results)
+
+    async def search_local(
+        self,
+        keyword: str,
+        location: Optional[str] = None,
+        country: Optional[str] = "us",
+        language: Optional[str] = "en"
+    ) -> SERPResponse:
+        """Unified method for local pack search."""
+        return await self.search_keyword(keyword, location, country, language, num_results=20)
+
+    async def search_maps(
+        self,
+        keyword: str,
+        location: Optional[str] = None,
+        country: Optional[str] = "us",
+        language: Optional[str] = "en"
+    ) -> SERPResponse:
+        """Unified method for Google Maps search."""
+        return await self.search_keyword(keyword, location, country, language, num_results=20)
+
+    async def search_at_location(
+        self,
+        keyword: str,
+        lat: float,
+        lng: float,
+        location_name: Optional[str] = None,
+        zoom: int = 14
+    ) -> SERPResponse:
+        """Unified method for GPS coordinate-based local search."""
+        return await self.search_local_grid_point(keyword, lat, lng, location_name, zoom)
 
 
 class NotConfiguredSERPProvider(SERPProvider):
@@ -66,6 +127,10 @@ class NotConfiguredSERPProvider(SERPProvider):
     Safe provider returned when no SERP API key has been configured for the organization.
     Never attempts Docker or localhost calls. Returns a clean, user-facing error state.
     """
+
+    @property
+    def capabilities(self) -> SERPCapabilities:
+        return SERPCapabilities()
 
     @property
     def is_configured(self) -> bool:
@@ -86,7 +151,7 @@ class NotConfiguredSERPProvider(SERPProvider):
             location=location,
             success=False,
             error_code="SERP_API_KEY_REQUIRED",
-            error_message="SERP provider not configured. Add your SerpApi API key in Settings to enable keyword tracking and Geo-Grid searches."
+            error_message="SERP provider not configured. Add your SerpApi key in Settings to enable keyword tracking and Geo-Grid searches."
         )
 
     async def search_local_grid_point(
@@ -103,6 +168,5 @@ class NotConfiguredSERPProvider(SERPProvider):
             location=location_name,
             success=False,
             error_code="SERP_API_KEY_REQUIRED",
-            error_message="SERP provider not configured. Add your SerpApi API key in Settings to enable keyword tracking and Geo-Grid searches."
+            error_message="SERP provider not configured. Add your SerpApi key in Settings to enable keyword tracking and Geo-Grid searches."
         )
-

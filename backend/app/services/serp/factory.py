@@ -14,10 +14,21 @@ from app.services.serp.mock_provider import MockSERPProvider
 logger = logging.getLogger("locallift.serp.factory")
 
 
+NON_RETRYABLE_ERRORS = {
+    "SERP_PROVIDER_AUTH_ERROR",
+    "SERP_PROVIDER_NOT_CONFIGURED",
+    "SERP_API_KEY_REQUIRED",
+    "PROVIDER_GEO_GRID_UNSUPPORTED",
+    "UNSUPPORTED_FEATURE",
+    "INVALID_API_KEY",
+    "QUOTA_EXHAUSTED",
+}
+
+
 class FallbackSERPProvider(SERPProvider):
     """
     Composite SERP Provider that attempts the primary provider first,
-    and falls back to secondary provider if primary fails and fallback is enabled.
+    and falls back to secondary provider ONLY for retryable errors (timeouts, 5xx, transient errors).
     """
 
     def __init__(self, primary: SERPProvider, secondary: Optional[SERPProvider] = None):
@@ -27,6 +38,10 @@ class FallbackSERPProvider(SERPProvider):
     @property
     def is_configured(self) -> bool:
         return self.primary.is_configured or (self.secondary is not None and self.secondary.is_configured)
+
+    @property
+    def capabilities(self):
+        return self.primary.capabilities
 
     async def search_keyword(
         self,
@@ -45,12 +60,17 @@ class FallbackSERPProvider(SERPProvider):
             device=device,
             num_results=num_results
         )
+        res.primary_provider = self.primary.__class__.__name__
         if res.success:
+            res.final_state = "success"
             return res
 
-        if self.secondary and self.secondary.is_configured:
+        res.primary_error = f"{res.error_code}: {res.error_message}"
+        is_non_retryable = res.error_code in NON_RETRYABLE_ERRORS
+
+        if not is_non_retryable and self.secondary and self.secondary.is_configured:
             logger.warning(
-                f"SERP_PRIMARY_PROVIDER_FAILED: Provider '{self.primary.__class__.__name__}' "
+                f"SERP_PRIMARY_PROVIDER_FAILED (retryable): Provider '{self.primary.__class__.__name__}' "
                 f"failed with code '{res.error_code}': {res.error_message}. Invoking fallback."
             )
             fallback_res = await self.secondary.search_keyword(
@@ -61,9 +81,15 @@ class FallbackSERPProvider(SERPProvider):
                 device=device,
                 num_results=num_results
             )
+            fallback_res.primary_provider = self.primary.__class__.__name__
+            fallback_res.primary_error = res.primary_error
+            fallback_res.fallback_provider = self.secondary.__class__.__name__
+            fallback_res.fallback_result = "success" if fallback_res.success else fallback_res.error_code
+            fallback_res.final_state = "success" if fallback_res.success else (fallback_res.error_code or "provider_error")
             logger.info(f"SERP_FALLBACK_USED: Provider '{self.secondary.__class__.__name__}' executed fallback search.")
             return fallback_res
 
+        res.final_state = res.error_code or "provider_error"
         return res
 
     async def search_local_grid_point(
@@ -81,12 +107,17 @@ class FallbackSERPProvider(SERPProvider):
             location_name=location_name,
             zoom=zoom
         )
+        res.primary_provider = self.primary.__class__.__name__
         if res.success:
+            res.final_state = "success"
             return res
 
-        if self.secondary and self.secondary.is_configured:
+        res.primary_error = f"{res.error_code}: {res.error_message}"
+        is_non_retryable = res.error_code in NON_RETRYABLE_ERRORS
+
+        if not is_non_retryable and self.secondary and self.secondary.is_configured:
             logger.warning(
-                f"SERP_PRIMARY_PROVIDER_FAILED: Local grid search with primary failed ({res.error_code}). Invoking fallback."
+                f"SERP_PRIMARY_PROVIDER_FAILED (retryable): Local grid search with primary failed ({res.error_code}). Invoking fallback."
             )
             fallback_res = await self.secondary.search_local_grid_point(
                 keyword=keyword,
@@ -95,9 +126,15 @@ class FallbackSERPProvider(SERPProvider):
                 location_name=location_name,
                 zoom=zoom
             )
+            fallback_res.primary_provider = self.primary.__class__.__name__
+            fallback_res.primary_error = res.primary_error
+            fallback_res.fallback_provider = self.secondary.__class__.__name__
+            fallback_res.fallback_result = "success" if fallback_res.success else fallback_res.error_code
+            fallback_res.final_state = "success" if fallback_res.success else (fallback_res.error_code or "provider_error")
             logger.info(f"SERP_FALLBACK_USED: Local grid search fallback executed via '{self.secondary.__class__.__name__}'.")
             return fallback_res
 
+        res.final_state = res.error_code or "provider_error"
         return res
 
 
@@ -128,9 +165,9 @@ async def get_organization_serp_provider(
                 logger.info(f"[SERP] provider=serpapi configured=true organization_id={organization_id}")
                 return SerpApiProvider(api_key=raw_key)
         elif provider_name == "openserp":
-            base_url = settings.OPENSERP_BASE_URL
+            base_url = (serp_config.base_url or "").strip() or getattr(settings, "OPENSERP_BASE_URL", "")
             if base_url:
-                logger.info(f"[SERP] provider=openserp organization_id={organization_id}")
+                logger.info(f"[SERP] provider=openserp organization_id={organization_id} base_url={base_url}")
                 return OpenSERPProvider(base_url=base_url)
 
     global_serpapi_key = getattr(settings, "SERPAPI_KEY", "")

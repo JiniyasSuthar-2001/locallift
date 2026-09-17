@@ -198,8 +198,6 @@ async def create_project(
     )
     db.add(website)
 
-    db.add(website)
-
     await db.commit()
     
     # Reload with relations
@@ -583,7 +581,7 @@ async def create_project_location(
         city=location_in.city,
         state=location_in.state,
         postal_code=location_in.postal_code,
-        country=location_in.country or "United States",
+        country=location_in.country or (project.country if hasattr(project, 'country') else None),
         phone=location_in.phone,
         latitude=lat,
         longitude=lng,

@@ -17,7 +17,8 @@ import {
   Building2,
   Sparkles,
   RefreshCw,
-  FolderOpen
+  FolderOpen,
+  Trash2
 } from 'lucide-react';
 import api from '../api/client';
 import { useProject } from '../context/ProjectContext';
@@ -43,8 +44,11 @@ export const MyProjectsView: React.FC = () => {
   const [newCity, setNewCity] = useState<string>('');
   const [newState, setNewState] = useState<string>('');
   const [newPhone, setNewPhone] = useState<string>('');
-  const [categorySuggestions, setCategorySuggestions] = useState<BusinessCategory[]>([]);
+  const [newCountry, setNewCountry] = useState<string>('Australia');
   const [creating, setCreating] = useState<boolean>(false);
+
+  // Category suggestions
+  const [categorySuggestions, setCategorySuggestions] = useState<BusinessCategory[]>([]);
 
   // Edit Project Modal State
   const [editingProject, setEditingProject] = useState<Project | null>(null);
@@ -52,6 +56,30 @@ export const MyProjectsView: React.FC = () => {
   const [editDomain, setEditDomain] = useState<string>('');
   const [editCategory, setEditCategory] = useState<string>('');
   const [savingEdit, setSavingEdit] = useState<boolean>(false);
+
+  // Delete Project Modal State
+  const [deletingProject, setDeletingProject] = useState<Project | null>(null);
+  const [isDeleting, setIsDeleting] = useState<boolean>(false);
+
+  const handleDeleteProject = async () => {
+    if (!deletingProject) return;
+    try {
+      setIsDeleting(true);
+      setErrorMsg(null);
+      await api.delete(`/projects/${deletingProject.id}`);
+      setSuccessMsg(`Project "${deletingProject.name}" deleted successfully.`);
+      const remaining = projects.filter(p => p.id !== deletingProject.id);
+      setDeletingProject(null);
+      if (activeProject?.id === deletingProject.id) {
+        setActiveProject(remaining[0] || null);
+      }
+      await refreshProjects();
+    } catch (err: any) {
+      setErrorMsg(getErrorMessage(err, 'Failed to delete project.'));
+    } finally {
+      setIsDeleting(false);
+    }
+  };
 
   // Load category suggestions for autocomplete
   useEffect(() => {
@@ -78,17 +106,18 @@ export const MyProjectsView: React.FC = () => {
     setErrorMsg(null);
     try {
       const cleanDomain = newDomain.trim().replace(/^https?:\/\//, '').replace(/\/+$/, '');
+      const selectedCountry = newCountry.trim() || 'Australia';
       const res = await api.post<Project>('/projects', {
         name: newName.trim(),
         domain: cleanDomain,
         primary_category: newCategory,
-        country: 'United States',
+        country: selectedCountry,
         location: newCity ? {
           name: `${newName.trim()} Primary Location`,
           city: newCity.trim(),
           state: newState.trim() || undefined,
           phone: newPhone.trim() || undefined,
-          country: 'United States'
+          country: selectedCountry
         } : undefined
       });
 
@@ -389,10 +418,58 @@ export const MyProjectsView: React.FC = () => {
                   >
                     <Archive className="w-3.5 h-3.5" />
                   </button>
+
+                  <button
+                    onClick={() => setDeletingProject(project)}
+                    className="p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-xl transition-all"
+                    title="Delete Project"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
                 </div>
               </div>
             );
           })}
+        </div>
+      )}
+
+      {/* MODAL: Delete Confirmation */}
+      {deletingProject && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fade-in">
+          <div className="bg-white rounded-3xl max-w-md w-full p-6 sm:p-7 shadow-2xl border border-slate-200 space-y-4">
+            <div className="flex items-center space-x-3 text-rose-600">
+              <div className="w-10 h-10 rounded-2xl bg-rose-100 flex items-center justify-center">
+                <Trash2 className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="text-base font-black text-slate-900">Delete Project</h3>
+                <p className="text-xs text-slate-500">This action cannot be undone.</p>
+              </div>
+            </div>
+
+            <p className="text-xs text-slate-600">
+              Are you sure you want to permanently delete <strong className="text-slate-900">{deletingProject.name}</strong> ({deletingProject.domain}) and all associated audits, crawl pages, keywords, and reports?
+            </p>
+
+            <div className="flex items-center justify-end space-x-3 pt-2">
+              <button
+                onClick={() => setDeletingProject(null)}
+                disabled={isDeleting}
+                className="px-4 py-2 border border-slate-200 rounded-xl text-xs font-bold text-slate-600 hover:bg-slate-50 transition-all"
+              >
+                Cancel
+              </button>
+
+              <button
+                onClick={handleDeleteProject}
+                disabled={isDeleting}
+                className="px-5 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-bold shadow-md transition-all flex items-center space-x-1.5 disabled:opacity-50"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                <span>{isDeleting ? 'Deleting...' : 'Delete Permanently'}</span>
+              </button>
+            </div>
+          </div>
         </div>
       )}
 

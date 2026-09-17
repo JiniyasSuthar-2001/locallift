@@ -43,10 +43,22 @@ export const LocalSEOAuditView: React.FC = () => {
     if (!activeProject) return;
     try {
       setIsAuditing(true);
-      await api.post(`/audits/crawl/${activeProject.id}`, {
+      const resp = await api.post(`/audits/crawl/${activeProject.id}`, {
         url: `https://${activeProject.domain}`,
-        max_pages: 10
+        max_pages: 10,
+        respect_robots: true
       });
+      const jobId = resp.data?.job_id;
+      if (jobId) {
+        let isDone = false;
+        while (!isDone) {
+          await new Promise((r) => setTimeout(r, 2000));
+          const jResp = await api.get(`/audits/jobs/${jobId}`);
+          if (jResp.data.status === 'completed' || jResp.data.status === 'failed') {
+            isDone = true;
+          }
+        }
+      }
       await fetchLocalIssues();
       await refreshDashboard();
     } catch (err) {

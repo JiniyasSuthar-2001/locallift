@@ -71,3 +71,24 @@ class GeoGridScan(Base):
 
     project = relationship("Project", back_populates="geo_grid_scans")
     keyword_rel = relationship("Keyword", back_populates="grid_scans")
+
+class RankingSnapshot(Base):
+    __tablename__ = "ranking_snapshots"
+
+    id = Column(Integer, primary_key=True, index=True)
+    project_id = Column(Integer, ForeignKey("projects.id", ondelete="CASCADE"), nullable=False)
+    keyword_id = Column(Integer, ForeignKey("keywords.id", ondelete="CASCADE"), nullable=False)
+    keyword = Column(String(255), nullable=False)
+    location = Column(String(255), nullable=True)
+    country = Column(String(10), default="us")
+    language = Column(String(10), default="en")
+    device = Column(String(20), default="desktop")
+    provider = Column(String(50), nullable=False)
+    checked_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    position = Column(Integer, nullable=True)
+    ranking_url = Column(String(1000), nullable=True)
+    serp_features = Column(JSON, default=list)
+    status = Column(String(50), default="success")  # success, failed, error
+    error_message = Column(Text, nullable=True)
+
+    keyword_rel = relationship("Keyword")

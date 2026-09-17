@@ -29,6 +29,72 @@ class TaskPriority(str, enum.Enum):
     MEDIUM = "medium"
     LOW = "low"
 
+class AuditJobStatus(str, enum.Enum):
+    QUEUED = "queued"
+    RUNNING = "running"
+    FETCHING_ROBOTS = "fetching_robots"
+    READING_SITEMAPS = "reading_sitemaps"
+    DISCOVERING = "discovering"
+    CRAWLING = "crawling"
+    CHECKING_LINKS = "checking_links"
+    SAVING = "saving"
+    COMPLETED = "completed"
+    COMPLETED_WITH_ERRORS = "completed_with_errors"
+    CANCEL_REQUESTED = "cancel_requested"
+    CANCELLED = "cancelled"
+    BLOCKED_BY_ROBOTS = "blocked_by_robots"
+    BLOCKED_BY_PROTECTION = "blocked_by_protection"
+    FAILED = "failed"
+
+class AuditJob(Base):
+    __tablename__ = "audit_jobs"
+
+    id = Column(Integer, primary_key=True, index=True)
+    project_id = Column(Integer, ForeignKey("projects.id", ondelete="CASCADE"), nullable=False)
+    organization_id = Column(Integer, ForeignKey("organizations.id", ondelete="SET NULL"), nullable=True)
+    job_type = Column(String(50), default="website_audit")
+    status = Column(Enum(AuditJobStatus), default=AuditJobStatus.QUEUED, nullable=False)
+    crawler_status = Column(String(100), default="queued")
+    progress = Column(Float, default=0.0)
+    current_stage = Column(String(200), default="Queued for execution")
+    
+    # Detailed diagnostic counters
+    pages_discovered = Column(Integer, default=0)
+    pages_crawled = Column(Integer, default=0)
+    pages_processed = Column(Integer, default=0)
+    pages_failed = Column(Integer, default=0)
+    pages_blocked = Column(Integer, default=0)
+    links_discovered = Column(Integer, default=0)
+    links_checked = Column(Integer, default=0)
+    broken_links_found = Column(Integer, default=0)
+    js_pages_rendered = Column(Integer, default=0)
+    sitemap_urls_discovered = Column(Integer, default=0)
+    robots_blocked_count = Column(Integer, default=0)
+    ssrf_blocked_count = Column(Integer, default=0)
+    
+    broken_link_check_status = Column(String(50), default="not_started")
+    broken_link_check_error = Column(Text, nullable=True)
+    links_skipped = Column(Integer, default=0)
+    runtime_limit_reached = Column(Boolean, default=False)
+    redirect_limit_reached = Column(Boolean, default=False)
+    browser_rendering_unavailable = Column(Boolean, default=False)
+    
+    start_url = Column(String(1000), nullable=True)
+    started_at = Column(DateTime, nullable=True)
+    completed_at = Column(DateTime, nullable=True)
+    failed_at = Column(DateTime, nullable=True)
+    error_message = Column(Text, nullable=True)
+    error_code = Column(String(50), nullable=True)
+    
+    # Session snapshot configuration used for this crawl
+    options_snapshot = Column(JSON, default=dict)
+    
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+
+    project = relationship("Project")
+
+
 class WebsitePage(Base):
     __tablename__ = "website_pages"
 

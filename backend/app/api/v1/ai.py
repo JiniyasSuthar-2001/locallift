@@ -1,9 +1,8 @@
 import logging
-from typing import List
-from fastapi import APIRouter, Depends, HTTPException
+from typing import List, Optional
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
-from sqlalchemy.orm import selectinload
 
 from app.database import get_db
 from app.core.deps import get_current_user, verify_project_access
@@ -15,10 +14,26 @@ from app.models.local_seo import Review, Citation
 from app.models.gbp import GoogleAccount, GoogleBusinessProfile
 from app.schemas.ai import AIChatRequest, AIAnalysisResponse, ContentOpportunityOut
 from app.services.ai_assistant import AIAssistantService
+from app.services.ai_consumption_service import AIConsumptionService
 
 logger = logging.getLogger("locallift.api.ai")
 
 router = APIRouter(prefix="/ai", tags=["AI SEO Assistant"])
+
+@router.get("/usage-status")
+async def get_ai_usage_status(
+    project_id: Optional[int] = Query(None),
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Exposes customer-facing AI credits balance, daily/monthly usage counters, and limit settings.
+    """
+    if project_id:
+        await verify_project_access(project_id, current_user, db)
+
+    org_id = await AIConsumptionService.resolve_organization_id(db, current_user, project_id)
+    return await AIConsumptionService.get_usage_status(db, org_id)
 
 @router.post("/diagnostic", response_model=AIAnalysisResponse)
 async def analyze_project_query(
@@ -28,9 +43,8 @@ async def analyze_project_query(
 ):
     """
     Executes an evidence-backed Local SEO root cause diagnostic query
-    synthesizing real rankings, GBP connection, reviews, and audit signals.
+    gated by central AI access controls, daily/monthly limits, and credit balances.
     """
-    # 1. Input Validation / Protection
     clean_query = req.query.strip()
     if not clean_query:
         raise HTTPException(status_code=422, detail="Diagnostic query cannot be empty.")
@@ -39,7 +53,7 @@ async def analyze_project_query(
 
     project = await verify_project_access(req.project_id, current_user, db)
 
-    # 2. Gather verified real project context
+    # Gather project context
     iss_res = await db.execute(select(SEOIssue).where(SEOIssue.project_id == req.project_id).limit(15))
     kw_res = await db.execute(select(Keyword).where(Keyword.project_id == req.project_id).limit(20))
     rev_res = await db.execute(select(Review).where(Review.project_id == req.project_id).limit(10))
@@ -47,7 +61,6 @@ async def analyze_project_query(
     loc_res = await db.execute(select(Location).where(Location.project_id == req.project_id))
     loc = loc_res.scalars().first()
 
-    # GBP Profile connection
     acc_res = await db.execute(select(GoogleAccount).where(GoogleAccount.project_id == req.project_id))
     google_acc = acc_res.scalars().first()
     gbp = None
@@ -86,23 +99,19 @@ async def analyze_project_query(
         }
     }
 
-    try:
-        result = await AIAssistantService.analyze_project_query(clean_query, context)
-        return AIAnalysisResponse(**result)
-    except Exception as e:
-        err_str = str(e)
-        logger.error(f"AI Assistant diagnostic error: {err_str}")
-        if "AI_NOT_CONFIGURED" in err_str:
-            raise HTTPException(
-                status_code=400,
-                detail="AI_NOT_CONFIGURED: AI_API_KEY is not configured in environment settings. Please configure your AI API key to enable real AI diagnostics."
-            )
-        elif "AI_RATE_LIMIT" in err_str:
-            raise HTTPException(status_code=429, detail="AI_RATE_LIMIT: Rate limit exceeded on AI provider. Please retry in a few moments.")
-        elif "AI_TIMEOUT" in err_str:
-            raise HTTPException(status_code=504, detail="AI_TIMEOUT: AI request timed out. Please try again.")
-        else:
-            raise HTTPException(status_code=500, detail=f"AI diagnostic failed: {err_str[:200]}")
+    # Pass through Central AI Access & Billing Gate
+    async def _call_provider():
+        return await AIAssistantService.analyze_project_query(clean_query, context)
+
+    result = await AIConsumptionService.execute_gated_request(
+        db=db,
+        user=current_user,
+        project_id=req.project_id,
+        task_type="diagnostic",
+        provider_fn=_call_provider,
+        requested_cost=1.0
+    )
+    return AIAnalysisResponse(**result)
 
 @router.post("/review-response/{review_id}")
 async def generate_review_response(
@@ -111,8 +120,7 @@ async def generate_review_response(
     db: AsyncSession = Depends(get_db)
 ):
     """
-    Drafts a personalized, evidence-based reply tailored to the specific customer feedback text.
-    Result is stored as a DRAFT requiring human review & approval before publishing.
+    Drafts a personalized reply tailored to customer feedback, gated by AI usage controls.
     """
     result = await db.execute(select(Review).where(Review.id == review_id))
     review = result.scalars().first()
@@ -122,28 +130,23 @@ async def generate_review_response(
     proj = await verify_project_access(review.project_id, current_user, db)
     business_name = proj.name if proj else "Our Business"
 
-    try:
-        drafted_text = await AIAssistantService.draft_review_response(
+    async def _call_provider():
+        return await AIAssistantService.draft_review_response(
             author_name=review.author_name,
             rating=review.rating,
             review_text=review.review_text or "",
             business_name=business_name,
             business_category=proj.primary_category if proj else None
         )
-    except Exception as e:
-        err_str = str(e)
-        logger.error(f"AI review response generation error: {err_str}")
-        if "AI_NOT_CONFIGURED" in err_str:
-            raise HTTPException(
-                status_code=400,
-                detail="AI_NOT_CONFIGURED: AI_API_KEY is not configured in environment settings. Please configure your AI API key to enable AI review drafting."
-            )
-        elif "AI_RATE_LIMIT" in err_str:
-            raise HTTPException(status_code=429, detail="AI_RATE_LIMIT: Rate limit exceeded on AI provider. Please retry shortly.")
-        elif "AI_TIMEOUT" in err_str:
-            raise HTTPException(status_code=504, detail="AI_TIMEOUT: AI request timed out. Please try again.")
-        else:
-            raise HTTPException(status_code=500, detail=f"AI review draft failed: {err_str[:200]}")
+
+    drafted_text = await AIConsumptionService.execute_gated_request(
+        db=db,
+        user=current_user,
+        project_id=review.project_id,
+        task_type="review_response",
+        provider_fn=_call_provider,
+        requested_cost=1.0
+    )
 
     review.response_text = drafted_text
     review.response_status = "drafted"
@@ -162,17 +165,18 @@ async def get_content_opportunities(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
+    """
+    Generates content opportunity recommendations gated by central AI access controls.
+    """
     proj = await verify_project_access(project_id, current_user, db)
     loc_res = await db.execute(select(Location).where(Location.project_id == project_id))
     loc = loc_res.scalars().first()
     city = (loc.city if loc and loc.city else "Local Area").strip()
     category = (proj.primary_category or "Local Business").strip()
 
-    # Fetch real keywords for this project
     kw_res = await db.execute(select(Keyword).where(Keyword.project_id == project_id).limit(10))
     keywords = [k.keyword for k in kw_res.scalars().all()]
 
-    # Fetch real website pages
     page_res = await db.execute(select(WebsitePage).where(WebsitePage.website_id == proj.id).limit(5))
     pages = [{"title": p.title, "url": p.url} for p in page_res.scalars().all()]
 
@@ -186,9 +190,20 @@ async def get_content_opportunities(
         "crawled_pages": pages
     }
 
-    try:
-        raw_opps = await AIAssistantService.generate_content_opportunities(project_context)
-        out = []
+    async def _call_provider():
+        return await AIAssistantService.generate_content_opportunities(project_context)
+
+    raw_opps = await AIConsumptionService.execute_gated_request(
+        db=db,
+        user=current_user,
+        project_id=project_id,
+        task_type="content_opportunities",
+        provider_fn=_call_provider,
+        requested_cost=1.0
+    )
+
+    out = []
+    if isinstance(raw_opps, list):
         for o in raw_opps:
             if isinstance(o, dict):
                 out.append(ContentOpportunityOut(
@@ -203,12 +218,10 @@ async def get_content_opportunities(
                     competition_level=o.get("competition_level") or "Medium",
                     target_slug=o.get("target_slug") or f"/services/{category.lower().replace(' ', '-')}"
                 ))
-        if out:
-            return out
-    except Exception as e:
-        logger.warning(f"AI content opportunities routing notice for project {project_id}: {e}")
+    if out:
+        return out
 
-    # Fallback to dynamic context parsing if empty
+    # Fallback structure if array empty
     cat_slug = category.lower().replace(" ", "-")
     city_slug = city.lower().replace(" ", "-")
     primary_kw = keywords[0] if keywords else f"{category.lower()} in {city.lower()}"

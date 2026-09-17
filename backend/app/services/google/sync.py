@@ -162,51 +162,83 @@ class GBPSyncService:
                         profile.last_synced_at = datetime.now(timezone.utc)
                         synced_profiles_count += 1
 
+                    # Track review synchronization
+                    reviews_synced_count = 0
+                    review_sync_status = "not_requested"
+                    review_sync_error = None
+
                     # Fetch live reviews for this location if project_id is linked
                     if google_account.project_id:
                         from app.models.local_seo import Review
-                        reviews_data = await client.fetch_location_reviews(acc_name, loc_name)
-                        for rev in reviews_data:
-                            existing_rev_res = await db.execute(
-                                select(Review).where(
-                                    Review.project_id == google_account.project_id,
-                                    Review.author_name == rev["author_name"],
-                                    Review.source == "Google"
+                        review_res = await client.fetch_location_reviews(acc_name, loc_name)
+                        if review_res.get("success"):
+                            review_sync_status = "synced"
+                            reviews_data = review_res.get("reviews", [])
+                            for rev in reviews_data:
+                                existing_rev_res = await db.execute(
+                                    select(Review).where(
+                                        Review.project_id == google_account.project_id,
+                                        Review.author_name == rev["author_name"],
+                                        Review.source == "Google"
+                                    )
                                 )
-                            )
-                            existing_rev = existing_rev_res.scalars().first()
-                            if existing_rev:
-                                existing_rev.rating = rev["rating"]
-                                existing_rev.review_text = rev["review_text"]
-                                if rev.get("response_text"):
-                                    existing_rev.response_text = rev["response_text"]
-                                    existing_rev.response_status = rev["response_status"]
-                            else:
-                                new_rev = Review(
-                                    project_id=google_account.project_id,
-                                    source="Google",
-                                    author_name=rev["author_name"],
-                                    author_photo_url=rev.get("author_photo_url"),
-                                    rating=rev["rating"],
-                                    review_text=rev.get("review_text"),
-                                    review_date=rev.get("review_date", datetime.now(timezone.utc)),
-                                    response_text=rev.get("response_text"),
-                                    response_status=rev.get("response_status", "unanswered"),
-                                    sentiment="positive" if rev["rating"] >= 4 else ("neutral" if rev["rating"] == 3 else "negative")
-                                )
-                                db.add(new_rev)
+                                existing_rev = existing_rev_res.scalars().first()
+                                if existing_rev:
+                                    existing_rev.rating = rev["rating"]
+                                    existing_rev.review_text = rev["review_text"]
+                                    if rev.get("response_text"):
+                                        existing_rev.response_text = rev["response_text"]
+                                        existing_rev.response_status = rev["response_status"]
+                                else:
+                                    new_rev = Review(
+                                        project_id=google_account.project_id,
+                                        source="Google",
+                                        author_name=rev["author_name"],
+                                        author_photo_url=rev.get("author_photo_url"),
+                                        rating=rev["rating"],
+                                        review_text=rev.get("review_text"),
+                                        review_date=rev.get("review_date", datetime.now(timezone.utc)),
+                                        response_text=rev.get("response_text"),
+                                        response_status=rev.get("response_status", "unanswered"),
+                                        sentiment="positive" if rev["rating"] >= 4 else ("neutral" if rev["rating"] == 3 else "negative")
+                                    )
+                                    db.add(new_rev)
+                                reviews_synced_count += 1
+                        else:
+                            review_sync_status = "failed"
+                            review_sync_error = review_res.get("error")
 
-            # 5. If access token was refreshed during the sync, persist updated tokens
+            # 5. If access token was refreshed during the sync, persist updated tokens consistently
             if client.token_refreshed:
                 google_account.access_token = client.access_token
                 google_account.token_expiry = client.token_expiry
+                
+                # Sync back to authoritative org-level GoogleConnection
+                from app.services.google.connections_service import GoogleConnectionsService
+                from app.models.project import Project
+                proj_res = await db.execute(select(Project).where(Project.id == google_account.project_id))
+                proj = proj_res.scalars().first()
+                if proj:
+                    gbp_conn = await GoogleConnectionsService.get_connection_for_service(proj.organization_id, "business_profile", db)
+                    if gbp_conn:
+                        gbp_conn.access_token = client.access_token
+                        gbp_conn.token_expiry = client.token_expiry
 
             await db.commit()
 
+            overall_status = "synced"
+            if review_sync_status == "failed":
+                overall_status = "partial" if synced_profiles_count > 0 else "failed"
+
             return {
-                "status": "synced",
+                "status": overall_status,
                 "profiles_synced": synced_profiles_count,
                 "changes_detected": detected_changes_count,
+                "reviews_synced": reviews_synced_count,
+                "review_sync": {
+                    "status": review_sync_status,
+                    "error": review_sync_error
+                },
                 "last_synced_at": datetime.now(timezone.utc)
             }
 

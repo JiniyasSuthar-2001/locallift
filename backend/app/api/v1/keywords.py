@@ -592,12 +592,12 @@ async def rescan_project_grid(
                     select(Project).options(selectinload(Project.locations)).where(Project.id == project.id)
                 )
                 proj_full = proj_res.scalars().first()
-                loc = proj_full.locations[0] if proj_full and proj_full.locations else None
+                loc_name = loc.city if loc and loc.city else (loc.name if loc and loc.name else None)
                 matched_kw = Keyword(
                     project_id=project_id,
                     keyword=kw_phrase,
-                    target_location=loc.city if loc and loc.city else "Metro Area",
-                    search_intent="Commercial",
+                    target_location=loc_name,
+                    search_intent=None,
                     created_at=datetime.now(timezone.utc)
                 )
                 db.add(matched_kw)

@@ -113,7 +113,7 @@ export const SchemaGeneratorView: React.FC = () => {
       setCity(loc?.city || '');
       setState(loc?.state || '');
       setPostalCode(loc?.postal_code || '');
-      setCountry(loc?.country === 'Australia' ? 'AU' : (loc?.country || 'US'));
+      setCountry(loc?.country === 'Australia' ? 'AU' : (loc?.country || ''));
       setLatitude(loc?.latitude !== undefined && loc?.latitude !== null ? String(loc.latitude) : '');
       setLongitude(loc?.longitude !== undefined && loc?.longitude !== null ? String(loc.longitude) : '');
 
@@ -180,7 +180,7 @@ export const SchemaGeneratorView: React.FC = () => {
       const payload: any = {
         business_name: businessName,
         business_type: businessType,
-        url: siteUrl || `https://${activeProject?.domain || 'example.com'}`,
+        url: siteUrl || (activeProject?.domain ? `https://${activeProject.domain}` : ''),
         include_graph: includeGraph
       };
 

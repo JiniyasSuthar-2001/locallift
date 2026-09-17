@@ -44,7 +44,7 @@ export const SettingsView: React.FC = () => {
   const [name, setName] = useState('');
   const [domain, setDomain] = useState('');
   const [primaryCategory, setPrimaryCategory] = useState('');
-  const [country, setCountry] = useState('United States');
+  const [country, setCountry] = useState('Australia');
 
   // Request State
   const [isSaving, setIsSaving] = useState(false);
@@ -55,6 +55,7 @@ export const SettingsView: React.FC = () => {
   const [serpConfig, setSerpConfig] = useState<SERPConfig | null>(null);
   const [selectedProvider, setSelectedProvider] = useState<string>('serpapi');
   const [apiKeyInput, setApiKeyInput] = useState<string>('');
+  const [baseUrlInput, setBaseUrlInput] = useState<string>('');
   const [isSavingSerpKey, setIsSavingSerpKey] = useState(false);
   const [isTestingSerpKey, setIsTestingSerpKey] = useState(false);
   const [serpResultMsg, setSerpResultMsg] = useState<string | null>(null);
@@ -66,7 +67,7 @@ export const SettingsView: React.FC = () => {
       setName(activeProject.name || '');
       setDomain(activeProject.domain || '');
       setPrimaryCategory(activeProject.primary_category || 'Local Business');
-      setCountry(activeProject.country || 'United States');
+      setCountry(activeProject.country || 'Australia');
       setSuccessMsg(null);
       setErrorMsg(null);
     }
@@ -83,6 +84,9 @@ export const SettingsView: React.FC = () => {
       setSerpConfig(resp.data);
       if (resp.data?.provider) {
         setSelectedProvider(resp.data.provider);
+      }
+      if (resp.data?.base_url) {
+        setBaseUrlInput(resp.data.base_url);
       }
     } catch {
       setSerpConfig({
@@ -105,14 +109,15 @@ export const SettingsView: React.FC = () => {
     try {
       const resp = await api.post('/serp/config', {
         provider: selectedProvider,
-        api_key: apiKeyInput.trim()
+        api_key: apiKeyInput.trim() || undefined,
+        base_url: baseUrlInput.trim() || undefined
       });
       setSerpConfig(resp.data);
       setApiKeyInput('');
       setSerpResultMsg('SERP API configuration saved successfully.');
       setTimeout(() => setSerpResultMsg(null), 4000);
     } catch (err: any) {
-      setSerpResultError(getErrorMessage(err, 'Failed to save SERP API key.'));
+      setSerpResultError(getErrorMessage(err, 'Failed to save SERP API configuration.'));
     } finally {
       setIsSavingSerpKey(false);
     }
@@ -125,11 +130,12 @@ export const SettingsView: React.FC = () => {
     try {
       const resp = await api.post('/serp/test-connection', {
         provider: selectedProvider,
-        api_key: apiKeyInput.trim() || undefined
+        api_key: apiKeyInput.trim() || undefined,
+        base_url: baseUrlInput.trim() || undefined
       });
 
       if (resp.data?.success) {
-        setSerpResultMsg(resp.data?.message || 'SerpApi connection test passed successfully!');
+        setSerpResultMsg(resp.data?.message || 'SERP connection test passed successfully!');
       } else {
         setSerpResultError(resp.data?.message || 'Connection test failed.');
       }
@@ -159,7 +165,7 @@ export const SettingsView: React.FC = () => {
         name: name.trim(),
         domain: cleanDomain,
         primary_category: primaryCategory.trim() || 'Local Business',
-        country: country.trim() || 'United States'
+        country: country.trim() || 'Australia'
       });
 
       await refreshProjects(activeProject.id);
@@ -282,30 +288,66 @@ export const SettingsView: React.FC = () => {
                     className="w-full px-3.5 py-2.5 rounded-xl border border-[#B8DFC9] bg-white text-[#142820] text-xs font-semibold focus:ring-2 focus:ring-[#236B4F] focus:outline-none"
                   >
                     <option value="serpapi">SerpApi (Default Cloud Provider)</option>
-                    <option value="openserp">OpenSERP (Optional Advanced Self-Hosted)</option>
+                    <option value="openserp">OpenSERP (Self-Hosted Web Scraping Engine)</option>
                   </select>
                 </div>
 
-                {/* API Key Input */}
-                <div>
-                  <label className="block text-xs font-bold text-[#142820] uppercase tracking-wider mb-1.5">
-                    SerpApi API Key
-                  </label>
-                  <div className="relative">
+                {/* Conditional Inputs */}
+                {selectedProvider === 'openserp' ? (
+                  <div>
+                    <label className="block text-xs font-bold text-[#142820] uppercase tracking-wider mb-1.5">
+                      OpenSERP Base URL
+                    </label>
                     <input
-                      type="password"
-                      value={apiKeyInput}
-                      onChange={(e) => setApiKeyInput(e.target.value)}
-                      placeholder={
-                        serpConfig?.has_key
-                          ? `Configured (${serpConfig.masked_key})`
-                          : 'Enter your SerpApi API key'
-                      }
-                      className="w-full px-3.5 py-2.5 rounded-xl border border-[#B8DFC9] bg-white text-[#142820] text-xs font-mono font-medium focus:ring-2 focus:ring-[#236B4F] focus:outline-none pr-10"
+                      type="url"
+                      value={baseUrlInput}
+                      onChange={(e) => setBaseUrlInput(e.target.value)}
+                      placeholder="http://127.0.0.1:7000"
+                      className="w-full px-3.5 py-2.5 rounded-xl border border-[#B8DFC9] bg-white text-[#142820] text-xs font-mono font-medium focus:ring-2 focus:ring-[#236B4F] focus:outline-none"
                     />
-                    <Key className="w-4 h-4 text-[#587568] absolute right-3 top-3 pointer-events-none" />
                   </div>
+                ) : (
+                  <div>
+                    <label className="block text-xs font-bold text-[#142820] uppercase tracking-wider mb-1.5">
+                      SerpApi API Key
+                    </label>
+                    <div className="relative">
+                      <input
+                        type="password"
+                        value={apiKeyInput}
+                        onChange={(e) => setApiKeyInput(e.target.value)}
+                        placeholder={
+                          serpConfig?.has_key
+                            ? `Configured (${serpConfig.masked_key})`
+                            : 'Enter your SerpApi API key'
+                        }
+                        className="w-full px-3.5 py-2.5 rounded-xl border border-[#B8DFC9] bg-white text-[#142820] text-xs font-mono font-medium focus:ring-2 focus:ring-[#236B4F] focus:outline-none pr-10"
+                      />
+                      <Key className="w-4 h-4 text-[#587568] absolute right-3 top-3 pointer-events-none" />
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Provider Capabilities Note */}
+              <div className="p-3 bg-[#F4F9F4] border border-[#C5E3D2] rounded-xl text-xs space-y-1.5">
+                <div className="font-bold text-[#142820] flex items-center space-x-1.5">
+                  <Info className="w-4 h-4 text-[#236B4F]" />
+                  <span>
+                    Capabilities for {selectedProvider === 'openserp' ? 'OpenSERP' : 'SerpApi'}:
+                  </span>
                 </div>
+                {selectedProvider === 'openserp' ? (
+                  <p className="text-[11px] text-[#4A6358]">
+                    • Organic Web Search: <strong className="text-emerald-700">Supported</strong><br/>
+                    • Google Maps & Geo-Grid 5x5: <strong className="text-rose-700">Not Supported</strong> (Geo-Grid coordinate search requires SerpApi)
+                  </p>
+                ) : (
+                  <p className="text-[11px] text-[#4A6358]">
+                    • Organic Web Search: <strong className="text-emerald-700">Supported</strong><br/>
+                    • Google Maps & Geo-Grid 5x5: <strong className="text-emerald-700">Supported</strong> (Full coordinate search enabled)
+                  </p>
+                )}
               </div>
 
               {/* Action Buttons */}

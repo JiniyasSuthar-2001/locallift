@@ -27,6 +27,10 @@ class User(Base):
     project_memberships = relationship("ProjectMembership", back_populates="user", cascade="all, delete-orphan")
     assigned_tasks = relationship("SEOTask", back_populates="assigned_to")
 
+    @property
+    def account_status(self) -> str:
+        return "active" if self.is_active else "inactive"
+
 
 class Organization(Base):
     __tablename__ = "organizations"

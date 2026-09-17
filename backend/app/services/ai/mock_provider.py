@@ -1,4 +1,4 @@
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 from app.services.ai.base import AIProvider
 
 class MockAIProvider(AIProvider):
@@ -86,3 +86,21 @@ class MockAIProvider(AIProvider):
                 return f"Dear {author_name}, we sincerely apologize for the scheduling delay you experienced. Punctuality is a core priority for {business_name}, and we would like to make this right. Please reach out to management directly."
             else:
                 return f"Dear {author_name}, thank you for bringing this to our attention. We are sorry your experience did not meet our standard at {business_name}. Please contact our management team so we can address your concerns immediately."
+
+    async def generate_content_opportunities(self, context: Dict[str, Any]) -> List[Dict[str, Any]]:
+        if self.simulate_error:
+            raise RuntimeError(f"AI_ERROR: Simulated error {self.simulate_error}")
+        return [
+            {
+                "topic": "Comprehensive Guide: Local Service",
+                "page_type": "Service Page",
+                "primary_keyword": "local service",
+                "secondary_keywords": ["best service", "near me"],
+                "search_intent": "Transactional",
+                "search_volume": 1200,
+                "search_volume_status": "Active",
+                "business_value": "High",
+                "competition_level": "Medium",
+                "target_slug": "/services/local-service"
+            }
+        ]

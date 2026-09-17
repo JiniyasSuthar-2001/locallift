@@ -54,9 +54,9 @@ export const KeywordsView: React.FC = () => {
       await api.post('/keywords', {
         project_id: activeProject.id,
         keyword: newKeyword.trim(),
-        target_location: newLocation.trim() || 'Metro Area',
+        target_location: newLocation.trim() || undefined,
         search_intent: 'Commercial',
-        search_volume: 450
+        search_volume: null
       });
       setNewKeyword('');
       setNewLocation('');

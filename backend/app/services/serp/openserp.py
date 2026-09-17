@@ -5,7 +5,7 @@ from typing import Optional, List, Dict, Any
 import httpx
 
 from app.config import settings
-from app.services.serp.base import SERPProvider, SERPResponse, SERPItem
+from app.services.serp.base import SERPProvider, SERPResponse, SERPItem, SERPCapabilities
 
 logger = logging.getLogger("locallift.serp.openserp")
 
@@ -28,6 +28,18 @@ class OpenSERPProvider(SERPProvider):
         self.timeout = timeout or getattr(settings, "OPENSERP_TIMEOUT", 30)
         self.default_engine = default_engine or getattr(settings, "OPENSERP_DEFAULT_ENGINE", "google")
         self._custom_client = client
+
+    @property
+    def capabilities(self) -> SERPCapabilities:
+        if not self.is_configured:
+            return SERPCapabilities()
+        return SERPCapabilities(
+            organic_search=True,
+            local_search=False,
+            maps_search=False,
+            coordinate_search=False,
+            geo_grid=False
+        )
 
     @property
     def is_configured(self) -> bool:
@@ -195,14 +207,16 @@ class OpenSERPProvider(SERPProvider):
         zoom: int = 14
     ) -> SERPResponse:
         """
-        Executes a localized search for a GeoGrid coordinate point using OpenSERP.
+        OpenSERP does not support discrete GPS coordinate Maps searches.
+        Returns explicit unsupported provider status.
         """
-        loc_str = location_name or f"{lat:.5f},{lng:.5f}"
-        return await self.search_keyword(
+        return SERPResponse(
+            provider="openserp",
             keyword=keyword,
-            location=loc_str,
-            country="us",
-            language="en"
+            location=f"@{lat},{lng}",
+            success=False,
+            error_code="PROVIDER_GEO_GRID_UNSUPPORTED",
+            error_message="Geo-Grid coordinate scanning is unsupported by self-hosted OpenSERP. Configure SerpApi to enable Geo-Grid coordinate searches."
         )
 
     def _normalize_openserp_response(

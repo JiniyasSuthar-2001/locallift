@@ -43,3 +43,7 @@ backend/.env.local
 Thumbs.db
 .idea/
 .vscode/
+
+# Local Storage
+backend/storage/
+

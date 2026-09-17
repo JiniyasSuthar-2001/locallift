@@ -79,10 +79,26 @@ class GeoGridScanner:
         grid_size: int = 5,
         concurrency_limit: int = 3
     ) -> Dict[str, Any]:
-        """
-        Executes a controlled concurrent 5x5 Geo-Grid scan across discrete GPS coordinates.
-        Resilient against partial failures, rate limits, and network timeouts.
-        """
+        # 0. Check provider capabilities first
+        caps = getattr(provider, "capabilities", None)
+        if caps and not caps.geo_grid:
+            logger.warning(f"Geo-Grid scan requested for provider '{provider.__class__.__name__}' which does not support coordinate search.")
+            return {
+                "center_lat": center_lat,
+                "center_lng": center_lng,
+                "radius_km": radius_km,
+                "grid_size": grid_size,
+                "average_rank": None,
+                "local_visibility_pct": 0.0,
+                "total_points": 0,
+                "successful_points": 0,
+                "failed_points": 0,
+                "scan_status": "unsupported",
+                "status_message": f"Geo-Grid coordinate scanning is unsupported by {provider.__class__.__name__}. Configure SerpApi to enable 5x5 Geo-Grid searches.",
+                "grid_points": [],
+                "scanned_at": datetime.now(timezone.utc)
+            }
+
         coordinates = cls.calculate_grid_coordinates(center_lat, center_lng, radius_km, grid_size)
         semaphore = asyncio.Semaphore(concurrency_limit)
         now_ts = asyncio.get_event_loop().time()

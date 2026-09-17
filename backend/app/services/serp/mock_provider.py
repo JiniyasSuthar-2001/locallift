@@ -1,6 +1,6 @@
 from typing import Optional, List, Dict
 from datetime import datetime, timezone
-from app.services.serp.base import SERPProvider, SERPResponse, SERPItem
+from app.services.serp.base import SERPProvider, SERPResponse, SERPItem, SERPCapabilities
 from app.services.serp.matcher import DomainMatcher
 
 class MockSERPProvider(SERPProvider):
@@ -11,6 +11,16 @@ class MockSERPProvider(SERPProvider):
     def __init__(self, preset_results: Optional[List[Dict]] = None, simulate_error: Optional[str] = None):
         self.preset_results = preset_results or []
         self.simulate_error = simulate_error
+
+    @property
+    def capabilities(self) -> SERPCapabilities:
+        return SERPCapabilities(
+            organic_search=True,
+            local_search=True,
+            maps_search=True,
+            coordinate_search=True,
+            geo_grid=True
+        )
 
     @property
     def is_configured(self) -> bool:

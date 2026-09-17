@@ -33,6 +33,17 @@ class DomainMatcher:
         except Exception:
             return ""
 
+    @classmethod
+    def get_registrable_domain(cls, url_or_domain: str) -> str:
+        """
+        Extracts registrable root domain (e.g. 'sub.example.com' -> 'example.com').
+        """
+        host = cls.normalize_host(url_or_domain)
+        parts = host.split(".")
+        if len(parts) >= 2:
+            return ".".join(parts[-2:])
+        return host
+
     @staticmethod
     def normalize_url(url: str) -> str:
         """

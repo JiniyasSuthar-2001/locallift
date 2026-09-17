@@ -34,6 +34,38 @@ export const ReportsView: React.FC = () => {
     fetchReport();
   }, [activeProject?.id]);
 
+  const handleDownloadPDF = async () => {
+    if (!activeProject) return;
+    try {
+      const response = await api.get(`/reports/${activeProject.id}/pdf`, { responseType: 'blob' });
+      const url = window.URL.createObjectURL(new Blob([response.data]));
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', `SEO_Audit_Report_${activeProject.domain}.pdf`);
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+    } catch (e) {
+      console.error('PDF download error:', e);
+    }
+  };
+
+  const handleDownloadXLSX = async () => {
+    if (!activeProject) return;
+    try {
+      const response = await api.get(`/reports/${activeProject.id}/xlsx`, { responseType: 'blob' });
+      const url = window.URL.createObjectURL(new Blob([response.data]));
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', `Master_SEO_Audit_${activeProject.domain}.xlsx`);
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+    } catch (e) {
+      console.error('XLSX download error:', e);
+    }
+  };
+
   const handlePrint = () => {
     window.print();
   };
@@ -72,13 +104,31 @@ export const ReportsView: React.FC = () => {
           </p>
         </div>
 
-        <button
-          onClick={handlePrint}
-          className="flex items-center space-x-2 px-5 py-2.5 btn-vibrant-primary rounded-xl text-xs font-bold shadow-md transition-all self-start"
-        >
-          <Printer className="w-4 h-4" />
-          <span>Print / Save as PDF</span>
-        </button>
+        <div className="flex items-center space-x-2 self-start">
+          <button
+            onClick={handleDownloadPDF}
+            className="flex items-center space-x-2 px-4 py-2.5 bg-white border border-slate-200 hover:border-purple-300 text-slate-700 hover:text-purple-700 rounded-xl text-xs font-bold shadow-xs transition-all"
+          >
+            <FileText className="w-4 h-4 text-purple-600" />
+            <span>Download PDF</span>
+          </button>
+
+          <button
+            onClick={handleDownloadXLSX}
+            className="flex items-center space-x-2 px-4 py-2.5 bg-white border border-slate-200 hover:border-purple-300 text-slate-700 hover:text-purple-700 rounded-xl text-xs font-bold shadow-xs transition-all"
+          >
+            <FileText className="w-4 h-4 text-emerald-600" />
+            <span>Master XLSX</span>
+          </button>
+
+          <button
+            onClick={handlePrint}
+            className="flex items-center space-x-2 px-5 py-2.5 btn-vibrant-primary rounded-xl text-xs font-bold shadow-md transition-all"
+          >
+            <Printer className="w-4 h-4" />
+            <span>Print / Save</span>
+          </button>
+        </div>
       </div>
 
       {/* Printable Report Document Card */}

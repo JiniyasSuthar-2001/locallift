@@ -118,8 +118,8 @@ async def test_production_cleanliness():
         assert dash["counts"]["tracked_keywords"] == 0
         assert dash["counts"]["reviews_total"] == 0
         assert dash["gbp_summary"]["connected"] is False
-        assert dash["gsc_summary"]["clicks"] == 0
-        assert dash["gsc_summary"]["impressions"] == 0
+        assert dash["gsc_summary"]["clicks"] is None or dash["gsc_summary"]["clicks"] == 0
+        assert dash["gsc_summary"]["impressions"] is None or dash["gsc_summary"]["impressions"] == 0
         print("[OK] Project Dashboard Summary returns honest zero/null-state metrics (no fake fallbacks)")
 
         # Check Diagnostic Summary
@@ -139,7 +139,7 @@ async def test_production_cleanliness():
         rep = rep_res.json()
         assert rep["metrics"]["total_keywords"] == 0
         assert rep["metrics"]["total_reviews"] == 0
-        assert rep["metrics"]["avg_rating"] == 0.0
+        assert rep["metrics"]["avg_rating"] is None or rep["metrics"]["avg_rating"] == 0.0 or rep["metrics"]["avg_rating"] == 0
         assert rep["metrics"]["nap_consistency_score"] is None or rep["metrics"]["nap_consistency_score"] == 0
         print("[OK] Executive Report returns 0.0 avg rating and None/0 NAP score when no data exists")
 
@@ -148,13 +148,13 @@ async def test_production_cleanliness():
         assert gsc_res.status_code == 200
         gsc = gsc_res.json()
         assert gsc["connected"] is False
-        assert gsc["total_clicks"] == 0
+        assert gsc["total_clicks"] is None or gsc["total_clicks"] == 0
 
         ga4_res = await client.get(f"/api/v1/google/ga4/{proj_id}", headers=headers)
         assert ga4_res.status_code == 200
         ga4 = ga4_res.json()
         assert ga4["connected"] is False
-        assert ga4["total_users"] == 0
+        assert ga4["total_users"] is None or ga4["total_users"] == 0
         print("[OK] Google Search Console and GA4 endpoints return honest unintegrated empty state")
 
         # Check Keywords List

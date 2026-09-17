@@ -93,15 +93,24 @@ class PublicBusinessListing(Base):
     place_id = Column(String(255), nullable=True, index=True)
     name = Column(String(255), nullable=False)
     formatted_address = Column(String(500), nullable=True)
+    address_components = Column(JSON, nullable=True)
     phone = Column(String(50), nullable=True)
     website_url = Column(String(500), nullable=True)
-    primary_category = Column(String(255), default="Local Business")
+    category = Column(String(255), nullable=True)
+    primary_category = Column(String(255), nullable=True)
+    business_status = Column(String(100), nullable=True)
     
     rating = Column(Float, nullable=True)
     review_count = Column(Integer, nullable=True, default=None)
+    opening_hours = Column(JSON, nullable=True)
     maps_url = Column(String(1000), nullable=True)
     latitude = Column(Float, nullable=True)
     longitude = Column(Float, nullable=True)
+    
+    source = Column(String(50), default="google_places_api")
+    source_checked_at = Column(DateTime, nullable=True)
+    lookup_status = Column(String(50), default="idle")  # idle, searching, found, not_found, ambiguous, not_configured, invalid_credentials, quota_exceeded, timeout, provider_error
+    lookup_error = Column(Text, nullable=True)
     
     is_managed = Column(Boolean, default=False)
     monitoring_status = Column(String(50), default="active")  # active, paused
@@ -119,7 +128,10 @@ class OrganizationSERPConfig(Base):
     organization_id = Column(Integer, ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False, unique=True, index=True)
 
     provider = Column(String(50), default="serpapi", nullable=False)  # serpapi, openserp, not_configured
+    base_url = Column(String(500), nullable=True)  # Base URL for OpenSERP or custom proxy
+    auth_mode = Column(String(50), default="api_key")  # api_key, none
     api_key = Column(Text, nullable=True)  # Encrypted at rest via encrypt_token
+    capabilities = Column(JSON, default=dict)
     enabled = Column(Boolean, default=True)
     connection_status = Column(String(50), default="not_configured")  # not_configured, connected, invalid_key, quota_exceeded, error
     status_message = Column(Text, nullable=True)

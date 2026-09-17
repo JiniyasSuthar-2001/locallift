@@ -21,6 +21,7 @@ from app.schemas.local_seo import (
     SchemaValidateRequest, SchemaValidateResponse, SchemaIntelligenceSummaryOut
 )
 from app.services.ai_assistant import AIAssistantService
+from app.services.ai_consumption_service import AIConsumptionService
 from app.services.schema_intelligence import SchemaIntelligenceEngine, TIER_1_SCHEMAS, INDUSTRY_SCHEMAS
 
 router = APIRouter(prefix="/local-seo", tags=["Local SEO & Reputation"])
@@ -192,24 +193,23 @@ async def draft_review_response(
     proj = await verify_project_access(review.project_id, current_user, db)
     business_name = proj.name if proj else "Our Business"
 
-    try:
-        drafted_text = await AIAssistantService.draft_review_response(
+    async def _call_provider():
+        return await AIAssistantService.draft_review_response(
             author_name=review.author_name,
             rating=review.rating,
             review_text=review.review_text or "",
             business_name=business_name,
             business_category=proj.primary_category if proj else None
         )
-    except Exception as e:
-        err_msg = str(e)
-        if "AI_NOT_CONFIGURED" in err_msg:
-            raise HTTPException(status_code=400, detail="AI_NOT_CONFIGURED: AI_API_KEY is not configured in backend environment. Please configure your AI API key to enable AI review drafting.")
-        elif "AI_RATE_LIMIT" in err_msg:
-            raise HTTPException(status_code=429, detail="AI_RATE_LIMIT: Rate limit exceeded on AI provider. Please retry shortly.")
-        elif "AI_TIMEOUT" in err_msg:
-            raise HTTPException(status_code=504, detail="AI_TIMEOUT: AI request timed out. Please try again.")
-        else:
-            raise HTTPException(status_code=500, detail=f"AI generation failed: {err_msg[:200]}")
+
+    drafted_text = await AIConsumptionService.execute_gated_request(
+        db=db,
+        user=current_user,
+        project_id=review.project_id,
+        task_type="review_response",
+        provider_fn=_call_provider,
+        requested_cost=1.0
+    )
 
     review.response_text = drafted_text
     review.response_status = "drafted"

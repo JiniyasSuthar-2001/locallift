@@ -3,6 +3,7 @@ import urllib.parse
 import logging
 from typing import List, Optional
 from datetime import datetime, timezone
+from pydantic import BaseModel
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
@@ -12,8 +13,9 @@ from app.database import get_db
 from app.config import settings
 from app.core.deps import get_current_user, verify_project_access
 from app.models.user import User
-from app.models.project import Project
-from app.models.gbp import GoogleBusinessProfile, GoogleAccount, GBPChange
+from app.models.project import Project, Location
+from app.models.connections import PublicBusinessListing
+from app.models.gbp import GoogleBusinessProfile, GoogleAccount, GBPChange, GooglePostObservation, GoogleObservedChange
 from app.schemas.gbp import (
     GBPProfileOut,
     GBPChangeOut,
@@ -32,8 +34,7 @@ router = APIRouter(prefix="/gbp", tags=["Google Business Profile"])
 async def _get_or_sync_google_account_for_project(project: Project, db: AsyncSession) -> Optional[GoogleAccount]:
     """
     Resolves the canonical Google connection state for a project.
-    If project GoogleAccount is missing or disconnected, checks the organization-wide
-    GoogleConnection for service='business_profile' and bridges credentials dynamically.
+    Does NOT manufacture fake email identities.
     """
     acc_res = await db.execute(select(GoogleAccount).where(GoogleAccount.project_id == project.id))
     account = acc_res.scalars().first()
@@ -45,7 +46,7 @@ async def _get_or_sync_google_account_for_project(project: Project, db: AsyncSes
         if not account:
             account = GoogleAccount(
                 project_id=project.id,
-                account_email=gbp_conn.account_email or f"user-{project.id}@google.com",
+                account_email=gbp_conn.account_email,
                 access_token=gbp_conn.access_token,
                 refresh_token=gbp_conn.refresh_token,
                 token_expiry=gbp_conn.token_expiry,
@@ -62,25 +63,213 @@ async def _get_or_sync_google_account_for_project(project: Project, db: AsyncSes
             account.is_connected = True
             await db.flush()
 
-        prof_res = await db.execute(
-            select(GoogleBusinessProfile).where(GoogleBusinessProfile.google_account_id == account.id)
-        )
-        if not prof_res.scalars().first():
-            db.add(GoogleBusinessProfile(
-                google_account_id=account.id,
-                business_name=project.name,
-                primary_category=project.primary_category or "Local Business",
-                website_url=f"https://{project.domain}" if project.domain else None,
-                completeness_score=85,
-                is_verified=True
-            ))
-            await db.flush()
-
         await db.commit()
         await db.refresh(account)
         return account
 
     return None
+
+
+def _calculate_public_completeness(listing: Optional[PublicBusinessListing]) -> Optional[int]:
+    """
+    Calculates actual completeness score based strictly on retrieved public Google Places fields.
+    Returns None ("Not measured") if listing or essential fields are missing.
+    Field weightings (Total = 100):
+    - Name: 15
+    - Formatted Address: 15
+    - Phone: 15
+    - Website: 15
+    - Primary Category: 15
+    - Business Status: 10
+    - Rating: 10
+    - Review Count: 5
+    """
+    if not listing or listing.lookup_status != "found":
+        return None
+
+    score = 0
+    if listing.name: score += 15
+    if listing.formatted_address: score += 15
+    if listing.phone: score += 15
+    if listing.website_url: score += 15
+    if listing.category or listing.primary_category: score += 15
+    if listing.business_status: score += 10
+    if listing.rating is not None: score += 10
+    if listing.review_count is not None: score += 5
+
+    return score
+
+
+class PublicPlaceLookupRequest(BaseModel):
+    business_name: Optional[str] = None
+    location: Optional[str] = None
+    maps_url: Optional[str] = None
+
+
+@router.get("/{project_id}/public-profile")
+@router.get("/{project_id}/public-summary")
+async def get_public_business_profile(
+    project_id: int,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    System A: Returns public Google Place observation (retrieved via Google Places API).
+    Does NOT require user GBP OAuth connection and does NOT use fake defaults.
+    """
+    project = await verify_project_access(project_id, current_user, db)
+
+    stmt = select(PublicBusinessListing).where(
+        PublicBusinessListing.organization_id == project.organization_id,
+        PublicBusinessListing.project_id == project_id
+    ).order_by(PublicBusinessListing.id.desc())
+    res = await db.execute(stmt)
+    listing = res.scalars().first()
+
+    if not listing:
+        return {
+            "source": "google_places_api",
+            "lookup_status": "idle",
+            "lookup_error": None,
+            "place_id": None,
+            "business_name": None,
+            "formatted_address": None,
+            "address_components": None,
+            "phone": None,
+            "website_url": None,
+            "category": None,
+            "business_status": None,
+            "rating": None,
+            "review_count": None,
+            "opening_hours": None,
+            "latitude": None,
+            "longitude": None,
+            "maps_url": None,
+            "checked_at": None,
+            "completeness_score": None,
+            "completeness_label": "Not measured"
+        }
+
+    comp_score = _calculate_public_completeness(listing)
+
+    return {
+        "source": listing.source or "google_places_api",
+        "lookup_status": listing.lookup_status or "found",
+        "lookup_error": listing.lookup_error,
+        "place_id": listing.place_id,
+        "business_name": listing.name,
+        "formatted_address": listing.formatted_address,
+        "address_components": listing.address_components,
+        "phone": listing.phone,
+        "website_url": listing.website_url,
+        "category": listing.category or listing.primary_category,
+        "business_status": listing.business_status,
+        "rating": listing.rating,
+        "review_count": listing.review_count,
+        "opening_hours": listing.opening_hours,
+        "latitude": listing.latitude,
+        "longitude": listing.longitude,
+        "maps_url": listing.maps_url,
+        "checked_at": listing.last_checked_at.isoformat() if listing.last_checked_at else None,
+        "completeness_score": comp_score,
+        "completeness_label": f"{comp_score}% (Measured from retrieved Google Place fields)" if comp_score is not None else "Not measured"
+    }
+
+
+@router.post("/{project_id}/public-lookup")
+async def trigger_public_place_lookup(
+    project_id: int,
+    req: PublicPlaceLookupRequest,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Triggers Google Places API resolution by business name/location or Maps URL.
+    Does NOT require GBP OAuth connection.
+    """
+    project = await verify_project_access(project_id, current_user, db)
+    from app.services.google.public_maps_service import PublicGoogleMapsService
+
+    res = await PublicGoogleMapsService.lookup_public_place(
+        organization_id=project.organization_id,
+        project_id=project.id,
+        db=db,
+        business_name=req.business_name,
+        location_str=req.location,
+        maps_url=req.maps_url
+    )
+
+    listing = res.get("listing")
+    comp_score = _calculate_public_completeness(listing) if listing else None
+
+    return {
+        "lookup_status": res.get("lookup_status", "found"),
+        "lookup_error": res.get("lookup_error"),
+        "source": listing.source if listing else "google_places_api",
+        "place_id": listing.place_id if listing else None,
+        "business_name": listing.name if listing else req.business_name,
+        "formatted_address": listing.formatted_address if listing else req.location,
+        "address_components": listing.address_components if listing else None,
+        "phone": listing.phone if listing else None,
+        "website_url": listing.website_url if listing else None,
+        "category": (listing.category or listing.primary_category) if listing else None,
+        "business_status": listing.business_status if listing else None,
+        "rating": listing.rating if listing else None,
+        "review_count": listing.review_count if listing else None,
+        "opening_hours": listing.opening_hours if listing else None,
+        "latitude": listing.latitude if listing else None,
+        "longitude": listing.longitude if listing else None,
+        "maps_url": listing.maps_url if listing else req.maps_url,
+        "checked_at": listing.last_checked_at.isoformat() if listing and listing.last_checked_at else None,
+        "completeness_score": comp_score,
+        "completeness_label": f"{comp_score}% (Measured from retrieved Google Place fields)" if comp_score is not None else "Not measured"
+    }
+
+
+@router.get("/{project_id}/owner-profile")
+async def get_owner_gbp_profile(
+    project_id: int,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    System B: Returns owner-authorized GBP information (requiring Google OAuth).
+    Never manufactures fake identity emails or fake performance metrics.
+    """
+    project = await verify_project_access(project_id, current_user, db)
+    account = await _get_or_sync_google_account_for_project(project, db)
+
+    if not account or not account.is_connected:
+        return {
+            "is_connected": False,
+            "status": "disconnected",
+            "account_email": None,
+            "message": "Google Business Profile owner account not connected. Connect via OAuth to view owner-authorized metrics.",
+            "profile": None
+        }
+
+    prof_res = await db.execute(
+        select(GoogleBusinessProfile).where(GoogleBusinessProfile.google_account_id == account.id)
+    )
+    profile = prof_res.scalars().first()
+
+    return {
+        "is_connected": True,
+        "status": "connected",
+        "account_email": account.account_email,
+        "last_synced_at": profile.last_synced_at.isoformat() if profile and profile.last_synced_at else None,
+        "profile": {
+            "business_name": profile.business_name if profile else None,
+            "primary_category": profile.primary_category if profile else None,
+            "address": profile.address if profile else None,
+            "phone": profile.phone if profile else None,
+            "website_url": profile.website_url if profile else None,
+            "search_impressions": profile.search_impressions if profile else None,
+            "maps_impressions": profile.maps_impressions if profile else None,
+            "call_clicks": profile.call_clicks if profile else None,
+            "website_clicks": profile.website_clicks if profile else None
+        } if profile else None
+    }
 
 @router.get("/{project_id}", response_model=Optional[GBPProfileOut])
 async def get_gbp_profile(
@@ -214,8 +403,6 @@ async def handle_google_oauth_callback(
 
     # 4. Retrieve user info / email
     email = await GoogleOAuthService.get_user_email(token_info["access_token"])
-    if not email:
-        email = f"google-user-{project.id}@gmail.com"
 
     # 5. Create or update GoogleAccount record with encrypted tokens
     enc_access_token = encrypt_token(token_info["access_token"])

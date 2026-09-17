@@ -8,7 +8,7 @@ class LocationBase(BaseModel):
     city: Optional[str] = None
     state: Optional[str] = None
     postal_code: Optional[str] = None
-    country: Optional[str] = "United States"
+    country: Optional[str] = None
     phone: Optional[str] = None
     latitude: Optional[float] = None
     longitude: Optional[float] = None
@@ -66,7 +66,7 @@ class ProjectBase(BaseModel):
     domain: str
     primary_category: Optional[str] = "Local Business"
     additional_categories: Optional[List[str]] = []
-    country: Optional[str] = "United States"
+    country: Optional[str] = None
 
 class ProjectCreate(ProjectBase):
     organization_id: Optional[int] = None
