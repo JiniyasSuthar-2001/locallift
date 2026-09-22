@@ -70,7 +70,7 @@ export const AIAssistantView: React.FC = () => {
             <div className="font-semibold">{errorMessage}</div>
             {errorMessage.includes('AI_NOT_CONFIGURED') && (
               <div className="mt-1 text-slate-600">
-                To activate AI diagnostics, configure <code className="bg-amber-100 px-1.5 py-0.5 rounded font-mono text-[11px]">AI_API_KEY</code> in your backend environment variables or <code className="bg-amber-100 px-1.5 py-0.5 rounded font-mono text-[11px]">.env</code> file.
+                To activate AI diagnostics, configure <code className="bg-amber-100 px-1.5 py-0.5 rounded font-mono text-[11px]">AI_API_KEY</code> in your backend environment variables or <code className="bg-amber-100 px-1.5 py-0.5 rounded font-mono text-[11px]">.env</code> file (Supported AI Provider: Gemini).
               </div>
             )}
           </div>

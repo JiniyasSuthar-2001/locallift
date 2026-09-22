@@ -98,7 +98,7 @@ cp .env.example .env
 | `DATABASE_URL` | `sqlite+aiosqlite:///./locallift.db` | Database connection string. Use PostgreSQL in production. |
 | `BACKEND_CORS_ORIGINS` | `["http://localhost:5173"]` | Allowed CORS origins for authenticated API requests. |
 | `SERP_PROVIDER` | `mock` or `serpapi` | Rank tracking provider (`serpapi` requires `SERPAPI_KEY`). |
-| `AI_PROVIDER` | `rule_based` | AI engine (`gemini`, `openai`, or deterministic `rule_based`). |
+| `AI_PROVIDER` | Supported AI Provider: Gemini | AI diagnostic engine (Gemini). |
 | `GOOGLE_CLIENT_ID` | `...` | Google OAuth Client ID for GBP integration. |
 | `GOOGLE_CLIENT_SECRET`| `...` | Google OAuth Client Secret. |
 

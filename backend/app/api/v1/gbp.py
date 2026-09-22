@@ -152,6 +152,20 @@ async def get_public_business_profile(
 
     comp_score = _calculate_public_completeness(listing)
 
+    # Fetch real observed changes for project
+    obs_stmt = select(GoogleObservedChange).where(
+        GoogleObservedChange.project_id == project_id
+    ).order_by(GoogleObservedChange.observed_at.desc()).limit(20)
+    obs_res = await db.execute(obs_stmt)
+    obs_changes = obs_res.scalars().all()
+
+    # Fetch real post observations for project
+    posts_stmt = select(GooglePostObservation).where(
+        GooglePostObservation.project_id == project_id
+    ).order_by(GooglePostObservation.observed_at.desc()).limit(20)
+    posts_res = await db.execute(posts_stmt)
+    posts_obs = posts_res.scalars().all()
+
     return {
         "source": listing.source or "google_places_api",
         "lookup_status": listing.lookup_status or "found",
@@ -172,7 +186,29 @@ async def get_public_business_profile(
         "maps_url": listing.maps_url,
         "checked_at": listing.last_checked_at.isoformat() if listing.last_checked_at else None,
         "completeness_score": comp_score,
-        "completeness_label": f"{comp_score}% (Measured from retrieved Google Place fields)" if comp_score is not None else "Not measured"
+        "completeness_label": f"{comp_score}% (Measured from retrieved Google Place fields)" if comp_score is not None else "Not measured",
+        "observed_changes": [
+            {
+                "id": c.id,
+                "field_name": c.field_name,
+                "old_value": c.old_value,
+                "new_value": c.new_value,
+                "observed_at": c.observed_at.isoformat() if c.observed_at else None,
+                "source": c.source,
+                "confidence": c.confidence
+            } for c in obs_changes
+        ],
+        "post_observations": [
+            {
+                "id": p.id,
+                "post_type": p.post_type,
+                "content_summary": p.content_summary,
+                "action_url": p.action_url,
+                "published_at": p.published_at.isoformat() if p.published_at else None,
+                "observed_at": p.observed_at.isoformat() if p.observed_at else None,
+                "source": p.source
+            } for p in posts_obs
+        ]
     }
 
 
@@ -521,17 +557,22 @@ async def disconnect_gbp(
     project = await verify_project_access(project_id, current_user, db)
     acc_res = await db.execute(select(GoogleAccount).where(GoogleAccount.project_id == project_id))
     account = acc_res.scalars().first()
-    if account:
+    was_connected = False
+    if account and account.is_connected:
+        was_connected = True
         account.is_connected = False
         account.access_token = None
         account.refresh_token = None
 
     gbp_conn = await GoogleConnectionsService.get_connection_for_service(project.organization_id, "business_profile", db)
-    if gbp_conn:
+    if gbp_conn and gbp_conn.status == "connected":
+        was_connected = True
         gbp_conn.status = "disconnected"
         gbp_conn.access_token = None
 
     await db.commit()
+    if not was_connected:
+        return {"message": "No Google Business Profile connection was active.", "status": "not_connected"}
     return {"message": "Google Business Profile disconnected successfully.", "status": "disconnected"}
 
 @router.get("/gsc/{project_id}")

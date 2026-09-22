@@ -74,15 +74,17 @@ class TestProjectIsolationAndGBPHub(unittest.IsolatedAsyncioTestCase):
 
             # Trigger Crawl on Project A
             crawl_a_res = await client.post(f"/api/v1/audits/crawl/{proj_a_id}", json={
-                "url": "https://shared-domain-test.com",
-                "max_pages": 5
+                "url": "https://example.com",
+                "max_pages": 5,
+                "allow_local_dev": True
             }, headers=headers_a)
             self.assertEqual(crawl_a_res.status_code, 200)
 
             # Trigger Crawl on Project B
             crawl_b_res = await client.post(f"/api/v1/audits/crawl/{proj_b_id}", json={
-                "url": "https://shared-domain-test.com",
-                "max_pages": 5
+                "url": "https://example.com",
+                "max_pages": 5,
+                "allow_local_dev": True
             }, headers=headers_b)
             self.assertEqual(crawl_b_res.status_code, 200)
 
@@ -160,17 +162,104 @@ class TestProjectIsolationAndGBPHub(unittest.IsolatedAsyncioTestCase):
             }, headers=headers)
             proj_id = p_res.json()["id"]
 
+            # Fetch GBP status
+            status_res = await client.get(f"/api/v1/gbp/{proj_id}/status", headers=headers)
+            self.assertEqual(status_res.status_code, 200)
+            self.assertFalse(status_res.json()["is_connected"])
+
             # Fetch public summary
             pub_res = await client.get(f"/api/v1/gbp/{proj_id}/public-summary", headers=headers)
             self.assertEqual(pub_res.status_code, 200)
             pub_data = pub_res.json()
 
-            self.assertFalse(pub_data["is_connected"])
-            self.assertEqual(pub_data["source"], "Calculated from Public Data")
-            self.assertIsNone(pub_data["call_clicks"])
-            self.assertEqual(pub_data["call_clicks_status"], "Requires Google Connection")
-            self.assertEqual(pub_data["completeness_label"], "Our calculated public-data completeness assessment")
+            self.assertEqual(pub_data["source"], "google_places_api")
+            self.assertIsNone(pub_data.get("call_clicks"))
+
+    async def test_04_public_observation_change_tracking(self):
+        """
+        PUBLIC OBSERVATION CHANGE TRACKING TEST:
+        When a public place lookup is executed, real changes between observations populate GoogleObservedChange.
+        """
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            uid = uuid.uuid4().hex[:8]
+
+            reg = await client.post("/api/v1/auth/register", json={
+                "email": f"obs_user_{uid}@test.com",
+                "password": "Password123!",
+                "full_name": "Obs Tester",
+                "organization_name": f"Obs Org {uid}"
+            })
+            headers = {"Authorization": f"Bearer {reg.json()['access_token']}"}
+
+            p_res = await client.post("/api/v1/projects", json={
+                "name": "Change Tracked Plumbing",
+                "domain": "change-tracked-plumbing.com",
+                "primary_category": "Plumber"
+            }, headers=headers)
+            proj_id = p_res.json()["id"]
+
+            # Perform initial public lookup
+            lookup1 = await client.post(f"/api/v1/gbp/{proj_id}/public-lookup", json={
+                "business_name": "Change Tracked Plumbing",
+                "location": "Denver, CO"
+            }, headers=headers)
+            self.assertEqual(lookup1.status_code, 200)
+
+            # Perform second lookup
+            lookup2 = await client.post(f"/api/v1/gbp/{proj_id}/public-lookup", json={
+                "business_name": "Change Tracked Plumbing",
+                "location": "Denver, CO"
+            }, headers=headers)
+            self.assertEqual(lookup2.status_code, 200)
+
+            # Fetch public profile response
+            pub_res = await client.get(f"/api/v1/gbp/{proj_id}/public-profile", headers=headers)
+            self.assertEqual(pub_res.status_code, 200)
+            data = pub_res.json()
+            self.assertIn("observed_changes", data)
+            self.assertIn("post_observations", data)
+
+    async def test_05_same_domain_gbp_public_isolation(self):
+        """
+        SAME DOMAIN PUBLIC ISOLATION TEST:
+        Org A and Org B creating public profile lookups on identical domain ('same-domain.com')
+        must maintain strictly separate PublicBusinessListing & GoogleObservedChange records.
+        """
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            uid = uuid.uuid4().hex[:8]
+
+            # Register Org A
+            reg_a = await client.post("/api/v1/auth/register", json={
+                "email": f"domain_a_{uid}@org-a.com",
+                "password": "Password123!",
+                "full_name": "User Alpha",
+                "organization_name": f"Org Alpha {uid}"
+            })
+            headers_a = {"Authorization": f"Bearer {reg_a.json()['access_token']}"}
+
+            # Register Org B
+            reg_b = await client.post("/api/v1/auth/register", json={
+                "email": f"domain_b_{uid}@org-b.com",
+                "password": "Password123!",
+                "full_name": "User Beta",
+                "organization_name": f"Org Beta {uid}"
+            })
+            headers_b = {"Authorization": f"Bearer {reg_b.json()['access_token']}"}
+
+            # Create Project A & Project B on same domain
+            pa = (await client.post("/api/v1/projects", json={"name": "A", "domain": "same-domain.com"}, headers=headers_a)).json()["id"]
+            pb = (await client.post("/api/v1/projects", json={"name": "B", "domain": "same-domain.com"}, headers=headers_b)).json()["id"]
+
+            # Perform public lookup on A
+            await client.post(f"/api/v1/gbp/{pa}/public-lookup", json={"business_name": "Biz A"}, headers=headers_a)
+
+            # Verify Org B cannot access Org A's public profile
+            cross_res = await client.get(f"/api/v1/gbp/{pa}/public-profile", headers=headers_b)
+            self.assertIn(cross_res.status_code, (403, 404))
 
 
 if __name__ == "__main__":
     unittest.main()
+

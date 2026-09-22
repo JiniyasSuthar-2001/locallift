@@ -79,10 +79,8 @@ async def test_schema_type_resolution():
 
 async def test_category_api_endpoints_and_project_lifecycle():
     """Test full HTTP API integration for category lookup and project creation with primary/additional categories."""
-    from app.main import _sync_sqlite_schema
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
-        await conn.run_sync(_sync_sqlite_schema)
 
     async with AsyncSessionLocal() as db:
         # Create test user & org

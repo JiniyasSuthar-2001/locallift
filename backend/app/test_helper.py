@@ -22,6 +22,11 @@ if hasattr(sys.stdout, "reconfigure"):
     except Exception:
         pass
 
+import os
+_backend_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if _backend_dir not in sys.path:
+    sys.path.insert(0, _backend_dir)
+
 from app.database import engine, Base, AsyncSessionLocal
 from app.core.migrations import run_db_migrations
 from app.models.user import User, Organization, OrganizationMember, OrgRole

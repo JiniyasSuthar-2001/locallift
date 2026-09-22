@@ -113,7 +113,7 @@ export const AIAssistantDrawer: React.FC<AIAssistantDrawerProps> = ({ isOpen, on
                   <div className="font-semibold">{errorMessage}</div>
                   {errorMessage.includes('AI_NOT_CONFIGURED') && (
                     <div className="mt-1 text-slate-600 text-[11px]">
-                      Configure <code className="bg-amber-100 px-1 py-0.5 rounded font-mono">AI_API_KEY</code> in your backend environment to activate AI diagnostics.
+                      Configure <code className="bg-amber-100 px-1 py-0.5 rounded font-mono">AI_API_KEY</code> in your backend environment to activate AI diagnostics (Supported AI Provider: Gemini).
                     </div>
                   )}
                 </div>

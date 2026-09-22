@@ -17,6 +17,7 @@ from app.models.audit import SEOAudit, SEOIssue, WebsitePage, IssueSeverity, Iss
 from app.schemas.audit import SEOAuditOut, SEOIssueOut, WebsitePageOut, CrawlRequest, AuditJobOut
 from app.services.crawler import WebsiteCrawler, SSRFValidator, URLNormalizer
 from app.services.seo_auditor import SEOAuditor
+from app.config import settings
 import logging
 import traceback
 

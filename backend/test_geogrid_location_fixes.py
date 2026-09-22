@@ -1,11 +1,11 @@
 import asyncio
 import json
 from datetime import datetime, timezone
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, patch, MagicMock
 
 from app.models.ranking import GeoGridScan
 from app.schemas.ranking import GeoGridScanOut
-from app.services.serp.base import SERPProvider, SERPResponse, SERPItem
+from app.services.serp.base import SERPProvider, SERPResponse, SERPItem, SERPCapabilities
 from app.services.serp.grid_scanner import GeoGridScanner
 from app.services.serp.mock_provider import MockSERPProvider
 from app.services.geocoding import GeocodingService
@@ -29,6 +29,10 @@ class PartialFailureSERPProvider(SERPProvider):
     @property
     def is_configured(self) -> bool:
         return True
+
+    @property
+    def capabilities(self) -> SERPCapabilities:
+        return SERPCapabilities(organic_search=True, local_search=True, maps_search=True, coordinate_search=True, geo_grid=True)
 
     async def search_keyword(self, keyword: str, location: str = None, country: str = "us", language: str = "en", device: str = "desktop", num_results: int = 100):
         return SERPResponse(provider="mock_partial", keyword=keyword, success=True)
@@ -65,6 +69,10 @@ class UnconfiguredSERPProvider(SERPProvider):
     @property
     def is_configured(self) -> bool:
         return False
+
+    @property
+    def capabilities(self) -> SERPCapabilities:
+        return SERPCapabilities(organic_search=True, local_search=True, maps_search=True, coordinate_search=True, geo_grid=True)
 
     async def search_keyword(self, keyword: str, location: str = None, country: str = "us", language: str = "en", device: str = "desktop", num_results: int = 100):
         return SERPResponse(
@@ -285,11 +293,9 @@ def test_schema_template_rendering():
     asyncio.run(_test())
 
 async def setup_db():
-    from app.main import _sync_sqlite_schema
     import app.models
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
-        await conn.run_sync(_sync_sqlite_schema)
 
 def test_geogrid_missing_coordinates_rejection():
     """Verify that attempting a GeoGrid scan without coordinates returns 400 LOCATION_COORDINATES_REQUIRED."""
@@ -347,7 +353,8 @@ def test_geogrid_missing_coordinates_rejection():
 
             threw_expected_error = False
             try:
-                await trigger_grid_scan(scan_req=scan_req, current_user=user, db=session)
+                from unittest.mock import MagicMock
+                await trigger_grid_scan(request=MagicMock(), scan_req=scan_req, current_user=user, db=session)
             except HTTPException as e:
                 if e.status_code == 400 and "LOCATION_COORDINATES_REQUIRED" in str(e.detail):
                     threw_expected_error = True
@@ -414,7 +421,7 @@ def test_project_creation_without_brisbane_fallback():
                     )
                 )
 
-                created_proj = await create_project(project_in=proj_in, current_user=user, db=session)
+                created_proj = await create_project(request=MagicMock(), project_in=proj_in, current_user=user, db=session)
                 assert created_proj is not None
                 assert len(created_proj.locations) > 0
                 loc = created_proj.locations[0]

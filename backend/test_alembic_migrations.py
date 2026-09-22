@@ -34,7 +34,7 @@ def test_alembic_new_database_migration():
 
                 # Check revision ID
                 res = conn.execute(text("SELECT version_num FROM alembic_version")).fetchone()
-                assert res is not None and res[0] == "002_add_serp_config"
+                assert res is not None and res[0] == "009_add_public_business_listing_fields"
         finally:
             engine.dispose()
 
@@ -89,12 +89,12 @@ def test_alembic_existing_database_bootstrapping():
                 tables = inspector.get_table_names()
                 assert "alembic_version" in tables
                 res = conn.execute(text("SELECT version_num FROM alembic_version")).fetchone()
-                assert res[0] == "002_add_serp_config"
+                assert res[0] == "009_add_public_business_listing_fields"
         finally:
             engine3.dispose()
 
 def test_future_migration_simulation():
-    """Test Case C: Simulate future revision 003_test_migration on top of 002."""
+    """Test Case C: Simulate future revision 010_test_migration on top of 009."""
     with tempfile.TemporaryDirectory() as tmpdir:
         db_path = os.path.join(tmpdir, "future_test.db")
         sync_url = f"sqlite:///{db_path}"
@@ -108,23 +108,23 @@ def test_future_migration_simulation():
         alembic_cfg.set_main_option("sqlalchemy.url", sync_url)
         alembic_cfg.set_main_option("script_location", alembic_dir)
 
-        # Initialize at head (002)
+        # Initialize at head (009)
         command.upgrade(alembic_cfg, "head")
 
-        # Create temporary 003 revision file
-        temp_rev_path = os.path.join(versions_dir, "003_test_migration.py")
+        # Create temporary 010 revision file
+        temp_rev_path = os.path.join(versions_dir, "010_test_migration.py")
         rev_code = """\"\"\"Future test migration
 
-Revision ID: 003_test_migration
-Revises: 002_add_serp_config
-Create Date: 2026-09-12 12:00:00.000000
+Revision ID: 010_test_migration
+Revises: 009_add_public_business_listing_fields
+Create Date: 2026-09-18 12:00:00.000000
 
 \"\"\"
 from alembic import op
 import sqlalchemy as sa
 
-revision = '003_test_migration'
-down_revision = '002_add_serp_config'
+revision = '010_test_migration'
+down_revision = '009_add_public_business_listing_fields'
 branch_labels = None
 depends_on = None
 
@@ -142,7 +142,7 @@ def downgrade() -> None:
             with open(temp_rev_path, "w", encoding="utf-8") as f:
                 f.write(rev_code)
 
-            # Re-read config & upgrade to head (003)
+            # Re-read config & upgrade to head (010)
             alembic_cfg2 = Config(alembic_ini)
             alembic_cfg2.set_main_option("sqlalchemy.url", sync_url)
             alembic_cfg2.set_main_option("script_location", alembic_dir)
@@ -154,9 +154,9 @@ def downgrade() -> None:
                 with engine.connect() as conn:
                     inspector = inspect(conn)
                     tables = inspector.get_table_names()
-                    assert "test_future_feature" in tables, "Future table missing after 003 migration"
+                    assert "test_future_feature" in tables, "Future table missing after 010 migration"
                     res = conn.execute(text("SELECT version_num FROM alembic_version")).fetchone()
-                    assert res[0] == "003_test_migration"
+                    assert res[0] == "010_test_migration"
             finally:
                 engine.dispose()
         finally:

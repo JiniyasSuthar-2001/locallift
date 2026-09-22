@@ -17,6 +17,11 @@ class AIConsumptionService:
     @staticmethod
     async def get_or_create_org_config(db: AsyncSession, organization_id: int) -> OrganizationAIConfig:
         """Retrieves or initializes the AI configuration & credit wallet for an organization."""
+        if not organization_id:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Organization ID is required for AI configuration."
+            )
         res = await db.execute(
             select(OrganizationAIConfig).where(OrganizationAIConfig.organization_id == organization_id)
         )

@@ -25,10 +25,8 @@ async def run_tests():
 
     # 1. DB Schema initialization
     print("\n[TEST 1] Testing DB schema creation for Team & Project extensions...")
-    from app.main import _sync_sqlite_schema
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
-        await conn.run_sync(_sync_sqlite_schema)
     print("  [PASS] Tables registered & auto-migrated successfully.")
 
 

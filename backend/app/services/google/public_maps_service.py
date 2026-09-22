@@ -9,6 +9,7 @@ from sqlalchemy.future import select
 
 from app.models.connections import PublicBusinessListing
 from app.models.project import Project, Location
+from app.models.gbp import GoogleObservedChange
 from app.services.category_taxonomy import CategoryTaxonomy
 
 logger = logging.getLogger("locallift.google.public_maps")
@@ -222,8 +223,8 @@ class PublicGoogleMapsService:
                 "listing": None
             }
 
-        # Check API key configuration (allow mock fixture in testing)
-        if not api_key and env != "testing":
+        # Check API key configuration (allow mock fixture in testing/development)
+        if not api_key and env in ("production", "prod"):
             return {
                 "lookup_status": "not_configured",
                 "lookup_error": "Google Places API key is not configured. Add GOOGLE_PLACES_API_KEY in .env.",
@@ -231,7 +232,7 @@ class PublicGoogleMapsService:
             }
 
         # 2. Perform Place Search / Place Details via Google Places API (or testing fallback)
-        if env == "testing" and not api_key:
+        if not api_key or env in ("testing", "test", "development"):
             # Deterministic testing response
             if "not_found" in search_query.lower():
                 return {"lookup_status": "not_found", "lookup_error": "No matching Google Place found.", "listing": None}
@@ -360,6 +361,30 @@ class PublicGoogleMapsService:
             )
             db.add(listing)
         else:
+            if project_id:
+                fields_to_check = [
+                    ("phone", listing.phone, place_data.get("phone")),
+                    ("website_url", listing.website_url, place_data.get("website_url")),
+                    ("formatted_address", listing.formatted_address, place_data.get("formatted_address")),
+                    ("category", listing.category, place_data.get("category")),
+                    ("business_status", listing.business_status, place_data.get("business_status")),
+                    ("rating", str(listing.rating) if listing.rating is not None else None, str(place_data.get("rating")) if place_data.get("rating") is not None else None),
+                ]
+                observed_changes = []
+                for field_name, old_val, new_val in fields_to_check:
+                    if old_val and new_val and str(old_val).strip() != str(new_val).strip():
+                        observed_changes.append(GoogleObservedChange(
+                            project_id=project_id,
+                            field_name=field_name,
+                            old_value=str(old_val),
+                            new_value=str(new_val),
+                            observed_at=datetime.now(timezone.utc),
+                            source="google_places_api",
+                            confidence="Confirmed"
+                        ))
+                if observed_changes:
+                    db.add_all(observed_changes)
+
             listing.place_id = place_data.get("place_id") or listing.place_id
             listing.name = place_data["name"]
             listing.formatted_address = place_data.get("formatted_address") or listing.formatted_address

@@ -62,7 +62,7 @@ class Settings(BaseSettings):
     SERPAPI_KEY: str = ""
     
     # AI Engine
-    AI_PROVIDER: str = "rule_based"  # rule_based, gemini, openai
+    AI_PROVIDER: str = "rule_based"  # Supported AI Provider: Gemini
     AI_API_KEY: str = ""
     AI_MODEL: str = "gemini-1.5-flash"
     

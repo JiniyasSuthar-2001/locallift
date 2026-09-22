@@ -59,14 +59,16 @@ async def auth_headers(test_db):
     await test_db.refresh(proj_b)
     
     token = create_access_token(subject=user.id)
+    orig_env = settings.ENVIRONMENT
     settings.ENVIRONMENT = "testing"
-    return {
+    yield {
         "headers": {"Authorization": f"Bearer {token}"},
         "user": user,
         "org": org,
         "proj_a": proj_a,
         "proj_b": proj_b
     }
+    settings.ENVIRONMENT = orig_env
 
 @pytest.mark.asyncio
 async def test_1_no_oauth_public_lookup_succeeds(client, auth_headers):

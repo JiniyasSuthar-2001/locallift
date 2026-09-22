@@ -159,7 +159,7 @@ class GoogleOAuthCore:
         user_id: int = 0,
         organization_id: int = 0,
         custom_state: Optional[str] = None,
-        prompt: Optional[str] = "select_account"
+        prompt: Optional[str] = "consent"
     ) -> str:
         """
         Builds the service-specific Google OAuth 2.0 authorization URL with requesting scopes strictly limited to the target service.
@@ -182,7 +182,7 @@ class GoogleOAuthCore:
             "response_type": "code",
             "scope": " ".join(scopes),
             "access_type": "offline",
-            "prompt": prompt or "select_account",
+            "prompt": prompt or "consent",
             "include_granted_scopes": "true",
             "state": signed_state
         }

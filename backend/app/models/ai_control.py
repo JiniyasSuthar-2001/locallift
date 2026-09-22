@@ -29,7 +29,7 @@ class OrganizationAIConfig(Base):
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
     updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
 
-    organization = relationship("Organization", backref="ai_config")
+    organization = relationship("Organization", back_populates="ai_config")
 
 class AIUsageLog(Base):
     """

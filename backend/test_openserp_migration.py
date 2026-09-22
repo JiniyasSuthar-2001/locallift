@@ -15,7 +15,7 @@ from app.config import settings
 from app.services.serp.openserp import OpenSERPProvider
 from app.services.serp.serpapi import SerpApiProvider
 from app.services.serp.factory import get_serp_provider, FallbackSERPProvider
-from app.services.serp.base import SERPResponse, SERPItem
+from app.services.serp.base import SERPResponse, SERPItem, SERPCapabilities
 from app.services.serp.grid_scanner import GeoGridScanner
 
 
@@ -200,16 +200,17 @@ async def test_10_serpapi_fallback():
     assert res.provider == "serpapi_mock_fallback"
 
 
-# Test 11: OpenSERP is default provider
-async def test_11_default_provider_is_openserp():
-    prov = get_serp_provider(provider_type="openserp", allow_fallback=False)
-    assert isinstance(prov, OpenSERPProvider)
+# Test 11: SerpApi is default provider
+async def test_11_default_provider_is_serpapi():
+    assert settings.SERP_PROVIDER == "serpapi"
+    prov = get_serp_provider(provider_type="serpapi", api_key="test_serp_key_12345", allow_fallback=False)
+    assert isinstance(prov, SerpApiProvider)
     
-    wrapped = get_serp_provider(provider_type="openserp", allow_fallback=True)
+    wrapped = get_serp_provider(provider_type="serpapi", api_key="test_serp_key_12345", allow_fallback=True)
     if isinstance(wrapped, FallbackSERPProvider):
-        assert isinstance(wrapped.primary, OpenSERPProvider)
+        assert isinstance(wrapped.primary, SerpApiProvider)
     else:
-        assert isinstance(wrapped, OpenSERPProvider)
+        assert isinstance(wrapped, SerpApiProvider)
 
 
 # Test 12: No API key required for self-hosted OpenSERP
@@ -244,6 +245,10 @@ async def test_14_geogrid_actual_location():
         @property
         def is_configured(self):
             return True
+
+        @property
+        def capabilities(self):
+            return SERPCapabilities(geo_grid=True, coordinate_search=True, organic_search=True)
 
         async def search_local_grid_point(self, keyword, lat, lng, location_name=None, zoom=14):
             captured_locations.append((lat, lng, location_name))
@@ -361,7 +366,7 @@ if __name__ == "__main__":
     run_test("08: Invalid response handling", test_08_invalid_response)
     run_test("09: Provider unavailable handling", test_09_provider_unavailable)
     run_test("10: Fallback to SerpApi mechanics", test_10_serpapi_fallback)
-    run_test("11: Default provider is OpenSERP", test_11_default_provider_is_openserp)
+    run_test("11: Default provider is SerpApi", test_11_default_provider_is_serpapi)
     run_test("12: No API key required for OpenSERP", test_12_no_api_key_required)
     run_test("13: Location parameters passing", test_13_location_parameters)
     run_test("14: GeoGrid actual location mapping", test_14_geogrid_actual_location)
