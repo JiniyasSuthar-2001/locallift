@@ -1,5 +1,5 @@
 from pydantic import BaseModel, field_validator
-from typing import Optional, List, Any
+from typing import Optional, List, Any, Dict
 from datetime import datetime
 
 class KeywordBase(BaseModel):
@@ -53,9 +53,11 @@ class KeywordCheckAllResponse(BaseModel):
 
 class GeoGridScanOut(BaseModel):
     id: int
+    scan_id: Optional[int] = None
     project_id: int
     keyword_id: int
-    center_name: str
+    keyword: Optional[str] = None
+    center_name: Optional[str] = "Business Location"
     center_lat: float
     center_lng: float
     radius_km: float
@@ -63,10 +65,18 @@ class GeoGridScanOut(BaseModel):
     average_rank: Optional[float] = None
     local_visibility_pct: float = 0.0
     grid_points: List[Any]
+    points: Optional[List[Any]] = None
     scan_status: str
     total_points: int
+    completed_points: Optional[int] = 0
+    ranking_found_points: Optional[int] = 0
+    not_found_points: Optional[int] = 0
+    provider_error_points: Optional[int] = 0
+    timeout_points: Optional[int] = 0
     successful_points: int
     failed_points: int
+    provider: Optional[Dict[str, Any]] = None
+    center: Optional[Dict[str, float]] = None
     scanned_at: datetime
 
     class Config:

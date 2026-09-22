@@ -27,6 +27,9 @@ from app.api.v1.connections import router as connections_router, integrations_ro
 from app.api.v1.team import router as team_router
 from app.api.v1.serp import router as serp_router
 from app.api.v1.admin_ai import router as admin_ai_router
+from app.api.v1.business_profile import router as business_profile_router
+from app.api.v1.local_audits import router as local_audits_router
+from app.api.v1.intelligence_scan import router as intelligence_scan_router
 
 logger = logging.getLogger("locallift")
 
@@ -103,6 +106,9 @@ app.include_router(google_integrations_router, prefix=settings.API_V1_STR)
 app.include_router(team_router, prefix=settings.API_V1_STR)
 app.include_router(serp_router, prefix=settings.API_V1_STR)
 app.include_router(admin_ai_router, prefix=settings.API_V1_STR)
+app.include_router(business_profile_router, prefix=settings.API_V1_STR)
+app.include_router(local_audits_router, prefix=settings.API_V1_STR)
+app.include_router(intelligence_scan_router, prefix=settings.API_V1_STR)
 
 def _is_allowed_origin(origin: Optional[str]) -> bool:
     if not origin:

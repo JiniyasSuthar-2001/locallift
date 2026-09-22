@@ -95,6 +95,19 @@ export const WebsiteAuditView: React.FC = () => {
   const [summary, setSummary] = useState<DiagnosticSummary | null>(null);
   const [canonicalData, setCanonicalData] = useState<any>(null);
 
+  // Partial API Source Status (Requirement 6)
+  const [sourceStatus, setSourceStatus] = useState<{
+    pages: 'loading' | 'loaded' | 'failed';
+    issues: 'loading' | 'loaded' | 'failed';
+    summary: 'loading' | 'loaded' | 'failed';
+    canonical: 'loading' | 'loaded' | 'failed';
+  }>({
+    pages: 'loading',
+    issues: 'loading',
+    summary: 'loading',
+    canonical: 'loading',
+  });
+
   const [loading, setLoading] = useState(false);
   const [isCrawling, setIsCrawling] = useState(false);
   const [activeJobId, setActiveJobId] = useState<number | null>(null);
@@ -136,6 +149,13 @@ export const WebsiteAuditView: React.FC = () => {
       if (summaryResp.status === 'fulfilled') setSummary(summaryResp.value.data);
       if (canonicalResp.status === 'fulfilled') setCanonicalData(canonicalResp.value.data);
 
+      setSourceStatus({
+        pages: pagesResp.status === 'fulfilled' ? 'loaded' : 'failed',
+        issues: issuesResp.status === 'fulfilled' ? 'loaded' : 'failed',
+        summary: summaryResp.status === 'fulfilled' ? 'loaded' : 'failed',
+        canonical: canonicalResp.status === 'fulfilled' ? 'loaded' : 'failed',
+      });
+
       const failures = [pagesResp, issuesResp, summaryResp, canonicalResp].filter(r => r.status === 'rejected');
       if (failures.length === 4) {
         setAuditError('Failed to load website audit metrics from backend server.');
@@ -143,13 +163,34 @@ export const WebsiteAuditView: React.FC = () => {
     } catch (err: any) {
       console.error('Failed to load audit data:', err);
       setAuditError('Failed to load website audit metrics.');
+      setSourceStatus({
+        pages: 'failed',
+        issues: 'failed',
+        summary: 'failed',
+        canonical: 'failed',
+      });
     } finally {
       setLoading(false);
     }
   };
 
+  // Immediate state flushing on project switch (Requirement 3 & 19)
   useEffect(() => {
-    fetchAuditData();
+    setPages([]);
+    setIssues([]);
+    setSummary(null);
+    setCanonicalData(null);
+    setAuditError(null);
+    setSourceStatus({
+      pages: 'loading',
+      issues: 'loading',
+      summary: 'loading',
+      canonical: 'loading',
+    });
+
+    if (activeProject?.id) {
+      fetchAuditData();
+    }
   }, [activeProject?.id]);
 
   useEffect(() => {
@@ -254,10 +295,12 @@ export const WebsiteAuditView: React.FC = () => {
     return true;
   });
 
-  // Canonical Result Values
-  const analyzedPages = canonicalData?.analyzed_pages ?? pages.length ?? 0;
-  const evaluatedRules = canonicalData?.evaluated_rules ?? 14;
-  const totalEvaluatedChecks = canonicalData?.total_evaluated_checks ?? (analyzedPages * evaluatedRules);
+  // Canonical Result Values (Strict Real Backend Data - No Fallbacks)
+  const analyzedPages = canonicalData?.analyzed_pages ?? (pages.length > 0 ? pages.length : 0);
+  const evaluatedRules = canonicalData?.evaluated_rules != null ? canonicalData.evaluated_rules : null;
+  const totalEvaluatedChecks = canonicalData?.total_evaluated_checks != null
+    ? canonicalData.total_evaluated_checks
+    : (evaluatedRules != null && analyzedPages > 0 ? (analyzedPages * evaluatedRules) : null);
   const scoreAvailable = canonicalData?.score_available ?? (analyzedPages > 0);
   const healthScore = scoreAvailable ? (canonicalData?.health_score ?? activeProject?.health_score ?? null) : null;
   const schemaSummary = canonicalData?.schema_summary || {
@@ -488,7 +531,7 @@ export const WebsiteAuditView: React.FC = () => {
                 Local Website & Technical Audit
               </h1>
               <p className="text-xs text-slate-500 mt-0.5">
-                Canonical audit result for <span className="font-semibold text-slate-700">{activeProject.domain}</span> &bull; {analyzedPages} analyzed pages &bull; {evaluatedRules} evaluated rules &bull; {totalEvaluatedChecks} total checks.
+                Canonical audit result for <span className="font-semibold text-slate-700">{activeProject.domain}</span> &bull; {analyzedPages} analyzed pages &bull; {evaluatedRules != null ? `${evaluatedRules} evaluated rules` : 'Rules: N/A'} &bull; {totalEvaluatedChecks != null ? `${totalEvaluatedChecks} total checks` : 'Checks: N/A'}.
               </p>
             </div>
           </div>
@@ -500,7 +543,7 @@ export const WebsiteAuditView: React.FC = () => {
             className="flex items-center space-x-1.5 px-3.5 py-2 bg-white border border-slate-200 hover:border-purple-300 text-slate-700 hover:text-purple-700 rounded-xl text-xs font-bold shadow-sm transition-all"
           >
             <Info className="w-4 h-4 text-purple-600" />
-            <span>Checks Performed ({totalEvaluatedChecks})</span>
+            <span>Checks Performed ({totalEvaluatedChecks != null ? totalEvaluatedChecks : '—'})</span>
           </button>
 
           <button
@@ -568,6 +611,42 @@ export const WebsiteAuditView: React.FC = () => {
         </div>
       )}
 
+      {/* Partial API Failure Status Bar (Requirement 6) */}
+      {Object.values(sourceStatus).some((s) => s === 'failed') && (
+        <div className="p-4 bg-amber-50 border border-amber-200 text-amber-900 rounded-2xl space-y-2 shadow-sm">
+          <div className="flex items-center space-x-2 font-bold text-xs">
+            <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
+            <span>Partial API Failure: Some audit sources could not be loaded from the backend.</span>
+          </div>
+          <div className="flex flex-wrap items-center gap-4 text-xs font-semibold pt-1">
+            <div className="flex items-center space-x-1.5">
+              <span className="text-slate-600">Pages API:</span>
+              <span className={sourceStatus.pages === 'loaded' ? 'text-emerald-700 font-bold' : 'text-rose-700 font-bold'}>
+                {sourceStatus.pages === 'loaded' ? '✓ Loaded' : '✕ Failed'}
+              </span>
+            </div>
+            <div className="flex items-center space-x-1.5">
+              <span className="text-slate-600">Issues API:</span>
+              <span className={sourceStatus.issues === 'loaded' ? 'text-emerald-700 font-bold' : 'text-rose-700 font-bold'}>
+                {sourceStatus.issues === 'loaded' ? '✓ Loaded' : '✕ Failed'}
+              </span>
+            </div>
+            <div className="flex items-center space-x-1.5">
+              <span className="text-slate-600">Summary API:</span>
+              <span className={sourceStatus.summary === 'loaded' ? 'text-emerald-700 font-bold' : 'text-rose-700 font-bold'}>
+                {sourceStatus.summary === 'loaded' ? '✓ Loaded' : '✕ Failed'}
+              </span>
+            </div>
+            <div className="flex items-center space-x-1.5">
+              <span className="text-slate-600">Canonical Audit API:</span>
+              <span className={sourceStatus.canonical === 'loaded' ? 'text-emerald-700 font-bold' : 'text-rose-700 font-bold'}>
+                {sourceStatus.canonical === 'loaded' ? '✓ Loaded' : '✕ Failed'}
+              </span>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Top Banner: Overall Score & Canonical Totals */}
       <div className="card-vibrant p-5 bg-gradient-to-r from-purple-900 via-indigo-950 to-slate-900 text-white rounded-2xl relative overflow-hidden shadow-lg border-0">
         <div className="absolute right-0 top-0 bottom-0 opacity-10 pointer-events-none flex items-center pr-8">
@@ -616,18 +695,24 @@ export const WebsiteAuditView: React.FC = () => {
           {/* Metric 2: Evaluated Rules */}
           <div className="space-y-1">
             <span className="text-[11px] font-bold uppercase tracking-wider text-purple-200/80">Evaluated Rules</span>
-            <div className="text-2xl font-black text-emerald-400">{evaluatedRules}</div>
+            <div className="text-2xl font-black text-emerald-400">
+              {evaluatedRules != null ? evaluatedRules : 'N/A'}
+            </div>
             <p className="text-xs text-slate-300">
-              Active audit rules executed
+              {evaluatedRules != null ? 'Active audit rules executed' : 'Awaiting crawl completion'}
             </p>
           </div>
 
           {/* Metric 3: Total Checks */}
           <div className="space-y-1">
             <span className="text-[11px] font-bold uppercase tracking-wider text-purple-200/80">Total Evaluated Checks</span>
-            <div className="text-2xl font-black text-purple-300">{totalEvaluatedChecks}</div>
+            <div className="text-2xl font-black text-purple-300">
+              {totalEvaluatedChecks != null ? totalEvaluatedChecks : 'N/A'}
+            </div>
             <p className="text-xs text-slate-300 font-mono">
-              {analyzedPages} pages × {evaluatedRules} rules
+              {evaluatedRules != null && totalEvaluatedChecks != null
+                ? `${analyzedPages} pages × ${evaluatedRules} rules`
+                : 'Checks: N/A'}
             </p>
           </div>
         </div>
@@ -1399,11 +1484,17 @@ export const WebsiteAuditView: React.FC = () => {
               </div>
               <div>
                 <span className="text-[10px] font-extrabold uppercase text-purple-800 block">Evaluated Rules</span>
-                <span className="font-mono font-bold text-slate-900 block mt-0.5">{evaluatedRules} Rules</span>
+                <span className="font-mono font-bold text-slate-900 block mt-0.5">
+                  {evaluatedRules != null ? `${evaluatedRules} Rules` : 'N/A'}
+                </span>
               </div>
               <div>
                 <span className="text-[10px] font-extrabold uppercase text-purple-800 block">Total Checks</span>
-                <span className="font-mono font-bold text-purple-900 block mt-0.5">{analyzedPages} pages × {evaluatedRules} rules = <b>{totalEvaluatedChecks} checks</b></span>
+                <span className="font-mono font-bold text-purple-900 block mt-0.5">
+                  {evaluatedRules != null && totalEvaluatedChecks != null
+                    ? `${analyzedPages} pages × ${evaluatedRules} rules = ${totalEvaluatedChecks} checks`
+                    : 'Checks: N/A'}
+                </span>
               </div>
             </div>
 

@@ -95,9 +95,39 @@ class JobSchedulerService:
         try:
             if job.job_type == "crawl":
                 from app.api.v1.audits import run_crawler_and_audit_task
-                start_url = f"https://{proj.domain}"
-                await run_crawler_and_audit_task(job.project_id, start_url=start_url, max_pages=15)
-                summary_msg = f"Crawled up to 15 pages for https://{proj.domain} and updated SEO audit score."
+                from app.models.audit import AuditJob, AuditJobStatus
+                start_url = f"https://{proj.domain}" if proj.domain and not proj.domain.startswith("http") else (proj.domain or "https://example.com")
+                crawl_options = {
+                    "url": start_url,
+                    "max_pages": 15,
+                    "respect_robots": True,
+                    "crawl_delay_ms": 200,
+                    "follow_redirects": True,
+                    "allow_local_dev": False,
+                    "max_depth": 3,
+                }
+                audit_job = AuditJob(
+                    project_id=job.project_id,
+                    organization_id=proj.organization_id,
+                    job_type="website_audit",
+                    status=AuditJobStatus.QUEUED,
+                    crawler_status="queued",
+                    progress=0.0,
+                    current_stage="Scheduled crawl job queued",
+                    start_url=start_url,
+                    options_snapshot=crawl_options
+                )
+                db.add(audit_job)
+                await db.commit()
+                await db.refresh(audit_job)
+
+                await run_crawler_and_audit_task(
+                    job_id=audit_job.id,
+                    project_id=job.project_id,
+                    start_url=start_url,
+                    crawl_options=crawl_options
+                )
+                summary_msg = f"Crawled up to 15 pages for {start_url} and updated SEO audit score."
                 success = True
 
             elif job.job_type == "rank_check":

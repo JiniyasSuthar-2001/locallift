@@ -104,9 +104,9 @@ export const ContentGapsView: React.FC = () => {
       ) : (
         <EmptyState
           icon={Sparkles}
-          badge="No Content Gaps"
-          title="No Content Gaps Identified"
-          description="Your current landing page architecture covers all detected local keyword clusters."
+          badge="Content Intelligence"
+          title="No Content Gap Analysis Available"
+          description="Run a Central Intelligence Scan or website crawl to analyze keyword coverage and suburban landing page opportunities for this domain."
         />
       )}
     </div>

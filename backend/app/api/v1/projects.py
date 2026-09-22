@@ -552,7 +552,7 @@ async def create_project_location(
     """
     Create a new location for an authorized project with strict coordinate bounds validation (-90 to 90 lat, -180 to 180 lng).
     """
-    await verify_project_access(project_id, current_user, db)
+    project = await verify_project_access(project_id, current_user, db)
 
     lat = location_in.latitude
     lng = location_in.longitude
@@ -645,3 +645,229 @@ async def update_project_location(
     )
     return loc
 
+
+@router.get("/{project_id}/local-intelligence-summary")
+async def get_local_intelligence_summary(
+    project_id: int,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Aggregated Local SEO Intelligence Summary for dashboard consumption.
+    Every metric comes from real backend data — no fabricated fallbacks.
+    Returns None/null for unavailable metrics.
+    """
+    from sqlalchemy import func
+    from app.models.audit import LocalAuditRun, LocalAuditFinding
+    from app.models.local_seo import Citation, BusinessProfile
+    from app.models.ranking import GeoGridScan
+    from app.services.local_seo.business_profile_service import BusinessProfileService
+
+    await verify_project_access(project_id, current_user, db)
+
+    # 1. Latest Local Audit
+    audit_res = await db.execute(
+        select(LocalAuditRun)
+        .where(LocalAuditRun.project_id == project_id)
+        .order_by(LocalAuditRun.id.desc())
+    )
+    latest_audit = audit_res.scalars().first()
+
+    audit_data = None
+    priority_findings = []
+    if latest_audit:
+        # Get top priority findings (CRITICAL/WARNING, FAIL status)
+        findings_res = await db.execute(
+            select(LocalAuditFinding)
+            .where(
+                LocalAuditFinding.audit_run_id == latest_audit.id,
+                LocalAuditFinding.status.in_(["FAIL", "PARTIAL"]),
+            )
+            .order_by(
+                # Critical first, then warning
+                LocalAuditFinding.severity.asc(),
+                LocalAuditFinding.id.asc()
+            )
+            .limit(10)
+        )
+        findings = findings_res.scalars().all()
+        priority_findings = [
+            {
+                "id": f.id,
+                "category": f.category,
+                "check_key": f.check_key,
+                "title": f.title,
+                "status": f.status,
+                "severity": f.severity,
+                "evidence": f.evidence,
+                "recommendation": f.recommendation,
+                "verification_status": f.verification_status,
+            }
+            for f in findings
+        ]
+
+        audit_data = {
+            "id": latest_audit.id,
+            "overall_score": latest_audit.overall_score,
+            "category_scores": latest_audit.category_scores or {},
+            "findings_summary": latest_audit.findings_summary or {},
+            "status": latest_audit.status,
+            "completed_at": latest_audit.completed_at.isoformat() if latest_audit.completed_at else None,
+        }
+
+    # 2. Latest Geo-Grid Scan
+    geo_res = await db.execute(
+        select(GeoGridScan)
+        .where(GeoGridScan.project_id == project_id)
+        .order_by(GeoGridScan.id.desc())
+    )
+    latest_geo = geo_res.scalars().first()
+
+    geo_data = None
+    if latest_geo:
+        geo_data = {
+            "id": latest_geo.id,
+            "keyword": latest_geo.keyword if hasattr(latest_geo, 'keyword') else None,
+            "average_rank": latest_geo.average_rank,
+            "local_visibility_pct": latest_geo.local_visibility_pct,
+            "total_points": latest_geo.total_points if hasattr(latest_geo, 'total_points') else None,
+            "scan_status": latest_geo.scan_status if hasattr(latest_geo, 'scan_status') else None,
+            "scanned_at": latest_geo.scanned_at.isoformat() if latest_geo.scanned_at else None,
+        }
+
+    # 3. Keywords
+    kw_count = (await db.execute(
+        select(func.count(Keyword.id)).where(Keyword.project_id == project_id)
+    )).scalar() or 0
+
+    kw_avg_rank_res = await db.execute(
+        select(func.avg(Keyword.current_rank)).where(
+            Keyword.project_id == project_id,
+            Keyword.current_rank.isnot(None)
+        )
+    )
+    kw_avg_rank = kw_avg_rank_res.scalar()
+
+    # 4. Reviews
+    rev_count = (await db.execute(
+        select(func.count(Review.id)).where(Review.project_id == project_id)
+    )).scalar() or 0
+
+    rev_avg_rating_res = await db.execute(
+        select(func.avg(Review.rating)).where(Review.project_id == project_id)
+    )
+    rev_avg_rating = rev_avg_rating_res.scalar()
+
+    unanswered_res = await db.execute(
+        select(func.count(Review.id)).where(
+            Review.project_id == project_id,
+            Review.response_status.in_(["unanswered", None])
+        )
+    )
+    unanswered_count = unanswered_res.scalar() or 0
+
+    # 5. Citations
+    cit_count = (await db.execute(
+        select(func.count(Citation.id)).where(Citation.project_id == project_id)
+    )).scalar() or 0
+
+    nap_conflict_count = (await db.execute(
+        select(func.count(Citation.id)).where(
+            Citation.project_id == project_id,
+            Citation.nap_status == "mismatch"
+        )
+    )).scalar() or 0
+
+    # 6. Business Profile
+    bp_res = await db.execute(
+        select(BusinessProfile).where(BusinessProfile.project_id == project_id)
+    )
+    bp = bp_res.scalars().first()
+
+    profile_data = None
+    if bp:
+        profile_data = {
+            "business_name": bp.business_name,
+            "verification_status": bp.verification_status,
+            "has_coordinates": bp.latitude is not None and bp.longitude is not None,
+            "has_phone": bp.primary_phone is not None,
+            "has_address": bp.primary_address is not None,
+            "primary_category": bp.primary_category,
+        }
+
+    # 7. Open issues & tasks
+    from app.models.audit import IssueStatus, TaskStatus, SEOIssue, SEOTask
+    open_issues = (await db.execute(
+        select(func.count(SEOIssue.id)).where(
+            SEOIssue.project_id == project_id, SEOIssue.status == IssueStatus.OPEN
+        )
+    )).scalar() or 0
+
+    active_tasks = (await db.execute(
+        select(func.count(SEOTask.id)).where(
+            SEOTask.project_id == project_id,
+            SEOTask.status.in_([TaskStatus.OPEN, TaskStatus.IN_PROGRESS])
+        )
+    )).scalar() or 0
+
+    # 8. GBP connection
+    acc_res = await db.execute(
+        select(GoogleAccount).where(GoogleAccount.project_id == project_id)
+    )
+    google_acc = acc_res.scalars().first()
+    gbp = None
+    if google_acc:
+        gbp_res = await db.execute(
+            select(GoogleBusinessProfile).where(GoogleBusinessProfile.google_account_id == google_acc.id)
+        )
+        gbp = gbp_res.scalars().first()
+
+    gbp_data = None
+    if gbp:
+        gbp_data = {
+            "connected": True,
+            "business_name": gbp.business_name,
+            "completeness_score": gbp.completeness_score,
+            "is_verified": gbp.is_verified if hasattr(gbp, 'is_verified') else None,
+        }
+
+    matching_nap_cit = (await db.execute(
+        select(func.count(Citation.id)).where(
+            Citation.project_id == project_id,
+            Citation.nap_status == "match"
+        )
+    )).scalar() or 0
+
+    return {
+        "project_id": project_id,
+        "business_name": profile_data["business_name"] if profile_data else None,
+        "overall_score": audit_data["overall_score"] if audit_data else None,
+        "category_scores": audit_data["category_scores"] if audit_data else {},
+        "geo_visibility_pct": geo_data["local_visibility_pct"] if geo_data else None,
+        "total_keywords": kw_count,
+        "total_reviews": rev_count,
+        "average_rating": round(rev_avg_rating, 2) if rev_avg_rating else None,
+        "total_citations": cit_count,
+        "citations_matching_nap": matching_nap_cit,
+        "audit": audit_data,
+        "geo_visibility": geo_data,
+        "keywords": {
+            "total": kw_count,
+            "average_rank": round(kw_avg_rank, 1) if kw_avg_rank else None,
+        },
+        "reviews": {
+            "total": rev_count,
+            "average_rating": round(rev_avg_rating, 2) if rev_avg_rating else None,
+            "unanswered": unanswered_count,
+        },
+        "citations": {
+            "total": cit_count,
+            "matching_nap": matching_nap_cit,
+            "nap_conflicts": nap_conflict_count,
+        },
+        "business_profile": profile_data,
+        "gbp": gbp_data,
+        "open_issues": open_issues,
+        "active_tasks": active_tasks,
+        "priority_findings": priority_findings,
+    }

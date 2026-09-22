@@ -187,3 +187,62 @@ class SEOTask(Base):
     project = relationship("Project", back_populates="seo_tasks")
     issue = relationship("SEOIssue", back_populates="tasks")
     assigned_to = relationship("User", back_populates="assigned_tasks")
+
+
+class LocalAuditRun(Base):
+    """
+    Project-scoped Local SEO Audit execution run across all 20 local audit categories.
+    """
+    __tablename__ = "local_audit_runs"
+
+    id = Column(Integer, primary_key=True, index=True)
+    project_id = Column(Integer, ForeignKey("projects.id", ondelete="CASCADE"), nullable=False, index=True)
+    
+    framework_version = Column(String(50), default="local_seo_v1")
+    status = Column(String(50), default="completed")  # running, completed, completed_with_warnings, failed
+    
+    # Truth in scoring: None if insufficient data sources are available
+    overall_score = Column(Integer, nullable=True, default=None)
+    category_scores = Column(JSON, default=dict)  # {"google_business_profile": 85, "nap_consistency": 90, ...}
+    findings_summary = Column(JSON, default=dict)  # {"total": 24, "pass": 18, "fail": 3, "not_verified": 3}
+    
+    started_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    completed_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+    project = relationship("Project", back_populates="local_audit_runs")
+    findings = relationship("LocalAuditFinding", back_populates="audit_run", cascade="all, delete-orphan")
+
+
+class LocalAuditFinding(Base):
+    """
+    Individual evidence-backed finding from a Local SEO Audit run.
+    Traceable to source, verification status, and confidence.
+    """
+    __tablename__ = "local_audit_findings"
+
+    id = Column(Integer, primary_key=True, index=True)
+    project_id = Column(Integer, ForeignKey("projects.id", ondelete="CASCADE"), nullable=False, index=True)
+    audit_run_id = Column(Integer, ForeignKey("local_audit_runs.id", ondelete="CASCADE"), nullable=False, index=True)
+
+    category = Column(String(100), nullable=False, index=True)  # One of 20 categories
+    check_key = Column(String(100), nullable=False, index=True)  # e.g. "gbp_claimed", "nap_phone_match"
+    title = Column(String(255), nullable=False)
+    
+    status = Column(String(50), default="NOT_VERIFIED")  # PASS, PARTIAL, FAIL, NOT_VERIFIED, NOT_APPLICABLE, ERROR
+    severity = Column(String(50), default="warning")  # critical, warning, opportunity, info
+    score_impact = Column(Float, default=0.0)  # Points awarded or deducted
+    
+    evidence = Column(Text, nullable=True)
+    source = Column(String(100), nullable=True)  # GBP API, Website Crawl, Directory Citation, SERP
+    source_url = Column(String(1000), nullable=True)
+    verification_status = Column(String(50), default="NOT_VERIFIED")  # Uses VerificationStatus enum values
+    confidence = Column(String(50), default="HIGH")  # HIGH, MEDIUM, LOW
+    
+    recommendation = Column(Text, nullable=True)
+    action_type = Column(String(100), default="manual_action")
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+    audit_run = relationship("LocalAuditRun", back_populates="findings")
+    project = relationship("Project")
+

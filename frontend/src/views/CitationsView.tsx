@@ -51,7 +51,8 @@ export const CitationsView: React.FC = () => {
         directory_name: directoryName.trim(),
         listing_url: listingUrl.trim() || undefined,
         nap_status: napStatus,
-        domain_authority: 50
+        citation_type: 'USER_PROVIDED',
+        verification_status: 'USER_PROVIDED'
       });
       setDirectoryName('');
       setListingUrl('');
@@ -115,9 +116,11 @@ export const CitationsView: React.FC = () => {
         <div className="card-vibrant p-4 space-y-1">
           <span className="text-[10px] font-black uppercase tracking-wider text-slate-500">Citation Consistency</span>
           <div className="text-2xl font-black text-purple-700">
-            {citations.length > 0 ? Math.round((matchingCount / citations.length) * 100) : 0}%
+            {citations.length > 0 ? `${Math.round((matchingCount / citations.length) * 100)}%` : 'N/A'}
           </div>
-          <span className="text-[11px] text-purple-900 font-semibold">Self-reported accuracy</span>
+          <span className="text-[11px] text-purple-900 font-semibold">
+            {citations.length > 0 ? 'Self-reported accuracy' : 'No directory records'}
+          </span>
         </div>
       </div>
 
@@ -147,7 +150,7 @@ export const CitationsView: React.FC = () => {
                     </td>
                     <td className="p-3.5">
                       <span className="px-2 py-0.5 rounded bg-slate-100 text-slate-700 font-mono text-[10px] font-bold">
-                        DA {c.domain_authority}
+                        {c.domain_authority != null ? `DA ${c.domain_authority}` : 'DA: N/A'}
                       </span>
                     </td>
                     <td className="p-3.5">

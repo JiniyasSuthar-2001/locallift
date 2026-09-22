@@ -39,6 +39,11 @@ class CitationCreate(BaseModel):
     domain_authority: Optional[int] = None
     status: Optional[str] = "listed"
     nap_status: Optional[str] = "match"
+    citation_type: Optional[str] = "USER_PROVIDED"
+    verification_status: Optional[str] = "NOT_VERIFIED"
+    confidence: Optional[float] = None
+    evidence: Optional[Dict[str, Any]] = None
+    source_type: Optional[str] = "manual"
 
 class CitationOut(BaseModel):
     id: int
@@ -46,10 +51,15 @@ class CitationOut(BaseModel):
     source_name: str
     domain: str
     listing_url: Optional[str] = None
-    domain_authority: Optional[int] = None
+    domain_authority: Optional[int] = None  # None if unknown, never fake 50
     category: str
     status: str  # listed, missing, incorrect, pending
     nap_status: str  # consistent, mismatch, missing
+    citation_type: Optional[str] = "USER_PROVIDED"
+    verification_status: Optional[str] = "NOT_VERIFIED"
+    confidence: Optional[float] = None
+    evidence: Optional[Dict[str, Any]] = {}
+    source_type: Optional[str] = "manual"
     found_name: Optional[str] = None
     found_address: Optional[str] = None
     found_phone: Optional[str] = None
@@ -66,6 +76,9 @@ class CompetitorCreate(BaseModel):
     gbp_name: Optional[str] = None
     rating: Optional[float] = None
     reviews_count: Optional[int] = 0
+    place_id: Optional[str] = None
+    categories: Optional[List[str]] = []
+    gbp_status: Optional[str] = None
 
 
 class NAPRecordOut(BaseModel):
@@ -91,13 +104,77 @@ class CompetitorOut(BaseModel):
     name: str
     domain: str
     gbp_name: Optional[str] = None
+    place_id: Optional[str] = None
+    categories: List[str] = []
+    gbp_status: Optional[str] = None
     rating: Optional[float] = None
     reviews_count: int = 0
+    citations_count: int = 0
+    backlinks_count: int = 0
     local_visibility_score: Optional[int] = None
+    geo_grid_share_pct: Optional[float] = None
     top_keywords_count: int = 0
+    tracked_keywords_overlap: List[str] = []
     avg_maps_rank: Optional[float] = None
     comparison_data: Dict[str, Any] = {}
     opportunities_found: List[Any] = []
+
+    class Config:
+        from_attributes = True
+
+
+class BusinessProfileBase(BaseModel):
+    business_name: str
+    website: Optional[str] = None
+    primary_phone: Optional[str] = None
+    primary_address: Optional[str] = None
+    city: Optional[str] = None
+    state: Optional[str] = None
+    postal_code: Optional[str] = None
+    country: Optional[str] = None
+    latitude: Optional[float] = None
+    longitude: Optional[float] = None
+    primary_category: Optional[str] = None
+    additional_categories: List[str] = []
+    service_area: List[str] = []
+    place_id: Optional[str] = None
+    maps_url: Optional[str] = None
+
+
+class BusinessProfileCreate(BusinessProfileBase):
+    project_id: int
+    source: Optional[str] = "USER_PROVIDED"
+    verification_status: Optional[str] = "NOT_VERIFIED"
+
+
+class BusinessProfileUpdate(BaseModel):
+    business_name: Optional[str] = None
+    website: Optional[str] = None
+    primary_phone: Optional[str] = None
+    primary_address: Optional[str] = None
+    city: Optional[str] = None
+    state: Optional[str] = None
+    postal_code: Optional[str] = None
+    country: Optional[str] = None
+    latitude: Optional[float] = None
+    longitude: Optional[float] = None
+    primary_category: Optional[str] = None
+    additional_categories: Optional[List[str]] = None
+    service_area: Optional[List[str]] = None
+    place_id: Optional[str] = None
+    maps_url: Optional[str] = None
+    source: Optional[str] = None
+    verification_status: Optional[str] = None
+
+
+class BusinessProfileOut(BusinessProfileBase):
+    id: int
+    project_id: int
+    source: str
+    verification_status: str
+    last_verified_at: Optional[datetime] = None
+    created_at: datetime
+    updated_at: Optional[datetime] = None
 
     class Config:
         from_attributes = True

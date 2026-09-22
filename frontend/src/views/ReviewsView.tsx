@@ -96,7 +96,7 @@ export const ReviewsView: React.FC = () => {
   });
 
   const totalReviews = reviews.length;
-  const avgRating = totalReviews > 0 ? (reviews.reduce((acc, r) => acc + r.rating, 0) / totalReviews).toFixed(1) : '0.0';
+  const avgRating = totalReviews > 0 ? (reviews.reduce((acc, r) => acc + r.rating, 0) / totalReviews).toFixed(1) : null;
   const positiveCount = reviews.filter(r => r.sentiment === 'positive').length;
 
   if (!activeProject) {
@@ -180,10 +180,14 @@ export const ReviewsView: React.FC = () => {
         <div className="card-vibrant p-4 space-y-1">
           <span className="text-[10px] font-black uppercase tracking-wider text-slate-500">Average Rating</span>
           <div className="flex items-baseline space-x-2">
-            <span className="text-2xl font-black text-slate-900">{avgRating}</span>
-            <div className="text-amber-400 text-sm">★★★★★</div>
+            <span className="text-2xl font-black text-slate-900">
+              {avgRating !== null ? avgRating : 'N/A'}
+            </span>
+            {avgRating !== null && <div className="text-amber-400 text-sm">★★★★★</div>}
           </div>
-          <span className="text-[11px] text-slate-500 font-medium">Across all reviews</span>
+          <span className="text-[11px] text-slate-500 font-medium">
+            {avgRating !== null ? 'Across all verified reviews' : 'No reviews recorded'}
+          </span>
         </div>
 
         <div className="card-vibrant p-4 space-y-1">
@@ -197,9 +201,11 @@ export const ReviewsView: React.FC = () => {
         <div className="card-vibrant p-4 space-y-1">
           <span className="text-[10px] font-black uppercase tracking-wider text-slate-500">Positive Sentiment</span>
           <div className="text-2xl font-black text-emerald-700">
-            {totalReviews > 0 ? Math.round((positiveCount / totalReviews) * 100) : 0}%
+            {totalReviews > 0 ? `${Math.round((positiveCount / totalReviews) * 100)}%` : '—'}
           </div>
-          <span className="text-[11px] text-slate-500 font-medium">{positiveCount} positive feedbacks</span>
+          <span className="text-[11px] text-slate-500 font-medium">
+            {totalReviews > 0 ? `${positiveCount} positive feedbacks` : 'Awaiting review sync'}
+          </span>
         </div>
       </div>
 

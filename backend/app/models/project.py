@@ -51,6 +51,8 @@ class Project(Base):
     geo_grid_scans = relationship("GeoGridScan", back_populates="project", cascade="all, delete-orphan")
     team_memberships = relationship("ProjectMembership", back_populates="project", cascade="all, delete-orphan")
     invitations = relationship("ProjectInvitation", back_populates="project", cascade="all, delete-orphan")
+    business_profile = relationship("BusinessProfile", back_populates="project", uselist=False, cascade="all, delete-orphan")
+    local_audit_runs = relationship("LocalAuditRun", back_populates="project", cascade="all, delete-orphan")
 
 
 class Location(Base):

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { Location } from '../../types';
-import { MapPin, X, Navigation, CheckCircle2, Plus, AlertCircle } from 'lucide-react';
+import { Location, Keyword } from '../../types';
+import { MapPin, X, Navigation, CheckCircle2, Plus, AlertCircle, Search } from 'lucide-react';
 import api from '../../api/client';
 import { getErrorMessage } from '../../utils/error';
 
@@ -13,12 +13,14 @@ interface LocationPickerModalProps {
     center_lat?: number;
     center_lng?: number;
     center_name?: string;
-    keyword?: string;
+    keyword_id?: number;
+    keyword: string;
     radius_km?: number;
     grid_size?: number;
   }) => Promise<void>;
   isScanning: boolean;
   initialKeyword?: string;
+  initialKeywordId?: number;
   initialRadius?: number;
   initialGridSize?: number;
 }
@@ -30,13 +32,20 @@ export const LocationPickerModal: React.FC<LocationPickerModalProps> = ({
   onStartScan,
   isScanning,
   initialKeyword = '',
-  initialRadius = 7.5,
+  initialKeywordId,
+  initialRadius = 5.0,
   initialGridSize = 5
 }) => {
   const [locations, setLocations] = useState<Location[]>([]);
   const [loadingLocations, setLoadingLocations] = useState(false);
   const [selectedLocationId, setSelectedLocationId] = useState<number | null>(null);
   const [isManualMode, setIsManualMode] = useState(false);
+
+  // Tracked Keywords
+  const [trackedKeywords, setTrackedKeywords] = useState<Keyword[]>([]);
+  const [loadingKeywords, setLoadingKeywords] = useState(false);
+  const [selectedKeywordId, setSelectedKeywordId] = useState<number | null>(initialKeywordId || null);
+  const [isCustomKeyword, setIsCustomKeyword] = useState(false);
 
   // Form parameters
   const [keyword, setKeyword] = useState(initialKeyword);
@@ -54,7 +63,9 @@ export const LocationPickerModal: React.FC<LocationPickerModalProps> = ({
   useEffect(() => {
     if (isOpen && projectId) {
       fetchLocations();
+      fetchTrackedKeywords();
       setKeyword(initialKeyword);
+      setSelectedKeywordId(initialKeywordId || null);
       setRadiusKm(initialRadius);
       setGridSize(initialGridSize);
       setValidationError(null);
@@ -77,11 +88,57 @@ export const LocationPickerModal: React.FC<LocationPickerModalProps> = ({
     }
   };
 
+  const fetchTrackedKeywords = async () => {
+    try {
+      setLoadingKeywords(true);
+      const resp = await api.get(`/keywords/${projectId}`);
+      const list: Keyword[] = Array.isArray(resp.data) ? resp.data : [];
+      setTrackedKeywords(list);
+
+      // If initial keyword matched one in the list, set keyword_id
+      if (list.length > 0) {
+        if (initialKeywordId) {
+          const matched = list.find((k) => k.id === initialKeywordId);
+          if (matched) {
+            setSelectedKeywordId(matched.id);
+            setKeyword(matched.keyword);
+            return;
+          }
+        }
+        if (initialKeyword) {
+          const matched = list.find((k) => k.keyword.toLowerCase() === initialKeyword.toLowerCase());
+          if (matched) {
+            setSelectedKeywordId(matched.id);
+            setKeyword(matched.keyword);
+            return;
+          }
+        }
+        // Default to first tracked keyword if no custom keyword is typed
+        if (!initialKeyword) {
+          setSelectedKeywordId(list[0].id);
+          setKeyword(list[0].keyword);
+        }
+      } else {
+        setIsCustomKeyword(true);
+      }
+    } catch (e: any) {
+      console.error('Failed to fetch project keywords:', e);
+    } finally {
+      setLoadingKeywords(false);
+    }
+  };
+
   if (!isOpen) return null;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setValidationError(null);
+
+    const cleanKeyword = keyword.trim();
+    if (!cleanKeyword) {
+      setValidationError('A search keyword is required for Geo-Grid ranking scans.');
+      return;
+    }
 
     if (isManualMode) {
       const latNum = parseFloat(manualLat);
@@ -100,7 +157,8 @@ export const LocationPickerModal: React.FC<LocationPickerModalProps> = ({
         center_lat: latNum,
         center_lng: lngNum,
         center_name: manualName || 'Custom Location',
-        keyword,
+        keyword_id: selectedKeywordId || undefined,
+        keyword: cleanKeyword,
         radius_km: radiusKm,
         grid_size: gridSize
       });
@@ -114,7 +172,8 @@ export const LocationPickerModal: React.FC<LocationPickerModalProps> = ({
       await onStartScan({
         location_id: selectedLocationId,
         center_name: selectedLoc?.name,
-        keyword,
+        keyword_id: selectedKeywordId || undefined,
+        keyword: cleanKeyword,
         radius_km: radiusKm,
         grid_size: gridSize
       });
@@ -132,7 +191,7 @@ export const LocationPickerModal: React.FC<LocationPickerModalProps> = ({
             </div>
             <div>
               <h2 className="text-lg font-black text-slate-900">Run 5x5 Geo-Grid Scan</h2>
-              <p className="text-xs text-slate-500">Select business location or enter custom GPS coordinates</p>
+              <p className="text-xs text-slate-500">Target a canonical SEO keyword across your service coordinates</p>
             </div>
           </div>
           <button
@@ -152,19 +211,69 @@ export const LocationPickerModal: React.FC<LocationPickerModalProps> = ({
         )}
 
         <form onSubmit={handleSubmit} className="space-y-5">
-          {/* Target Keyword */}
-          <div>
-            <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
-              Search Keyword / Query
-            </label>
-            <input
-              type="text"
-              required
-              value={keyword}
-              onChange={(e) => setKeyword(e.target.value)}
-              placeholder="e.g. plumber near me"
-              className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-slate-900 text-xs font-medium focus:ring-2 focus:ring-purple-500 focus:outline-none"
-            />
+          {/* Target Keyword Selection */}
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider">
+                Target SEO Keyword
+              </label>
+              {trackedKeywords.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsCustomKeyword(!isCustomKeyword);
+                    if (isCustomKeyword && trackedKeywords.length > 0) {
+                      setSelectedKeywordId(trackedKeywords[0].id);
+                      setKeyword(trackedKeywords[0].keyword);
+                    } else {
+                      setSelectedKeywordId(null);
+                    }
+                  }}
+                  className="text-[11px] font-bold text-purple-600 hover:text-purple-800 underline"
+                >
+                  {isCustomKeyword ? 'Select from Tracked Keywords' : 'Enter Custom Keyword'}
+                </button>
+              )}
+            </div>
+
+            {!isCustomKeyword && trackedKeywords.length > 0 ? (
+              <select
+                value={selectedKeywordId || ''}
+                onChange={(e) => {
+                  const id = parseInt(e.target.value);
+                  const matched = trackedKeywords.find((k) => k.id === id);
+                  if (matched) {
+                    setSelectedKeywordId(matched.id);
+                    setKeyword(matched.keyword);
+                  }
+                }}
+                className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-slate-900 text-xs font-semibold focus:ring-2 focus:ring-purple-500 focus:outline-none bg-white"
+              >
+                {trackedKeywords.map((k) => (
+                  <option key={k.id} value={k.id}>
+                    {k.keyword} {k.current_rank ? `(Rank #${k.current_rank})` : ''}
+                  </option>
+                ))}
+              </select>
+            ) : (
+              <div className="relative">
+                <Search className="w-4 h-4 text-slate-400 absolute left-3 top-3" />
+                <input
+                  type="text"
+                  required
+                  value={keyword}
+                  onChange={(e) => {
+                    setKeyword(e.target.value);
+                    setSelectedKeywordId(null);
+                  }}
+                  placeholder="e.g. emergency plumber or commercial cleaning"
+                  className="w-full pl-9 pr-3.5 py-2.5 rounded-xl border border-slate-200 text-slate-900 text-xs font-medium focus:ring-2 focus:ring-purple-500 focus:outline-none"
+                />
+              </div>
+            )}
+            <p className="text-[10px] text-slate-500">
+              The localized search ranking will evaluate this exact search query at each discrete GPS point.
+            </p>
           </div>
 
           {/* Location Mode Toggle */}

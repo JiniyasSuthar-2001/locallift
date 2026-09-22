@@ -64,10 +64,25 @@ async def test_local_grid_rescan_no_nameerror_on_zero_keywords_and_zero_location
 
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
-        # Call grid/rescan with manual center coordinates on project with 0 keywords and 0 locations
+        # When no keyword and no tracked keywords exist, strict validation returns 400 KEYWORD_REQUIRED
+        err_res = await client.post(
+            f"/api/v1/keywords/{project.id}/grid/rescan",
+            json={
+                "center_lat": 34.0522,
+                "center_lng": -118.2437,
+                "grid_size": 3,
+                "radius_km": 5.0
+            },
+            headers=headers
+        )
+        assert err_res.status_code == 400
+        assert "KEYWORD_REQUIRED" in err_res.text
+
+        # When keyword is provided on project with 0 saved locations, executes without NameError: name 'loc' is not defined
         res = await client.post(
             f"/api/v1/keywords/{project.id}/grid/rescan",
             json={
+                "keyword": "emergency dentist los angeles",
                 "center_lat": 34.0522,
                 "center_lng": -118.2437,
                 "grid_size": 3,
@@ -78,7 +93,7 @@ async def test_local_grid_rescan_no_nameerror_on_zero_keywords_and_zero_location
         assert res.status_code == 200, f"Rescan failed with {res.status_code}: {res.text}"
         data = res.json()
         assert "scan_status" in data
-        assert data.get("keyword_id") is not None
+        assert data.get("keyword") == "emergency dentist los angeles"
         assert data.get("center_lat") == 34.0522
         assert data.get("center_lng") == -118.2437
 

@@ -292,6 +292,8 @@ class SerpApiProvider(SERPProvider):
             phone = place.get("phone", "")
             rating = place.get("rating")
             reviews = place.get("reviews")
+            place_id = place.get("place_id") or place.get("data_id")
+            data_cid = place.get("data_cid") or str(place.get("cid", "")) or None
             domain = DomainMatcher.normalize_host(link)
 
             local_items.append(
@@ -304,7 +306,9 @@ class SerpApiProvider(SERPProvider):
                     rating=float(rating) if rating is not None else None,
                     reviews_count=int(reviews) if reviews is not None else None,
                     phone=phone,
-                    address=address
+                    address=address,
+                    place_id=place_id,
+                    data_cid=data_cid
                 )
             )
 
@@ -331,6 +335,8 @@ class SerpApiProvider(SERPProvider):
             phone = place.get("phone", "")
             rating = place.get("rating")
             reviews = place.get("reviews")
+            place_id = place.get("place_id") or place.get("data_id")
+            data_cid = place.get("data_cid") or str(place.get("cid", "")) or None
             domain = DomainMatcher.normalize_host(link)
 
             local_items.append(
@@ -343,7 +349,9 @@ class SerpApiProvider(SERPProvider):
                     rating=float(rating) if rating is not None else None,
                     reviews_count=int(reviews) if reviews is not None else None,
                     phone=phone,
-                    address=address
+                    address=address,
+                    place_id=place_id,
+                    data_cid=data_cid
                 )
             )
 

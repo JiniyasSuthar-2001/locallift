@@ -1,5 +1,5 @@
 from datetime import datetime, timezone
-from sqlalchemy import Column, Integer, String, Float, DateTime, ForeignKey, Text, JSON
+from sqlalchemy import Column, Integer, String, Float, DateTime, ForeignKey, Text, JSON, UniqueConstraint
 from sqlalchemy.orm import relationship
 from app.database import Base
 
@@ -62,15 +62,57 @@ class GeoGridScan(Base):
     # Real execution statistics
     scan_status = Column(String(50), default="completed")  # completed, completed_with_errors, failed
     total_points = Column(Integer, default=25)
+    completed_points = Column(Integer, default=0)
+    ranking_found_points = Column(Integer, default=0)
+    not_found_points = Column(Integer, default=0)
+    provider_error_points = Column(Integer, default=0)
+    timeout_points = Column(Integer, default=0)
     successful_points = Column(Integer, default=0)
     failed_points = Column(Integer, default=0)
     
-    # Grid pins matrix data
+    # Grid pins matrix data (JSON cache for legacy/fast rendering)
     grid_points = Column(JSON, default=list)
     scanned_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
     project = relationship("Project", back_populates="geo_grid_scans")
     keyword_rel = relationship("Keyword", back_populates="grid_scans")
+    point_results = relationship("GeoGridPointResult", back_populates="scan", cascade="all, delete-orphan")
+
+
+class GeoGridPointResult(Base):
+    __tablename__ = "geo_grid_point_results"
+
+    id = Column(Integer, primary_key=True, index=True)
+    scan_id = Column(Integer, ForeignKey("geo_grid_scans.id", ondelete="CASCADE"), nullable=False, index=True)
+    project_id = Column(Integer, ForeignKey("projects.id", ondelete="CASCADE"), nullable=False, index=True)
+    keyword_id = Column(Integer, ForeignKey("keywords.id", ondelete="CASCADE"), nullable=False, index=True)
+    
+    point_number = Column(Integer, nullable=False)  # 0 to 24
+    row = Column(Integer, nullable=True)
+    col = Column(Integer, nullable=True)
+    latitude = Column(Float, nullable=False)
+    longitude = Column(Float, nullable=False)
+    
+    keyword = Column(String(255), nullable=False)
+    provider = Column(String(50), nullable=False)
+    status = Column(String(50), nullable=False)  # SUCCESS, NOT_FOUND, PROVIDER_ERROR, TIMEOUT
+    rank = Column(Integer, nullable=True)
+    
+    matched_business = Column(String(255), nullable=True)
+    matched_place_id = Column(String(255), nullable=True)
+    matched_domain = Column(String(255), nullable=True)
+    ranking_url = Column(String(1000), nullable=True)
+    
+    searched_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    error = Column(Text, nullable=True)
+
+    __table_args__ = (
+        UniqueConstraint("scan_id", "point_number", name="uq_geo_grid_scan_point"),
+    )
+
+    scan = relationship("GeoGridScan", back_populates="point_results")
+    project = relationship("Project")
+    keyword_rel = relationship("Keyword")
 
 class RankingSnapshot(Base):
     __tablename__ = "ranking_snapshots"

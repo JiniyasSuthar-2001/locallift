@@ -127,3 +127,48 @@ class AuditJobOut(BaseModel):
     class Config:
         from_attributes = True
 
+
+class LocalAuditFindingOut(BaseModel):
+    id: int
+    project_id: int
+    audit_run_id: int
+    category: str
+    check_key: str
+    title: str
+    status: str
+    severity: str
+    score_impact: float
+    evidence: Optional[str] = None
+    source: Optional[str] = None
+    source_url: Optional[str] = None
+    verification_status: str
+    confidence: str
+    recommendation: Optional[str] = None
+    action_type: Optional[str] = "manual_action"
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class LocalAuditRunOut(BaseModel):
+    id: int
+    project_id: int
+    framework_version: str
+    status: str
+    overall_score: Optional[int] = None
+    category_scores: Dict[str, Any] = {}
+    findings_summary: Dict[str, Any] = {}
+    started_at: Optional[datetime] = None
+    completed_at: Optional[datetime] = None
+    created_at: datetime
+    findings: List[LocalAuditFindingOut] = []
+
+    class Config:
+        from_attributes = True
+
+
+class LocalAuditRunCreate(BaseModel):
+    framework_version: Optional[str] = "local_seo_v1"
+
+

@@ -13,14 +13,16 @@ class SERPCapabilities(BaseModel):
 class SERPItem(BaseModel):
     position: int
     title: str
-    link: str
-    domain: str
+    link: str = ""
+    domain: str = ""
     snippet: Optional[str] = None
     item_type: str = "organic"  # organic, local_pack, featured_snippet, ad
     rating: Optional[float] = None
     reviews_count: Optional[int] = None
     phone: Optional[str] = None
     address: Optional[str] = None
+    place_id: Optional[str] = None
+    data_cid: Optional[str] = None
 
 class SERPResponse(BaseModel):
     provider: str
@@ -150,7 +152,7 @@ class NotConfiguredSERPProvider(SERPProvider):
             keyword=keyword,
             location=location,
             success=False,
-            error_code="SERP_API_KEY_REQUIRED",
+            error_code="SERP_PROVIDER_NOT_CONFIGURED",
             error_message="SERP provider not configured. Add your SerpApi key in Settings to enable keyword tracking and Geo-Grid searches."
         )
 
@@ -167,6 +169,6 @@ class NotConfiguredSERPProvider(SERPProvider):
             keyword=keyword,
             location=location_name,
             success=False,
-            error_code="SERP_API_KEY_REQUIRED",
+            error_code="SERP_PROVIDER_NOT_CONFIGURED",
             error_message="SERP provider not configured. Add your SerpApi key in Settings to enable keyword tracking and Geo-Grid searches."
         )

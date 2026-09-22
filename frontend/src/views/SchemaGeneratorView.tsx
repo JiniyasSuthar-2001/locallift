@@ -81,7 +81,7 @@ export const SchemaGeneratorView: React.FC = () => {
   const [city, setCity] = useState('');
   const [state, setState] = useState('');
   const [postalCode, setPostalCode] = useState('');
-  const [country, setCountry] = useState('US');
+  const [country, setCountry] = useState('');
   const [latitude, setLatitude] = useState<string>('');
   const [longitude, setLongitude] = useState<string>('');
   const [priceRange, setPriceRange] = useState('$$');

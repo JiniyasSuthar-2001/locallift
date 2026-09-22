@@ -73,7 +73,7 @@ class DomainMatcher:
         Checks if a result URL matches the target domain or target URL.
         Guards against suffix hijacking (e.g. target 'example.com' will NOT match 'example.com.attacker.com').
         """
-        if not result_url:
+        if not result_url or not target_domain:
             return False
 
         res_host = cls.normalize_host(result_url)
@@ -99,29 +99,94 @@ class DomainMatcher:
 
         return False
 
+    @staticmethod
+    def _normalize_name(name: Optional[str]) -> str:
+        if not name:
+            return ""
+        # Lowercase, strip punctuation and extra spaces
+        return re.sub(r"[^\w\s]", "", name).strip().lower()
+
+    @staticmethod
+    def _normalize_phone(phone: Optional[str]) -> str:
+        if not phone:
+            return ""
+        return re.sub(r"[^\d]", "", phone)
+
+    @classmethod
+    def find_rank_in_serp_detailed(
+        cls,
+        serp_response: SERPResponse,
+        target_domain: Optional[str] = None,
+        target_url: Optional[str] = None,
+        target_place_id: Optional[str] = None,
+        business_name: Optional[str] = None,
+        phone: Optional[str] = None
+    ) -> Tuple[Optional[int], Optional[str], str, Optional[SERPItem]]:
+        """
+        Searches SERP response using the strongest available identifier:
+        1. Place ID / Data CID match
+        2. Normalized domain / target URL match
+        3. Normalized business name + phone match
+        Returns: (rank, ranking_url, serp_type, matched_item)
+        """
+        clean_target_place = target_place_id.strip() if target_place_id else None
+        clean_target_name = cls._normalize_name(business_name)
+        clean_target_phone = cls._normalize_phone(phone)
+
+        all_results = [
+            (item, "Local Pack") for item in serp_response.local_pack_results
+        ] + [
+            (item, "Organic") for item in serp_response.organic_results
+        ]
+
+        # 1. Strongest match: Place ID
+        if clean_target_place:
+            for item, s_type in all_results:
+                if item.place_id and item.place_id.strip() == clean_target_place:
+                    return (item.position, item.link, s_type, item)
+                if item.data_cid and item.data_cid.strip() == clean_target_place:
+                    return (item.position, item.link, s_type, item)
+
+        # 2. High confidence: Normalized Domain / URL match
+        if target_domain or target_url:
+            for item, s_type in all_results:
+                if cls.matches_target(item.link, target_domain or "", target_url):
+                    return (item.position, item.link, s_type, item)
+
+        # 3. Business Name + Phone fallback match
+        if clean_target_name and len(clean_target_name) > 2:
+            for item, s_type in all_results:
+                item_name = cls._normalize_name(item.title)
+                if clean_target_name == item_name:
+                    # If phone is provided, verify phone alignment to prevent false collision
+                    if clean_target_phone and item.phone:
+                        if cls._normalize_phone(item.phone) == clean_target_phone:
+                            return (item.position, item.link, s_type, item)
+                    else:
+                        return (item.position, item.link, s_type, item)
+
+        return (None, None, "Organic", None)
+
     @classmethod
     def find_rank_in_serp(
         cls,
         serp_response: SERPResponse,
         target_domain: str,
-        target_url: Optional[str] = None
+        target_url: Optional[str] = None,
+        target_place_id: Optional[str] = None,
+        business_name: Optional[str] = None,
+        phone: Optional[str] = None
     ) -> Tuple[Optional[int], Optional[str], str]:
         """
-        Searches SERP response for target domain/URL.
-        Returns: (rank, ranking_url, serp_type)
-          - rank: 1-indexed integer if found, or None if not found in top results.
-          - ranking_url: Destination URL of the matched SERP item.
-          - serp_type: 'Local Pack' or 'Organic'.
+        Searches SERP response for target domain/URL/Place ID.
+        Maintains backward compatibility with 3-tuple return.
         """
-        # 1. Check Local Pack first (high intent for local queries)
-        for item in serp_response.local_pack_results:
-            if cls.matches_target(item.link, target_domain, target_url):
-                return (item.position, item.link, "Local Pack")
-
-        # 2. Check Organic results
-        for item in serp_response.organic_results:
-            if cls.matches_target(item.link, target_domain, target_url):
-                return (item.position, item.link, "Organic")
-
-        # Not found in top checked results
-        return (None, None, "Organic")
+        rank, r_url, s_type, _ = cls.find_rank_in_serp_detailed(
+            serp_response=serp_response,
+            target_domain=target_domain,
+            target_url=target_url,
+            target_place_id=target_place_id,
+            business_name=business_name,
+            phone=phone
+        )
+        return (rank, r_url, s_type)

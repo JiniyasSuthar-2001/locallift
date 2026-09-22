@@ -10,7 +10,7 @@
     "dev:backend": "node scripts/start-backend.js",
     "install:backend": "node scripts/install-backend.js",
     "install:all": "npm install && npm install --prefix frontend --legacy-peer-deps && node scripts/install-backend.js",
-    "build:frontend": "npm run build --prefix frontend"
+    "build:frontend": "node scripts/build-frontend.js"
   },
   "devDependencies": {
     "concurrently": "^9.1.2",

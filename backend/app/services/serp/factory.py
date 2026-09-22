@@ -149,10 +149,6 @@ async def get_organization_serp_provider(
     3. If provider is openserp and base_url is specified, uses OpenSERPProvider.
     4. Otherwise returns NotConfiguredSERPProvider (Never attempts Docker or localhost:7000).
     """
-    env = getattr(settings, "ENVIRONMENT", "production").lower()
-    if env == "testing":
-        return MockSERPProvider()
-
     stmt = select(OrganizationSERPConfig).where(OrganizationSERPConfig.organization_id == organization_id)
     res = await db.execute(stmt)
     serp_config = res.scalars().first()
@@ -187,14 +183,12 @@ def get_serp_provider(
     """
     Synchronous/static factory function for backwards compatibility & unit tests.
     Default is SerpApiProvider if key provided, else NotConfiguredSERPProvider.
+    Mock provider is ONLY returned when explicitly requested via provider_type='mock'.
     """
     env = getattr(settings, "ENVIRONMENT", "production").lower()
     if provider_type == "mock":
         if env in ["production", "staging"]:
             raise RuntimeError(f"Mock SERP provider is strictly prohibited in environment '{env}'.")
-        return MockSERPProvider()
-
-    if env == "testing":
         return MockSERPProvider()
 
     selected = (provider_type or getattr(settings, "SERP_PROVIDER", "serpapi")).lower()

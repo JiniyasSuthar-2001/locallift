@@ -77,6 +77,53 @@ def run_db_migrations() -> None:
                             logger.info(f"Adding missing column '{col_name}' to organization_serp_configs table")
                             alter_conn.execute(text(f"ALTER TABLE organization_serp_configs ADD COLUMN {col_name} {col_type}"))
 
+            if "geo_grid_scans" in tables:
+                columns = [c["name"] for c in inspector.get_columns("geo_grid_scans")]
+                grid_cols = {
+                    "completed_points": "INTEGER DEFAULT 0",
+                    "ranking_found_points": "INTEGER DEFAULT 0",
+                    "not_found_points": "INTEGER DEFAULT 0",
+                    "provider_error_points": "INTEGER DEFAULT 0",
+                    "timeout_points": "INTEGER DEFAULT 0"
+                }
+                with engine.begin() as alter_conn:
+                    for col_name, col_type in grid_cols.items():
+                        if col_name not in columns:
+                            logger.info(f"Adding missing column '{col_name}' to geo_grid_scans table")
+                            alter_conn.execute(text(f"ALTER TABLE geo_grid_scans ADD COLUMN {col_name} {col_type}"))
+
+            if "citations" in tables:
+                columns = [c["name"] for c in inspector.get_columns("citations")]
+                cit_cols = {
+                    "citation_type": "VARCHAR(50) DEFAULT 'USER_PROVIDED'",
+                    "verification_status": "VARCHAR(50) DEFAULT 'NOT_VERIFIED'",
+                    "confidence": "FLOAT NULL",
+                    "evidence": "JSON DEFAULT '{}'",
+                    "source_type": "VARCHAR(50) DEFAULT 'manual'"
+                }
+                with engine.begin() as alter_conn:
+                    for col_name, col_type in cit_cols.items():
+                        if col_name not in columns:
+                            logger.info(f"Adding missing column '{col_name}' to citations table")
+                            alter_conn.execute(text(f"ALTER TABLE citations ADD COLUMN {col_name} {col_type}"))
+
+            if "competitors" in tables:
+                columns = [c["name"] for c in inspector.get_columns("competitors")]
+                comp_cols = {
+                    "place_id": "VARCHAR(255) NULL",
+                    "categories": "JSON DEFAULT '[]'",
+                    "gbp_status": "VARCHAR(50) NULL",
+                    "citations_count": "INTEGER DEFAULT 0",
+                    "backlinks_count": "INTEGER DEFAULT 0",
+                    "geo_grid_share_pct": "FLOAT NULL",
+                    "tracked_keywords_overlap": "JSON DEFAULT '[]'"
+                }
+                with engine.begin() as alter_conn:
+                    for col_name, col_type in comp_cols.items():
+                        if col_name not in columns:
+                            logger.info(f"Adding missing column '{col_name}' to competitors table")
+                            alter_conn.execute(text(f"ALTER TABLE competitors ADD COLUMN {col_name} {col_type}"))
+
             if has_app_tables and not has_alembic:
                 logger.info("Existing unversioned database detected. Stamping schema at 001_initial_schema.")
                 command.stamp(alembic_cfg, "001_initial_schema")

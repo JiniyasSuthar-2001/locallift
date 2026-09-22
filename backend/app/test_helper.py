@@ -28,6 +28,7 @@ if _backend_dir not in sys.path:
     sys.path.insert(0, _backend_dir)
 
 from app.database import engine, Base, AsyncSessionLocal
+import app.models  # Ensures all models and tables are registered in Base.metadata
 from app.core.migrations import run_db_migrations
 from app.models.user import User, Organization, OrganizationMember, OrgRole
 from app.models.project import Project, Location
@@ -75,7 +76,8 @@ async def create_test_tenant(
     org_name: str = "Test Tenant Organization",
     user_email: Optional[str] = None,
     project_name: str = "Test Project",
-    primary_category: str = "Local Business"
+    primary_category: str = "Local Business",
+    domain: Optional[str] = None
 ) -> Tuple[User, Organization, Project, str]:
     """
     Helper to create an isolated test tenant (User + Org + Project) and returns
@@ -112,7 +114,7 @@ async def create_test_tenant(
         project = Project(
             organization_id=org.id,
             name=f"{project_name} {uid}",
-            domain=f"testproject-{uid}.com",
+            domain=domain or f"testproject-{uid}.com",
             primary_category=primary_category,
             health_score=0
         )

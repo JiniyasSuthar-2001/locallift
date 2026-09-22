@@ -19,7 +19,12 @@ import {
   Sparkles,
   Layers,
   Users2,
-  FolderKanban
+  FolderKanban,
+  ShieldCheck,
+  PhoneCall,
+  BarChart3,
+  History,
+  Search
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 
@@ -43,42 +48,48 @@ export const Sidebar: React.FC = () => {
       items: [
         { name: 'Dashboard', path: '/', icon: LayoutDashboard },
         { name: 'My Projects', path: '/projects', icon: FolderKanban },
-        { name: 'AI Diagnostic', path: '/ai-assistant', icon: Bot, badge: 'AI' },
       ]
     },
     {
-      title: 'Rankings & Visibility',
+      title: 'Local SEO',
       items: [
-        { name: 'Keyword Tracker', path: '/rankings/keywords', icon: TrendingUp },
-        { name: '5x5 Geo-Grid Map', path: '/rankings/grid', icon: MapPin },
-        { name: 'Google Business Profile', path: '/google/gbp', icon: Store },
+        { name: 'Local SEO Audit', path: '/audits/local', icon: ShieldCheck },
+        { name: 'Google Business', path: '/google/gbp', icon: Store },
+        { name: 'Reviews', path: '/local/reviews', icon: Star },
+        { name: 'NAP Consistency', path: '/local/nap', icon: PhoneCall },
+        { name: 'Citations', path: '/local/citations', icon: BookOpen },
+        { name: 'Schema', path: '/seo/schema', icon: FileCode2 },
       ]
     },
     {
-      title: 'Auditing & Tools',
+      title: 'Rankings',
       items: [
-        { name: 'Local Website Audit', path: '/audits/website', icon: Globe },
-        { name: 'Local SEO Signals', path: '/audits/local', icon: Layers },
-        { name: 'Schema Generator', path: '/seo/schema', icon: FileCode2 },
-        { name: 'Content Opportunities', path: '/seo/content-gaps', icon: Sparkles },
+        { name: 'Keywords', path: '/rankings/keywords', icon: TrendingUp },
+        { name: 'Geo-Grid', path: '/rankings/grid', icon: MapPin },
       ]
     },
     {
-      title: 'Reputation & Off-Page',
+      title: 'Competitors',
       items: [
-        { name: 'Customer Reviews', path: '/local/reviews', icon: Star },
-        { name: 'Citations & NAP', path: '/local/citations', icon: BookOpen },
         { name: 'Competitor Intel', path: '/local/competitors', icon: Flame },
       ]
     },
     {
-      title: 'Operations & Assets',
+      title: 'Website',
       items: [
-        { name: 'SEO Task Board', path: '/tasks', icon: CheckSquare },
-        { name: 'Team Directory', path: '/team', icon: Users2 },
-        { name: 'Templates Hub', path: '/templates', icon: FileCode2, badge: 'New' },
-        { name: 'Executive Reports', path: '/reports', icon: FileText },
-        { name: 'Integrations & APIs', path: '/connections', icon: Layers },
+        { name: 'Website Audit', path: '/audits/website', icon: Globe },
+        { name: 'Content Gaps', path: '/seo/content-gaps', icon: Sparkles },
+      ]
+    },
+    {
+      title: 'Operations',
+      items: [
+        { name: 'Tasks', path: '/tasks', icon: CheckSquare },
+        { name: 'Reports', path: '/reports', icon: FileText },
+        { name: 'AI Assistant', path: '/ai-assistant', icon: Bot, badge: 'AI' },
+        { name: 'Templates', path: '/templates', icon: FileCode2 },
+        { name: 'Team', path: '/team', icon: Users2 },
+        { name: 'Integrations', path: '/connections', icon: Layers },
         { name: 'Settings', path: '/settings', icon: Settings },
       ]
     }
@@ -97,7 +108,7 @@ export const Sidebar: React.FC = () => {
               Local<span className="bg-gradient-to-r from-[#236B4F] via-[#2FA878] to-[#39B982] bg-clip-text text-transparent">Lift</span>
             </span>
             <span className="text-[10px] text-[#587568] font-semibold tracking-tight mt-0.5">
-              Local SEO Platform
+              Local SEO Intelligence
             </span>
           </div>
         </NavLink>

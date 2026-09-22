@@ -7,9 +7,11 @@ import {
   Sparkles,
   Bot,
   Plus,
-  Check
+  Check,
+  Activity
 } from 'lucide-react';
 import { useProject } from '../../context/ProjectContext';
+import { useProjectScan } from '../../context/ScanContext';
 import { useLocation, useNavigate, Link } from 'react-router-dom';
 
 interface HeaderProps {
@@ -18,6 +20,7 @@ interface HeaderProps {
 
 export const Header: React.FC<HeaderProps> = ({ onOpenAI }) => {
   const { projects, activeProject, setActiveProject, refreshDashboard } = useProject();
+  const { isScanning, activeScan, startScan, openProgressModal } = useProjectScan();
   const location = useLocation();
   const navigate = useNavigate();
   const [isProjectDropdownOpen, setIsProjectDropdownOpen] = useState(false);
@@ -176,6 +179,27 @@ export const Header: React.FC<HeaderProps> = ({ onOpenAI }) => {
             <option value="Year to Date">Year to Date</option>
           </select>
         </div>
+
+        {/* Full Local SEO Scan Action */}
+        {isScanning ? (
+          <button
+            onClick={openProgressModal}
+            className="flex items-center space-x-2 px-3 py-1.5 rounded-xl bg-purple-50 border border-purple-300 text-xs font-bold text-purple-700 hover:bg-purple-100 transition-all shadow-xs animate-pulse"
+          >
+            <Activity className="w-3.5 h-3.5 text-purple-600 animate-spin" />
+            <span>Scanning ({activeScan?.progress_pct || 0}%)</span>
+          </button>
+        ) : (
+          <button
+            onClick={startScan}
+            disabled={!activeProject}
+            title={activeProject ? "Run full intelligence scan across all 13 Local SEO modules" : "Select a project first"}
+            className="flex items-center space-x-1.5 px-3 py-1.5 rounded-xl bg-[#236B4F] text-white hover:bg-[#1D5A42] text-xs font-bold transition-all shadow-xs disabled:opacity-50"
+          >
+            <Activity className="w-3.5 h-3.5 text-white" />
+            <span className="hidden md:inline">Scan Project</span>
+          </button>
+        )}
 
         {/* Manual Data Refresh Button */}
         <button

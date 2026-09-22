@@ -827,34 +827,45 @@ async def get_diagnostic_summary(
             "website": web_name,
             "gbp": gbp_name,
             "citations_mismatches": len([c for c in cit_mismatches if c.found_name and clean_str(c.found_name) != clean_str(web_name)]),
-            "is_aligned": name_aligned if gbp else True
+            "is_aligned": name_aligned if gbp else None
         },
         "phone": {
             "website": web_phone,
             "gbp": gbp_phone,
             "citations_mismatches": len([c for c in cit_mismatches if c.found_phone and clean_phone(c.found_phone) != clean_phone(web_phone)]),
-            "is_aligned": phone_aligned if gbp else True
+            "is_aligned": phone_aligned if gbp else None
         },
         "address": {
             "website": web_addr,
             "gbp": gbp_addr,
             "citations_mismatches": len([c for c in cit_mismatches if c.found_address and clean_str(c.found_address) != clean_str(web_addr)]),
-            "is_aligned": addr_aligned if gbp else True
+            "is_aligned": addr_aligned if gbp else None
         },
         "website_url": {
             "website": f"https://{web_domain}" if web_domain else None,
             "gbp": gbp_url,
-            "is_aligned": url_aligned if gbp else True
+            "is_aligned": url_aligned if gbp else None
         }
     }
 
-    # Pillar Scores
+    # Calculate honest component scores when project level overrides are not stored
+    gbp_calc_score = None
+    if gbp:
+        alignment_fields = [name_aligned, phone_aligned, addr_aligned, url_aligned]
+        gbp_calc_score = round((sum(1 for f in alignment_fields if f) / len(alignment_fields)) * 100)
+
+    cit_calc_score = None
+    if citations:
+        matching_cits = max(0, len(citations) - len(cit_mismatches))
+        cit_calc_score = round((matching_cits / len(citations)) * 100)
+
+    # Pillar Scores - honest evaluation, None if data source is absent
     pillar_scores = {
         "crawl_health": latest_audit.overall_score if latest_audit else project.technical_score,
         "onpage_content": project.onpage_score,
         "schema_structured_data": project.local_score,
-        "gbp_alignment": project.gbp_score if project.gbp_score is not None else (((100 if (name_aligned and phone_aligned) else 50) if gbp else None)),
-        "citations_nap": project.citations_score if project.citations_score is not None else ((100 if not cit_mismatches else 50) if citations else None),
+        "gbp_alignment": project.gbp_score if project.gbp_score is not None else gbp_calc_score,
+        "citations_nap": project.citations_score if project.citations_score is not None else cit_calc_score,
         "reviews_reputation": project.reviews_score if project.reviews_score is not None else (round(avg_rating * 20) if reviews else None)
     }
 

@@ -278,6 +278,11 @@ async def add_citation(
         category=cit_in.category or "General Directory",
         status=cit_in.status or "listed",
         nap_status=cit_in.nap_status or "consistent",
+        citation_type=cit_in.citation_type or "USER_PROVIDED",
+        verification_status=cit_in.verification_status or "NOT_VERIFIED",
+        confidence=cit_in.confidence,
+        evidence=cit_in.evidence or {},
+        source_type=cit_in.source_type or "manual",
         last_checked_at=datetime.now(timezone.utc)
     )
     db.add(cit)
@@ -297,6 +302,21 @@ async def get_nap_record(
         select(NAPRecord).where(NAPRecord.project_id == project_id).order_by(NAPRecord.id.desc())
     )
     return result.scalars().first()
+
+@router.get("/nap/comparison/{project_id}")
+async def get_nap_comparison(
+    project_id: int,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Detailed NAP comparison engine:
+    Compares the Canonical Business Profile against observed directory citations
+    and GBP data without false consistency.
+    """
+    await verify_project_access(project_id, current_user, db)
+    from app.services.local_seo.nap_service import NAPComparisonService
+    return await NAPComparisonService.compare_project_nap(project_id, db)
 
 # Competitors
 @router.get("/competitors/{project_id}", response_model=List[CompetitorOut])
@@ -551,19 +571,36 @@ async def analyze_project_schemas(
     if not pages_to_process and proj.domain:
         domain = proj.domain.strip()
         start_url = domain if domain.startswith(("http://", "https://")) else f"https://{domain}"
-        crawler = WebsiteCrawler(start_url=start_url, max_pages=10)
-        crawled_data = await crawler.crawl()
-        for cp in crawled_data:
+        try:
+            crawler = WebsiteCrawler(start_url=start_url, max_pages=10)
+            crawled_data = await crawler.crawl()
+            for cp in crawled_data:
+                pages_to_process.append({
+                    "url": cp.get("url"),
+                    "title": cp.get("title"),
+                    "h1": cp.get("h1"),
+                    "h2_list": cp.get("h2_list", []),
+                    "schema_types": cp.get("schema_types", []),
+                    "json_ld_schemas": cp.get("json_ld_schemas", []),
+                    "schema_entities": cp.get("schema_entities", []),
+                    "schema_parse_errors": cp.get("schema_parse_errors", []),
+                    "raw_json_ld": json.dumps(cp.get("json_ld_schemas", [])) if cp.get("json_ld_schemas") else None
+                })
+        except Exception as e:
+            logger.warning("Crawler execution during schema analysis failed gracefully: %s", e)
+
+        # If crawler returned nothing or DNS was unreachable, record the root domain page for evaluation
+        if not pages_to_process:
             pages_to_process.append({
-                "url": cp.get("url"),
-                "title": cp.get("title"),
-                "h1": cp.get("h1"),
-                "h2_list": cp.get("h2_list", []),
-                "schema_types": cp.get("schema_types", []),
-                "json_ld_schemas": cp.get("json_ld_schemas", []),
-                "schema_entities": cp.get("schema_entities", []),
-                "schema_parse_errors": cp.get("schema_parse_errors", []),
-                "raw_json_ld": json.dumps(cp.get("json_ld_schemas", [])) if cp.get("json_ld_schemas") else None
+                "url": start_url,
+                "title": proj.name,
+                "h1": None,
+                "h2_list": [],
+                "schema_types": [],
+                "json_ld_schemas": [],
+                "schema_entities": [],
+                "schema_parse_errors": [],
+                "raw_json_ld": None
             })
 
     # 2. Existing records mapping

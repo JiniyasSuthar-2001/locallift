@@ -31,16 +31,22 @@ import { MyProjectsView } from './views/MyProjectsView';
 import { ProjectDetailsView } from './views/ProjectDetailsView';
 import { TeamDirectoryView } from './views/TeamDirectoryView';
 import { InvitationNotificationModal } from './components/team/InvitationNotificationModal';
+import { ScanProvider } from './context/ScanContext';
+import { ScanProgressModal } from './components/scan/ScanProgressModal';
+import { ScanCompleteModal } from './components/scan/ScanCompleteModal';
 
 import { AuthModal } from './components/auth/AuthModal';
 
 const AuthenticatedApp: React.FC = () => {
   return (
     <ProjectProvider>
-      <InvitationNotificationModal />
-      <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
-        <Routes>
-          <Route path="/" element={<AppLayout />}>
+      <ScanProvider>
+        <InvitationNotificationModal />
+        <ScanProgressModal />
+        <ScanCompleteModal />
+        <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+          <Routes>
+            <Route path="/" element={<AppLayout />}>
             <Route index element={<Dashboard />} />
             <Route path="onboarding" element={<OnboardingWizard />} />
             
@@ -86,6 +92,7 @@ const AuthenticatedApp: React.FC = () => {
           </Route>
         </Routes>
       </BrowserRouter>
+      </ScanProvider>
     </ProjectProvider>
   );
 };
