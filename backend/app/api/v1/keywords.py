@@ -550,7 +550,7 @@ async def trigger_grid_scan(
         center_lng=lng_center,
         radius_km=radius,
         grid_size=grid_size,
-        concurrency_limit=3,
+        concurrency_limit=5,
         business_name=project.name,
         phone=loc.phone if loc else None
     )

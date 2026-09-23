@@ -215,6 +215,8 @@ export const LocalGridRankingsView: React.FC = () => {
         center_name: params.center_name,
         radius_km: params.radius_km || 5.0,
         grid_size: params.grid_size || 5
+      }, {
+        timeout: 180000 // 3 minutes timeout for multi-point geo-grid scanning
       });
 
       setIsPickerOpen(false);

@@ -1,3 +1,4 @@
+import logging
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, status, Request
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -15,6 +16,8 @@ from app.models.local_seo import Review
 from app.models.analytics import GSCMetric
 from app.schemas.project import ProjectCreate, ProjectUpdate, ProjectOut, DashboardSummaryOut, LocationCreate, LocationUpdate, LocationOut
 from app.services.category_taxonomy import CategoryTaxonomy
+
+logger = logging.getLogger("locallift.api.projects")
 
 router = APIRouter(prefix="/projects", tags=["Projects"])
 
@@ -145,6 +148,7 @@ async def create_project(
         primary_category=normalized_primary,
         additional_categories=normalized_additionals,
         country=project_in.country,
+        public_maps_url=project_in.public_maps_url,
         health_score=None,
         technical_score=None,
         onpage_score=None,
@@ -159,9 +163,11 @@ async def create_project(
     await db.flush()
 
     # Create location
+    loc = None
     if project_in.location:
         lat = project_in.location.latitude
         lng = project_in.location.longitude
+        loc_country = project_in.location.country or project_in.country
 
         # If coordinates not supplied, resolve via real geocoding provider
         if lat is None or lng is None:
@@ -171,7 +177,7 @@ async def create_project(
                 city=project_in.location.city,
                 state=project_in.location.state,
                 postal_code=project_in.location.postal_code,
-                country=project_in.location.country
+                country=loc_country
             )
             if geo_coords:
                 lat, lng = geo_coords
@@ -183,12 +189,58 @@ async def create_project(
             city=project_in.location.city,
             state=project_in.location.state,
             postal_code=project_in.location.postal_code,
-            country=project_in.location.country,
+            country=loc_country,
             phone=project_in.location.phone,
             latitude=lat,
             longitude=lng
         )
         db.add(loc)
+
+    # If public_maps_url is provided, attempt Places lookup without failing project creation
+    if project_in.public_maps_url:
+        try:
+            from app.services.google.public_maps_service import PublicGoogleMapsService
+            loc_str = ""
+            if loc:
+                loc_str = f"{loc.city or ''} {loc.state or ''}".strip()
+            lookup_res = await PublicGoogleMapsService.lookup_public_place(
+                organization_id=org_id,
+                project_id=project.id,
+                db=db,
+                business_name=project.name,
+                location_str=loc_str,
+                maps_url=project_in.public_maps_url,
+                country=project.country
+            )
+            listing = lookup_res.get("listing")
+            if listing and loc:
+                if listing.place_id and not loc.place_id:
+                    loc.place_id = listing.place_id
+                elif listing.place_id:
+                    loc.place_id = listing.place_id
+                if loc.latitude is None and listing.latitude is not None:
+                    loc.latitude = listing.latitude
+                if loc.longitude is None and listing.longitude is not None:
+                    loc.longitude = listing.longitude
+                if not loc.address and listing.formatted_address:
+                    loc.address = listing.formatted_address
+                if not loc.phone and listing.phone:
+                    loc.phone = listing.phone
+            elif listing and not loc:
+                # Create location from public listing if no manual location was supplied
+                loc = Location(
+                    project_id=project.id,
+                    name=project.name,
+                    address=listing.formatted_address,
+                    country=project.country,
+                    phone=listing.phone,
+                    latitude=listing.latitude,
+                    longitude=listing.longitude,
+                    place_id=listing.place_id
+                )
+                db.add(loc)
+        except Exception as e:
+            logger.warning(f"Non-fatal error resolving public maps URL during project creation: {e}")
 
     # Create initial website record
     website = Website(

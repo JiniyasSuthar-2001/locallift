@@ -62,6 +62,7 @@ export interface Project {
   citations_score?: number | null;
   keywords_score?: number | null;
   maps_score?: number | null;
+  public_maps_url?: string | null;
   created_at: string;
   updated_at: string;
   locations: Location[];
@@ -223,6 +224,7 @@ export interface GeoGridProviderInfo {
 
 export interface GeoGridScan {
   id: number;
+  scan_id?: number;
   project_id: number;
   keyword_id: number;
   keyword?: string;
@@ -300,23 +302,23 @@ export interface BusinessProfile {
 export interface Citation {
   id: number;
   project_id: number;
-  source_name?: string;
+  source_name: string;
   directory_name?: string;
   domain?: string;
-  listing_url?: string;
+  listing_url?: string | null;
   domain_authority?: number | null;
-  category?: string;
-  status?: 'listed' | 'missing' | 'incorrect' | 'pending' | string;
-  nap_status?: 'consistent' | 'mismatch' | 'missing' | 'match' | string;
-  citation_type?: 'EXISTING_VERIFIED' | 'OBSERVED' | 'USER_PROVIDED' | 'MISSING_OPPORTUNITY' | 'NAP_CONFLICT' | 'DUPLICATE' | 'NOT_VERIFIED' | string;
-  verification_status?: 'VERIFIED' | 'OBSERVED' | 'USER_PROVIDED' | 'DETECTED' | 'INFERRED' | 'NOT_VERIFIED' | 'FAILED' | 'NOT_APPLICABLE' | string;
+  category: string;
+  status: string; // 'listed' | 'missing' | 'incorrect' | 'pending' | 'active'
+  nap_status: string; // 'match' | 'consistent' | 'mismatch' | 'missing'
+  citation_type?: string;
+  verification_status?: string;
   confidence?: number | null;
   evidence?: Record<string, any>;
   source_type?: string;
-  found_name?: string;
-  found_address?: string;
-  found_phone?: string;
-  found_website?: string;
+  found_name?: string | null;
+  found_address?: string | null;
+  found_phone?: string | null;
+  found_website?: string | null;
   last_checked_at: string;
 }
 
@@ -391,15 +393,27 @@ export interface LocalAuditFinding {
 export interface LocalAuditRun {
   id: number;
   project_id: number;
-  overall_score?: number | null;
-  total_checks: number;
-  passed_checks: number;
-  failed_checks: number;
-  not_verified_checks: number;
-  category_scores: Record<string, number | null>;
   framework_version: string;
-  status: 'COMPLETED' | 'RUNNING' | 'FAILED';
-  executed_at: string;
+  status: 'COMPLETED' | 'RUNNING' | 'FAILED' | string;
+  overall_score?: number | null;
+  category_scores: Record<string, any>;
+  findings_summary?: {
+    total?: number;
+    pass?: number;
+    fail?: number;
+    partial?: number;
+    not_verified?: number;
+    not_applicable?: number;
+    [key: string]: any;
+  };
+  total_checks?: number;
+  passed_checks?: number;
+  failed_checks?: number;
+  not_verified_checks?: number;
+  started_at?: string | null;
+  completed_at?: string | null;
+  created_at?: string;
+  executed_at?: string;
   findings: LocalAuditFinding[];
 }
 

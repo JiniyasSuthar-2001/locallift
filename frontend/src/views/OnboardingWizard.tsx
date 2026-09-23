@@ -14,11 +14,12 @@ import {
 } from 'lucide-react';
 import { useProject } from '../context/ProjectContext';
 import { CategorySelector } from '../components/common/CategorySelector';
+import { CountrySelector } from '../components/ui/CountrySelector';
 import api from '../api/client';
 
 export const OnboardingWizard: React.FC = () => {
   const navigate = useNavigate();
-  const { refreshProjects, refreshDashboard } = useProject();
+  const { refreshProjects } = useProject();
   const [step, setStep] = useState(1);
 
   // Form State
@@ -30,7 +31,8 @@ export const OnboardingWizard: React.FC = () => {
   const [city, setCity] = useState('');
   const [state, setState] = useState('');
   const [postalCode, setPostalCode] = useState('');
-  const [country, setCountry] = useState('Australia');
+  const [country, setCountry] = useState('');
+  const [publicMapsUrl, setPublicMapsUrl] = useState('');
   const [phone, setPhone] = useState('');
   const [keywordInput, setKeywordInput] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -46,7 +48,12 @@ export const OnboardingWizard: React.FC = () => {
       return;
     }
 
-    const selectedCountry = country.trim() || 'Australia';
+    if (!country.trim()) {
+      setErrorMessage('Please select a country.');
+      return;
+    }
+
+    const selectedCountry = country.trim();
 
     try {
       setIsSubmitting(true);
@@ -56,6 +63,7 @@ export const OnboardingWizard: React.FC = () => {
         primary_category: category || 'Local Business',
         additional_categories: additionalCategories,
         country: selectedCountry,
+        public_maps_url: publicMapsUrl.trim() || undefined,
         location: {
           name: 'Main Location',
           address: address.trim() || undefined,
@@ -219,6 +227,17 @@ export const OnboardingWizard: React.FC = () => {
 
           <div className="space-y-4 text-xs">
             <div>
+              <label className="text-slate-700 font-bold block mb-1">
+                Country <span className="text-rose-500">*</span>
+              </label>
+              <CountrySelector
+                value={country}
+                onChange={setCountry}
+                required
+              />
+            </div>
+
+            <div>
               <label className="text-slate-700 font-bold block mb-1">Street Address</label>
               <input
                 type="text"
@@ -271,6 +290,20 @@ export const OnboardingWizard: React.FC = () => {
                 placeholder="+1 555 123 4567"
                 className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-slate-900 focus:outline-none focus:border-purple-500 font-medium"
               />
+            </div>
+
+            <div>
+              <label className="text-slate-700 font-bold block mb-1">Google Maps / Business Profile URL (Optional)</label>
+              <input
+                type="url"
+                value={publicMapsUrl}
+                onChange={(e) => setPublicMapsUrl(e.target.value)}
+                placeholder="https://maps.google.com/?cid=... or https://maps.app.goo.gl/..."
+                className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-slate-900 focus:outline-none focus:border-purple-500 font-medium"
+              />
+              <p className="text-[11px] text-slate-400 mt-1">
+                Paste the public Google Maps listing link for this business. Ownership is not required for public business information.
+              </p>
             </div>
           </div>
 

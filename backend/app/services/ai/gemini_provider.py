@@ -139,20 +139,7 @@ class GeminiAIProvider(AIProvider):
             }
         except json.JSONDecodeError as e:
             logger.warning(f"Failed to parse JSON from AI model response: {e}. Raw: {raw_output[:200]}")
-            # Honest structured fallback from LLM text
-            return {
-                "summary": raw_output[:300],
-                "likely_causes": [
-                    {
-                        "category": "AI Local Diagnostic",
-                        "description": raw_output[:500],
-                        "confidence": "Likely"
-                    }
-                ],
-                "evidence_points": [f"Project: {context.get('name')}", f"Domain: {context.get('domain')}"],
-                "recommended_actions": ["Review diagnostic insights with marketing team."],
-                "actionable_tasks": ["Execute recommended audit and GBP optimizations."]
-            }
+            raise RuntimeError(f"AI_INVALID_RESPONSE: AI model returned non-JSON output.")
 
     async def draft_review_response(
         self,
@@ -209,47 +196,8 @@ class GeminiAIProvider(AIProvider):
             parsed = json.loads(cleaned)
             if isinstance(parsed, list):
                 return parsed
+            return []
         except Exception as e:
-            logger.warning(f"Gemini content opportunity generation error: {e}")
+            logger.error(f"Gemini content opportunity generation failed: {e}")
+            raise RuntimeError(f"AI_PROVIDER_ERROR: Unable to generate content opportunities: {str(e)[:100]}")
 
-        # Fallback to dynamic context parsing
-        biz_name = context.get("business_name", "Local Business")
-        category = context.get("category", "Services")
-        city = context.get("city", "Local Area")
-        keywords = context.get("keywords", [])
-        
-        cat_slug = category.lower().replace(" ", "-")
-        city_slug = city.lower().replace(" ", "-")
-
-        opps = []
-        if keywords:
-            for kw in keywords[:3]:
-                kw_str = kw.get("keyword", f"{category} in {city}") if isinstance(kw, dict) else str(kw)
-                kw_slug = kw_str.lower().replace(' ', '-')
-                opps.append({
-                    "topic": f"Comprehensive Guide: {kw_str.title()} in {city}",
-                    "page_type": "Service Page",
-                    "primary_keyword": kw_str,
-                    "secondary_keywords": [f"best {category} {city}", f"licensed {category}", "near me"],
-                    "search_intent": "Transactional",
-                    "search_volume": None,
-                    "search_volume_status": "Volume unavailable — connect keyword provider",
-                    "business_value": "High",
-                    "competition_level": "Medium",
-                    "target_slug": f"/services/{kw_slug}"
-                })
-        else:
-            opps.append({
-                "topic": f"Emergency {category} Services in {city}: 24/7 Response Guide",
-                "page_type": "Location Page",
-                "primary_keyword": f"{category.lower()} in {city.lower()}",
-                "secondary_keywords": [f"24/7 {category.lower()}", f"urgent {category.lower()} service"],
-                "search_intent": "Transactional",
-                "search_volume": None,
-                "search_volume_status": "Volume unavailable — connect keyword provider",
-                "business_value": "High",
-                "competition_level": "Medium",
-                "target_slug": f"/locations/{cat_slug}-{city_slug}"
-            })
-
-        return opps

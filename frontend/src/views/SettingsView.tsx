@@ -24,6 +24,7 @@ import { ConnectionsView } from './ConnectionsView';
 import { EmptyState } from '../components/ui/EmptyState';
 import { StatusBadge } from '../components/ui/StatusBadge';
 import api from '../api/client';
+import { CountrySelector } from '../components/ui/CountrySelector';
 import { getErrorMessage } from '../utils/error';
 
 interface SERPConfig {
@@ -31,8 +32,9 @@ interface SERPConfig {
   has_key: boolean;
   masked_key: string | null;
   connection_status: string;
-  status_message: string | null;
+  status_message: string;
   last_tested_at: string | null;
+  base_url?: string | null;
 }
 
 export const SettingsView: React.FC = () => {
@@ -44,7 +46,7 @@ export const SettingsView: React.FC = () => {
   const [name, setName] = useState('');
   const [domain, setDomain] = useState('');
   const [primaryCategory, setPrimaryCategory] = useState('');
-  const [country, setCountry] = useState('Australia');
+  const [country, setCountry] = useState('');
 
   // Request State
   const [isSaving, setIsSaving] = useState(false);
@@ -67,7 +69,7 @@ export const SettingsView: React.FC = () => {
       setName(activeProject.name || '');
       setDomain(activeProject.domain || '');
       setPrimaryCategory(activeProject.primary_category || 'Local Business');
-      setCountry(activeProject.country || 'Australia');
+      setCountry(activeProject.country || '');
       setSuccessMsg(null);
       setErrorMsg(null);
     }
@@ -165,7 +167,7 @@ export const SettingsView: React.FC = () => {
         name: name.trim(),
         domain: cleanDomain,
         primary_category: primaryCategory.trim() || 'Local Business',
-        country: country.trim() || 'Australia'
+        country: country.trim() || undefined
       });
 
       await refreshProjects(activeProject.id);
@@ -479,11 +481,9 @@ export const SettingsView: React.FC = () => {
                   <label className="block text-xs font-bold text-[#142820] uppercase tracking-wider mb-1.5">
                     Target Country
                   </label>
-                  <input
-                    type="text"
+                  <CountrySelector
                     value={country}
-                    onChange={(e) => setCountry(e.target.value)}
-                    className="w-full px-3.5 py-2.5 rounded-xl border border-[#B8DFC9] bg-white text-[#142820] text-xs font-medium focus:ring-2 focus:ring-[#236B4F] focus:outline-none"
+                    onChange={setCountry}
                   />
                 </div>
               </div>

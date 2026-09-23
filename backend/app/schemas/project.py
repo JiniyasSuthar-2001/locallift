@@ -67,6 +67,7 @@ class ProjectBase(BaseModel):
     primary_category: Optional[str] = "Local Business"
     additional_categories: Optional[List[str]] = []
     country: Optional[str] = None
+    public_maps_url: Optional[str] = None
 
 class ProjectCreate(ProjectBase):
     organization_id: Optional[int] = None
@@ -79,6 +80,7 @@ class ProjectUpdate(BaseModel):
     primary_category: Optional[str] = None
     additional_categories: Optional[List[str]] = None
     country: Optional[str] = None
+    public_maps_url: Optional[str] = None
     client_id: Optional[int] = None
     status: Optional[str] = None
     is_archived: Optional[bool] = None
@@ -99,6 +101,7 @@ class ProjectOut(ProjectBase):
     citations_score: Optional[int] = None
     keywords_score: Optional[int] = None
     maps_score: Optional[int] = None
+    public_maps_url: Optional[str] = None
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
     locations: Optional[List[LocationOut]] = []

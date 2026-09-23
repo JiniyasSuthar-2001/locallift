@@ -113,7 +113,7 @@ export const SchemaGeneratorView: React.FC = () => {
       setCity(loc?.city || '');
       setState(loc?.state || '');
       setPostalCode(loc?.postal_code || '');
-      setCountry(loc?.country === 'Australia' ? 'AU' : (loc?.country || ''));
+      setCountry(loc?.country || '');
       setLatitude(loc?.latitude !== undefined && loc?.latitude !== null ? String(loc.latitude) : '');
       setLongitude(loc?.longitude !== undefined && loc?.longitude !== null ? String(loc.longitude) : '');
 

@@ -27,6 +27,7 @@ class Project(Base):
     citations_score = Column(Integer, nullable=True, default=None)
     keywords_score = Column(Integer, nullable=True, default=None)
     maps_score = Column(Integer, nullable=True, default=None)
+    public_maps_url = Column(String(1000), nullable=True)
     status = Column(String(50), default="active")  # active, archived
     is_archived = Column(Boolean, default=False)
     

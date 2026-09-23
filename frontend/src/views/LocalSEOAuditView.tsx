@@ -118,7 +118,7 @@ export const LocalSEOAuditView: React.FC = () => {
   }
 
   const overallScore = auditRun?.overall_score;
-  const summary = auditRun?.findings_summary || ({} as any);
+  const summary = auditRun?.findings_summary || {};
 
   const passCount = summary.pass || 0;
   const failCount = summary.fail || 0;

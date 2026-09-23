@@ -232,19 +232,23 @@ async def trigger_public_place_lookup(
         db=db,
         business_name=req.business_name,
         location_str=req.location,
-        maps_url=req.maps_url
+        maps_url=req.maps_url,
+        country=project.country
     )
 
     listing = res.get("listing")
     comp_score = _calculate_public_completeness(listing) if listing else None
 
     return {
-        "lookup_status": res.get("lookup_status", "found"),
+        "lookup_status": res.get("lookup_status", "found" if listing else "not_found"),
         "lookup_error": res.get("lookup_error"),
+        "requested_business_name": req.business_name,
+        "requested_location": req.location,
+        "requested_maps_url": req.maps_url,
         "source": listing.source if listing else "google_places_api",
         "place_id": listing.place_id if listing else None,
-        "business_name": listing.name if listing else req.business_name,
-        "formatted_address": listing.formatted_address if listing else req.location,
+        "business_name": listing.name if listing else None,
+        "formatted_address": listing.formatted_address if listing else None,
         "address_components": listing.address_components if listing else None,
         "phone": listing.phone if listing else None,
         "website_url": listing.website_url if listing else None,
@@ -255,7 +259,7 @@ async def trigger_public_place_lookup(
         "opening_hours": listing.opening_hours if listing else None,
         "latitude": listing.latitude if listing else None,
         "longitude": listing.longitude if listing else None,
-        "maps_url": listing.maps_url if listing else req.maps_url,
+        "maps_url": listing.maps_url if listing else None,
         "checked_at": listing.last_checked_at.isoformat() if listing and listing.last_checked_at else None,
         "completeness_score": comp_score,
         "completeness_label": f"{comp_score}% (Measured from retrieved Google Place fields)" if comp_score is not None else "Not measured"

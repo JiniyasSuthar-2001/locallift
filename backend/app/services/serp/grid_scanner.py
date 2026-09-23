@@ -165,15 +165,17 @@ class GeoGridScanner:
             p_lng = point["lng"]
             pt_num = point.get("point_number", 0)
 
-            # Every geographic point executes its own independent provider request
             async with semaphore:
                 try:
-                    serp_resp = await provider.search_local_grid_point(
-                        keyword=keyword,
-                        lat=p_lat,
-                        lng=p_lng
+                    serp_resp = await asyncio.wait_for(
+                        provider.search_local_grid_point(
+                            keyword=keyword,
+                            lat=p_lat,
+                            lng=p_lng
+                        ),
+                        timeout=15.0
                     )
-                except asyncio.TimeoutError:
+                except (asyncio.TimeoutError, TimeoutError):
                     return {
                         "point_number": pt_num,
                         "row": point["row"],

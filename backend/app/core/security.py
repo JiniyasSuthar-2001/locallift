@@ -11,29 +11,38 @@ from app.config import settings
 logger = logging.getLogger("locallift.security")
 
 def _get_fernet_suite() -> Fernet:
+    if not settings.SECRET_KEY:
+        raise RuntimeError("Security configuration error: SECRET_KEY is not configured")
     key = hashlib.sha256(settings.SECRET_KEY.encode("utf-8")).digest()
     b64_key = base64.urlsafe_b64encode(key)
     return Fernet(b64_key)
 
 def encrypt_token(plain_token: Optional[str]) -> Optional[str]:
-    if not plain_token:
+    if plain_token is None:
         return None
+    if not isinstance(plain_token, str):
+        raise TypeError("Token must be a string")
     try:
         suite = _get_fernet_suite()
         return suite.encrypt(plain_token.encode("utf-8")).decode("utf-8")
     except Exception as e:
         logger.error(f"Failed to encrypt token: {e}")
-        return plain_token
+        raise RuntimeError(f"Token encryption failed: {e}") from e
 
 def decrypt_token(encrypted_token: Optional[str]) -> Optional[str]:
-    if not encrypted_token:
+    if encrypted_token is None:
         return None
+    if not isinstance(encrypted_token, str):
+        raise TypeError("Encrypted token must be a string")
     try:
         suite = _get_fernet_suite()
         return suite.decrypt(encrypted_token.encode("utf-8")).decode("utf-8")
-    except (InvalidToken, Exception):
-        # Fallback for legacy plaintext token gracefully
-        return encrypted_token
+    except InvalidToken as e:
+        logger.error("Failed to decrypt token: invalid or corrupted ciphertext")
+        raise ValueError("Invalid or corrupted token ciphertext") from e
+    except Exception as e:
+        logger.error(f"Failed to decrypt token: {e}")
+        raise ValueError(f"Token decryption failed: {e}") from e
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
     try:

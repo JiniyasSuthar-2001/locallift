@@ -22,15 +22,15 @@ import {
 } from 'lucide-react';
 import api from '../api/client';
 import { useProject } from '../context/ProjectContext';
+import { BusinessCategory, Project } from '../types';
+import { CountrySelector } from '../components/ui/CountrySelector';
 import { getErrorMessage } from '../utils/error';
-import { Project, BusinessCategory } from '../types';
 import { normalizeExternalUrl } from '../utils/url';
 
 export const MyProjectsView: React.FC = () => {
   const navigate = useNavigate();
-  const { projects, activeProject, setActiveProject, refreshProjects } = useProject();
+  const { projects, activeProject, setActiveProject, refreshProjects, loading } = useProject();
 
-  const [loading, setLoading] = useState<boolean>(false);
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'archived'>('all');
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
@@ -44,7 +44,8 @@ export const MyProjectsView: React.FC = () => {
   const [newCity, setNewCity] = useState<string>('');
   const [newState, setNewState] = useState<string>('');
   const [newPhone, setNewPhone] = useState<string>('');
-  const [newCountry, setNewCountry] = useState<string>('Australia');
+  const [newCountry, setNewCountry] = useState<string>('');
+  const [newMapsUrl, setNewMapsUrl] = useState<string>('');
   const [creating, setCreating] = useState<boolean>(false);
 
   // Category suggestions
@@ -55,6 +56,8 @@ export const MyProjectsView: React.FC = () => {
   const [editName, setEditName] = useState<string>('');
   const [editDomain, setEditDomain] = useState<string>('');
   const [editCategory, setEditCategory] = useState<string>('');
+  const [editCountry, setEditCountry] = useState<string>('');
+  const [editMapsUrl, setEditMapsUrl] = useState<string>('');
   const [savingEdit, setSavingEdit] = useState<boolean>(false);
 
   // Delete Project Modal State
@@ -101,17 +104,26 @@ export const MyProjectsView: React.FC = () => {
 
   const handleCreateProject = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newName.trim() || !newDomain.trim()) return;
+    if (!newName.trim() || !newDomain.trim()) {
+      setErrorMsg('Please enter both business name and website domain.');
+      return;
+    }
+    if (!newCountry.trim()) {
+      setErrorMsg('Please select a country.');
+      return;
+    }
+
     setCreating(true);
     setErrorMsg(null);
     try {
       const cleanDomain = newDomain.trim().replace(/^https?:\/\//, '').replace(/\/+$/, '');
-      const selectedCountry = newCountry.trim() || 'Australia';
+      const selectedCountry = newCountry.trim();
       const res = await api.post<Project>('/projects', {
         name: newName.trim(),
         domain: cleanDomain,
         primary_category: newCategory,
         country: selectedCountry,
+        public_maps_url: newMapsUrl.trim() || undefined,
         location: newCity ? {
           name: `${newName.trim()} Primary Location`,
           city: newCity.trim(),
@@ -128,6 +140,8 @@ export const MyProjectsView: React.FC = () => {
       setNewCity('');
       setNewState('');
       setNewPhone('');
+      setNewCountry('');
+      setNewMapsUrl('');
       await refreshProjects(res.data.id);
     } catch (err: any) {
       setErrorMsg(getErrorMessage(err, 'Failed to create project.'));
@@ -145,7 +159,9 @@ export const MyProjectsView: React.FC = () => {
       await api.put(`/projects/${editingProject.id}`, {
         name: editName.trim(),
         domain: editDomain.trim().replace(/^https?:\/\//, '').replace(/\/+$/, ''),
-        primary_category: editCategory.trim()
+        primary_category: editCategory.trim(),
+        country: editCountry.trim() || undefined,
+        public_maps_url: editMapsUrl.trim() || undefined
       });
       setSuccessMsg('Project updated successfully.');
       setEditingProject(null);
@@ -404,6 +420,8 @@ export const MyProjectsView: React.FC = () => {
                       setEditName(project.name);
                       setEditDomain(project.domain);
                       setEditCategory(project.primary_category);
+                      setEditCountry(project.country || '');
+                      setEditMapsUrl(project.public_maps_url || '');
                     }}
                     className="p-2 text-slate-400 hover:text-purple-600 hover:bg-purple-50 rounded-xl transition-all"
                     title="Edit Project"
@@ -476,7 +494,7 @@ export const MyProjectsView: React.FC = () => {
       {/* MODAL: Create Project */}
       {showCreateModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fade-in">
-          <div className="bg-white rounded-3xl max-w-lg w-full p-6 sm:p-7 shadow-2xl border border-slate-200 space-y-4">
+          <div className="bg-white rounded-3xl max-w-lg w-full p-6 sm:p-7 shadow-2xl border border-slate-200 space-y-4 max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between border-b border-slate-100 pb-3">
               <h3 className="text-base font-black text-slate-900 flex items-center space-x-2">
                 <Plus className="w-5 h-5 text-purple-600" />
@@ -520,6 +538,17 @@ export const MyProjectsView: React.FC = () => {
               </div>
 
               <div>
+                <label className="font-bold text-slate-700 block mb-1">
+                  Country <span className="text-rose-500">*</span>
+                </label>
+                <CountrySelector
+                  value={newCountry}
+                  onChange={setNewCountry}
+                  required
+                />
+              </div>
+
+              <div>
                 <label className="font-bold text-slate-700 block mb-1">Primary Business Category</label>
                 <input
                   type="text"
@@ -538,12 +567,12 @@ export const MyProjectsView: React.FC = () => {
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="font-bold text-slate-700 block mb-1">City (Optional)</label>
+                  <label className="font-bold text-slate-700 block mb-1">City / Location (Optional)</label>
                   <input
                     type="text"
                     value={newCity}
                     onChange={(e) => setNewCity(e.target.value)}
-                    placeholder="e.g. Denver"
+                    placeholder="e.g. Ahmedabad, Denver, Sydney"
                     className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-slate-900 focus:outline-none focus:border-purple-500 font-medium"
                   />
                 </div>
@@ -553,10 +582,26 @@ export const MyProjectsView: React.FC = () => {
                     type="text"
                     value={newState}
                     onChange={(e) => setNewState(e.target.value)}
-                    placeholder="e.g. CO"
+                    placeholder="e.g. Gujarat, CO, NSW"
                     className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-slate-900 focus:outline-none focus:border-purple-500 font-medium"
                   />
                 </div>
+              </div>
+
+              <div>
+                <label className="font-bold text-slate-700 block mb-1">
+                  Google Maps / Business Profile URL (Optional)
+                </label>
+                <input
+                  type="url"
+                  value={newMapsUrl}
+                  onChange={(e) => setNewMapsUrl(e.target.value)}
+                  placeholder="https://maps.google.com/?cid=... or https://maps.app.goo.gl/..."
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-slate-900 focus:outline-none focus:border-purple-500 font-medium"
+                />
+                <p className="text-[11px] text-slate-400 mt-1">
+                  Paste the public Google Maps listing link for this business. Ownership is not required for public business information.
+                </p>
               </div>
 
               <div className="flex items-center justify-end space-x-2 pt-2">
@@ -584,7 +629,7 @@ export const MyProjectsView: React.FC = () => {
       {/* MODAL: Edit Project */}
       {editingProject && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fade-in">
-          <div className="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl border border-slate-200 space-y-4">
+          <div className="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl border border-slate-200 space-y-4 max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between border-b border-slate-100 pb-3">
               <h3 className="text-base font-black text-slate-900 flex items-center space-x-2">
                 <Edit2 className="w-5 h-5 text-purple-600" />
@@ -628,6 +673,25 @@ export const MyProjectsView: React.FC = () => {
                   required
                   value={editCategory}
                   onChange={(e) => setEditCategory(e.target.value)}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-slate-900 focus:outline-none focus:border-purple-500 font-medium"
+                />
+              </div>
+
+              <div>
+                <label className="font-bold text-slate-700 block mb-1">Target Country</label>
+                <CountrySelector
+                  value={editCountry}
+                  onChange={setEditCountry}
+                />
+              </div>
+
+              <div>
+                <label className="font-bold text-slate-700 block mb-1">Google Maps URL</label>
+                <input
+                  type="url"
+                  value={editMapsUrl}
+                  onChange={(e) => setEditMapsUrl(e.target.value)}
+                  placeholder="https://maps.google.com/?cid=..."
                   className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-slate-900 focus:outline-none focus:border-purple-500 font-medium"
                 />
               </div>

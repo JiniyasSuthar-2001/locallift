@@ -501,7 +501,7 @@ class LocalSEOAuditFramework:
             })
 
         # Category 15: Technical SEO
-        if latest_crawl_audit:
+        if latest_crawl_audit and latest_crawl_audit.overall_score is not None:
             status = FindingStatus.PASS.value if latest_crawl_audit.overall_score >= 80 else (FindingStatus.PARTIAL.value if latest_crawl_audit.overall_score >= 60 else FindingStatus.FAIL.value)
             findings.append({
                 "category": "technical_seo",
@@ -514,6 +514,19 @@ class LocalSEOAuditFramework:
                 "verification_status": VerificationStatus.DETECTED.value,
                 "confidence": "HIGH",
                 "recommendation": "Resolve broken links, redirect chains, and server errors identified in crawl audit."
+            })
+        elif latest_crawl_audit:
+            findings.append({
+                "category": "technical_seo",
+                "check_key": "crawl_health_score",
+                "title": "Technical Crawl Health",
+                "status": FindingStatus.NOT_VERIFIED.value,
+                "severity": "info",
+                "evidence": f"Technical crawl completed across {latest_crawl_audit.pages_analyzed} pages; score not evaluated.",
+                "source": "SEO Technical Auditor",
+                "verification_status": VerificationStatus.NOT_VERIFIED.value,
+                "confidence": "HIGH",
+                "recommendation": "Re-run technical website crawl to calculate overall crawl health score."
             })
         else:
             findings.append({

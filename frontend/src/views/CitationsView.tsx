@@ -142,7 +142,7 @@ export const CitationsView: React.FC = () => {
               <tbody className="divide-y divide-slate-100">
                 {citations.map((c) => (
                   <tr key={c.id} className="hover:bg-slate-50/60 transition-colors">
-                    <td className="p-3.5 font-bold text-slate-900">{c.directory_name}</td>
+                    <td className="p-3.5 font-bold text-slate-900">{c.directory_name || c.source_name || 'Directory Listing'}</td>
                     <td className="p-3.5">
                       <span className="px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 text-[10px] font-bold">
                         Manual Entry
@@ -206,7 +206,7 @@ export const CitationsView: React.FC = () => {
                   required
                   value={directoryName}
                   onChange={(e) => setDirectoryName(e.target.value)}
-                  placeholder="e.g. YellowPages Australia"
+                  placeholder="e.g. Yelp, YellowPages, Apple Maps"
                   className="w-full bg-slate-50 border border-slate-200 rounded-lg p-2.5 text-slate-900 focus:outline-none focus:border-purple-500 font-medium"
                 />
               </div>

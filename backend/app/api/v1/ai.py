@@ -205,49 +205,17 @@ async def get_content_opportunities(
     out = []
     if isinstance(raw_opps, list):
         for o in raw_opps:
-            if isinstance(o, dict):
+            if isinstance(o, dict) and o.get("topic") and o.get("primary_keyword"):
                 out.append(ContentOpportunityOut(
-                    topic=o.get("topic") or f"Local {category} Guide",
-                    page_type=o.get("page_type") or "Service Page",
-                    primary_keyword=o.get("primary_keyword") or f"{category.lower()} in {city.lower()}",
-                    secondary_keywords=o.get("secondary_keywords") or [f"best {category.lower()}", "near me"],
-                    search_intent=o.get("search_intent") or "Transactional",
+                    topic=o.get("topic"),
+                    page_type=o.get("page_type", "Content Page"),
+                    primary_keyword=o.get("primary_keyword"),
+                    secondary_keywords=o.get("secondary_keywords", []),
+                    search_intent=o.get("search_intent", "Informational"),
                     search_volume=o.get("search_volume"),
-                    search_volume_status=o.get("search_volume_status") or "Volume unavailable — connect keyword data provider",
-                    business_value=o.get("business_value") or "High",
-                    competition_level=o.get("competition_level") or "Medium",
-                    target_slug=o.get("target_slug") or f"/services/{category.lower().replace(' ', '-')}"
+                    search_volume_status=o.get("search_volume_status", "Volume data not connected"),
+                    business_value=o.get("business_value", "Medium"),
+                    competition_level=o.get("competition_level", "Medium"),
+                    target_slug=o.get("target_slug", "")
                 ))
-    if out:
-        return out
-
-    # Fallback structure if array empty
-    cat_slug = category.lower().replace(" ", "-")
-    city_slug = city.lower().replace(" ", "-")
-    primary_kw = keywords[0] if keywords else f"{category.lower()} in {city.lower()}"
-    return [
-        ContentOpportunityOut(
-            topic=f"Emergency {category} Near Me: 24/7 Rapid Response Guide",
-            page_type="Service Page",
-            primary_keyword=f"emergency {category.lower()} {city.lower()}",
-            secondary_keywords=[f"24/7 {category.lower()}", f"urgent {category.lower()} service"],
-            search_intent="Transactional",
-            search_volume=None,
-            search_volume_status="Volume unavailable — connect keyword data provider",
-            business_value="High",
-            competition_level="Medium",
-            target_slug=f"/services/emergency-{cat_slug}"
-        ),
-        ContentOpportunityOut(
-            topic=f"Commercial & Residential {category} in {city}",
-            page_type="Location Page",
-            primary_keyword=primary_kw,
-            secondary_keywords=[f"licensed {category.lower()} {city.lower()}", f"best {category.lower()} near me"],
-            search_intent="Commercial",
-            search_volume=None,
-            search_volume_status="Volume unavailable — connect keyword data provider",
-            business_value="High",
-            competition_level="Low",
-            target_slug=f"/locations/{cat_slug}-{city_slug}"
-        )
-    ]
+    return out
