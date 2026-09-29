@@ -205,31 +205,10 @@ async def test_serp_production_integrity():
             "radius_km": 7.5,
             "grid_size": 5
         }, headers=headers)
-        assert grid_res.status_code == 200, f"Grid scan failed: {grid_res.text}"
-        scan_data = grid_res.json()
-
-        # Validate Geo-Grid honest unconfigured/failed response
-        assert scan_data["scan_status"] in ("failed", "unsupported")
-        if scan_data["scan_status"] == "failed":
-            assert scan_data["total_points"] == 25
-            assert scan_data["successful_points"] == 0
-            assert scan_data["failed_points"] == 25
-        else:
-            assert scan_data["successful_points"] == 0
-        assert scan_data["average_rank"] is None
-        assert scan_data["local_visibility_pct"] == 0.0
-
-        for pt in scan_data["grid_points"]:
-            assert pt["rank"] is None, f"Fabricated rank found: {pt['rank']}"
-            assert pt["status"] == "failed"
-            assert pt["pin_status"] == "failed"
-            assert pt["competitor_ahead"] is None, f"Fabricated competitor found: {pt['competitor_ahead']}"
-            assert pt.get("ranking_url") is None, f"Fabricated URL found: {pt.get('ranking_url')}"
-            # STRICT REGRESSION ASSERTION: Queenshine domain must NEVER appear
-            assert "queenshine" not in str(pt).lower()
-            assert "electrical" not in str(pt).lower()
-
-        print("[OK] Denver Plumbing Geo-Grid scan failed closed: 25 failed pins, 0 fake ranks, competitor_ahead is None")
+        assert grid_res.status_code == 400, f"Expected 400 for unconfigured provider, got {grid_res.status_code}: {grid_res.text}"
+        assert "SERP_PROVIDER_NOT_CONFIGURED" in grid_res.text
+        assert "Connect your SerpApi account in Settings" in grid_res.text
+        print("[OK] Denver Plumbing Geo-Grid scan stopped early: SERP_PROVIDER_NOT_CONFIGURED returned with no fake scan creation")
 
         print("\n=======================================================")
         print(">> TEST 3: DENVER PLUMBING KEYWORD TRACKER (UNCONFIGURED SERP)")

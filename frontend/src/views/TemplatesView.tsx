@@ -29,6 +29,7 @@ import { useProject } from '../context/ProjectContext';
 import { Template, TemplateApplyResponse, TemplateValidateResponse } from '../types';
 import { StatusBadge } from '../components/ui/StatusBadge';
 import { EmptyState } from '../components/ui/EmptyState';
+import { Modal } from '../components/ui/Modal';
 import { getErrorMessage } from '../utils/error';
 import api from '../api/client';
 
@@ -531,31 +532,22 @@ export const TemplatesView: React.FC = () => {
       )}
 
       {/* Apply Template Runner Modal */}
-      {isApplyOpen && activeTemplate && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
-          <div className="bg-white rounded-2xl p-6 max-w-2xl w-full space-y-4 shadow-2xl border border-slate-200">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-              <div>
-                <span className="text-[10px] font-black uppercase tracking-wider text-purple-700">
-                  Template Execution Runner
-                </span>
-                <h3 className="text-base font-black text-slate-900 mt-0.5">{activeTemplate.name}</h3>
-                <div className="text-xs text-slate-500">
-                  Target Project: <span className="font-bold text-slate-800">{activeProject?.name}</span> ({activeProject?.domain})
-                </div>
-              </div>
-              <button
-                onClick={() => setIsApplyOpen(false)}
-                aria-label="Close runner modal"
-                className="text-slate-400 hover:text-slate-800 text-xs font-bold px-2 py-1"
-              >
-                ✕ Close
-              </button>
-            </div>
-
+      <Modal
+        isOpen={Boolean(isApplyOpen && activeTemplate)}
+        onClose={() => setIsApplyOpen(false)}
+        maxWidth="2xl"
+        title={activeTemplate?.name || 'Template Execution'}
+        description={
+          activeTemplate
+            ? `Target Project: ${activeProject?.name || ''} (${activeProject?.domain || ''})`
+            : undefined
+        }
+      >
+        {activeTemplate && (
+          <div>
             {isApplying ? (
               <div className="p-8 text-center space-y-2">
-                <Sparkles className="w-7 h-7 mx-auto text-purple-600 animate-spin" />
+                <Sparkles className="w-7 h-7 mx-auto text-emerald-600 animate-spin" />
                 <p className="text-xs text-slate-600 font-bold">Populating live project & location variables...</p>
               </div>
             ) : appliedResult ? (
@@ -568,7 +560,7 @@ export const TemplatesView: React.FC = () => {
                     </span>
                     <button
                       onClick={() => copyToClipboard(appliedResult.rendered_content)}
-                      className="flex items-center space-x-1 text-purple-700 hover:underline font-bold"
+                      className="flex items-center space-x-1 text-emerald-700 hover:underline font-bold"
                     >
                       {copied ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
                       <span>{copied ? 'Copied to Clipboard' : 'Copy Output'}</span>
@@ -587,7 +579,7 @@ export const TemplatesView: React.FC = () => {
                   <div className="flex flex-wrap gap-1.5">
                     {Object.entries(appliedResult.variables_used).map(([k, v], idx) => (
                       <span key={idx} className="px-2 py-0.5 rounded bg-white border border-slate-200 text-slate-700 text-[10px]">
-                        <span className="font-bold text-purple-700">{`{{${k}}}`}:</span> {String(v)}
+                        <span className="font-bold text-emerald-700">{`{{${k}}}`}:</span> {String(v)}
                       </span>
                     ))}
                   </div>
@@ -599,13 +591,13 @@ export const TemplatesView: React.FC = () => {
                     onClick={handleCreateTaskFromTemplate}
                     className="flex items-center space-x-1.5 px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-xl font-bold transition-colors"
                   >
-                    <CheckSquare className="w-4 h-4 text-purple-600" />
+                    <CheckSquare className="w-4 h-4 text-emerald-600" />
                     <span>Create SEO Task for Team</span>
                   </button>
 
                   <button
                     onClick={() => copyToClipboard(appliedResult.rendered_content)}
-                    className="px-5 py-2 btn-vibrant-primary rounded-xl font-bold shadow-md"
+                    className="px-5 py-2 bg-emerald-700 hover:bg-emerald-800 text-white rounded-xl font-bold shadow-xs"
                   >
                     {copied ? 'Copied!' : 'Copy & Close'}
                   </button>
@@ -613,34 +605,19 @@ export const TemplatesView: React.FC = () => {
               </div>
             ) : null}
           </div>
-        </div>
-      )}
+        )}
+      </Modal>
 
       {/* Preview Raw Modal */}
-      {isPreviewOpen && activeTemplate && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
-          <div className="bg-white rounded-2xl p-6 max-w-2xl w-full space-y-4 shadow-2xl border border-slate-200">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-              <div>
-                <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">
-                  Template Source Preview
-                </span>
-                <h3 className="text-base font-black text-slate-900 mt-0.5">{activeTemplate.name}</h3>
-              </div>
-              <button
-                onClick={() => setIsPreviewOpen(false)}
-                aria-label="Close preview modal"
-                className="text-slate-400 hover:text-slate-800 text-xs font-bold px-2 py-1"
-              >
-                ✕ Close
-              </button>
-            </div>
-
-            <div className="bg-slate-900 text-purple-300 font-mono text-xs p-4 rounded-xl max-h-80 overflow-y-auto whitespace-pre-wrap border border-slate-800">
-              {activeTemplate.content}
-            </div>
-
-            <div className="flex justify-end space-x-2 pt-2 border-t border-slate-100 text-xs">
+      <Modal
+        isOpen={Boolean(isPreviewOpen && activeTemplate)}
+        onClose={() => setIsPreviewOpen(false)}
+        maxWidth="2xl"
+        title={activeTemplate?.name || 'Template Source Preview'}
+        description="Template Source Preview"
+        footer={
+          activeTemplate ? (
+            <div className="flex justify-end space-x-2 text-xs w-full">
               <button
                 onClick={() => copyToClipboard(activeTemplate.content)}
                 className="px-4 py-2 rounded-xl bg-slate-100 text-slate-700 font-bold hover:bg-slate-200"
@@ -652,222 +629,226 @@ export const TemplatesView: React.FC = () => {
                   setIsPreviewOpen(false);
                   handleApply(activeTemplate);
                 }}
-                className="px-5 py-2 btn-vibrant-primary rounded-xl font-bold shadow-md"
+                className="px-5 py-2 bg-emerald-700 hover:bg-emerald-800 text-white rounded-xl font-bold shadow-xs"
               >
                 Use with Active Project
               </button>
             </div>
+          ) : undefined
+        }
+      >
+        {activeTemplate && (
+          <div className="bg-slate-900 text-emerald-300 font-mono text-xs p-4 rounded-xl max-h-80 overflow-y-auto whitespace-pre-wrap border border-slate-800">
+            {activeTemplate.content}
           </div>
-        </div>
-      )}
+        )}
+      </Modal>
 
       {/* Create / Edit Modal */}
-      {(isCreateOpen || isEditOpen) && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
-          <div className="bg-white rounded-2xl p-6 max-w-2xl w-full space-y-4 shadow-2xl border border-slate-200 max-h-[90vh] overflow-y-auto">
-            <h3 className="text-base font-black text-slate-900">
-              {isEditOpen ? 'Edit Custom Template' : 'Create New Local SEO Template'}
-            </h3>
+      <Modal
+        isOpen={isCreateOpen || isEditOpen}
+        onClose={() => {
+          setIsCreateOpen(false);
+          setIsEditOpen(false);
+        }}
+        maxWidth="2xl"
+        title={isEditOpen ? 'Edit Custom Template' : 'Create New Local SEO Template'}
+        description="Configure structured template with placeholder variables"
+      >
+        <form onSubmit={handleSaveTemplate} className="space-y-3 text-xs">
+          <div>
+            <label className="text-slate-700 font-bold block mb-1">Template Name *</label>
+            <input
+              type="text"
+              required
+              value={formName}
+              onChange={(e) => setFormName(e.target.value)}
+              placeholder="e.g. 24/7 Emergency Electrician Landing Page Blueprint"
+              className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-slate-900 focus:outline-none focus:border-emerald-500 font-medium"
+            />
+          </div>
 
-            <form onSubmit={handleSaveTemplate} className="space-y-3 text-xs">
-              <div>
-                <label className="text-slate-700 font-bold block mb-1">Template Name</label>
-                <input
-                  type="text"
-                  required
-                  value={formName}
-                  onChange={(e) => setFormName(e.target.value)}
-                  placeholder="e.g. 24/7 Emergency Electrician Landing Page Blueprint"
-                  className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-slate-900 focus:outline-none focus:border-purple-500 font-medium"
-                />
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="text-slate-700 font-bold block mb-1">Category</label>
+              <select
+                value={formCategory}
+                onChange={(e) => setFormCategory(e.target.value)}
+                className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-slate-900 focus:outline-none focus:border-emerald-500 font-medium cursor-pointer"
+              >
+                <option value="schema">Schema.org JSON-LD</option>
+                <option value="review_response">Review Response</option>
+                <option value="location_page">Location Page</option>
+                <option value="gbp">Google Business Profile</option>
+                <option value="task">SEO Task Blueprint</option>
+                <option value="reporting">Executive Report</option>
+                <option value="local_content">Local Content</option>
+              </select>
+            </div>
+
+            <div>
+              <label className="text-slate-700 font-bold block mb-1">Template Type / Format</label>
+              <select
+                value={formType}
+                onChange={(e) => {
+                  setFormType(e.target.value);
+                  handleValidate(formContent, e.target.value);
+                }}
+                className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-slate-900 focus:outline-none focus:border-emerald-500 font-medium cursor-pointer"
+              >
+                <option value="schema_jsonld">Schema JSON-LD</option>
+                <option value="content_markdown">Content Markdown</option>
+                <option value="review_reply">Review Reply Text</option>
+                <option value="gbp_post">Google Business Profile Post</option>
+                <option value="task_blueprint">Task Description</option>
+              </select>
+            </div>
+          </div>
+
+          <div>
+            <label className="text-slate-700 font-bold block mb-1">Standard / Format Badge</label>
+            <input
+              type="text"
+              value={formStandard}
+              onChange={(e) => setFormStandard(e.target.value)}
+              placeholder="e.g. Schema.org / JSON-LD or Local SEO Standard"
+              className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-slate-900 focus:outline-none focus:border-emerald-500 font-medium"
+            />
+          </div>
+
+          <div>
+            <label className="text-slate-700 font-bold block mb-1">Description</label>
+            <input
+              type="text"
+              value={formDescription}
+              onChange={(e) => setFormDescription(e.target.value)}
+              placeholder="Brief description of when and how to apply this template..."
+              className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-slate-900 focus:outline-none focus:border-emerald-500 font-medium"
+            />
+          </div>
+
+          <div>
+            <div className="flex items-center justify-between mb-1">
+              <label className="text-slate-700 font-bold">
+                Template Content <span className="text-slate-400 font-normal">(use &#123;&#123;variable&#125;&#125; placeholders)</span>
+              </label>
+              <button
+                type="button"
+                onClick={() => handleValidate(formContent, formType)}
+                className="text-[11px] text-emerald-700 hover:underline font-bold"
+              >
+                Validate Syntax
+              </button>
+            </div>
+            <textarea
+              rows={8}
+              required
+              value={formContent}
+              onChange={(e) => {
+                setFormContent(e.target.value);
+                handleValidate(e.target.value, formType);
+              }}
+              placeholder="Paste schema JSON or content markdown with {{business_name}}, {{city}}, {{phone}}..."
+              className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-slate-900 font-mono focus:outline-none focus:border-emerald-500 font-medium"
+            />
+          </div>
+
+          {/* Live Validation Feedback */}
+          {validationResult && (
+            <div className={`p-3 rounded-xl border text-xs space-y-1 ${
+              validationResult.is_valid ? 'bg-emerald-50 border-emerald-200 text-emerald-900' : 'bg-rose-50 border-rose-200 text-rose-900'
+            }`}>
+              <div className="font-bold flex items-center space-x-1.5">
+                {validationResult.is_valid ? <CheckCircle2 className="w-4 h-4 text-emerald-600" /> : <AlertCircle className="w-4 h-4 text-rose-600" />}
+                <span>{validationResult.is_valid ? 'Template Syntax Valid' : 'Syntax Issues Detected'}</span>
               </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="text-slate-700 font-bold block mb-1">Category</label>
-                  <select
-                    value={formCategory}
-                    onChange={(e) => setFormCategory(e.target.value)}
-                    className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-slate-900 focus:outline-none focus:border-purple-500 font-medium cursor-pointer"
-                  >
-                    <option value="schema">Schema.org JSON-LD</option>
-                    <option value="review_response">Review Response</option>
-                    <option value="location_page">Location Page</option>
-                    <option value="gbp">Google Business Profile</option>
-                    <option value="task">SEO Task Blueprint</option>
-                    <option value="reporting">Executive Report</option>
-                    <option value="local_content">Local Content</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label className="text-slate-700 font-bold block mb-1">Template Type / Format</label>
-                  <select
-                    value={formType}
-                    onChange={(e) => {
-                      setFormType(e.target.value);
-                      handleValidate(formContent, e.target.value);
-                    }}
-                    className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-slate-900 focus:outline-none focus:border-purple-500 font-medium cursor-pointer"
-                  >
-                    <option value="schema_jsonld">Schema JSON-LD</option>
-                    <option value="content_markdown">Content Markdown</option>
-                    <option value="review_reply">Review Reply Text</option>
-                    <option value="gbp_post">Google Business Profile Post</option>
-                    <option value="task_blueprint">Task Description</option>
-                  </select>
-                </div>
-              </div>
-
-              <div>
-                <label className="text-slate-700 font-bold block mb-1">Standard / Format Badge</label>
-                <input
-                  type="text"
-                  value={formStandard}
-                  onChange={(e) => setFormStandard(e.target.value)}
-                  placeholder="e.g. Schema.org / JSON-LD or Local SEO Standard"
-                  className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-slate-900 focus:outline-none focus:border-purple-500 font-medium"
-                />
-              </div>
-
-              <div>
-                <label className="text-slate-700 font-bold block mb-1">Description</label>
-                <input
-                  type="text"
-                  value={formDescription}
-                  onChange={(e) => setFormDescription(e.target.value)}
-                  placeholder="Brief description of when and how to apply this template..."
-                  className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-slate-900 focus:outline-none focus:border-purple-500 font-medium"
-                />
-              </div>
-
-              <div>
-                <div className="flex items-center justify-between mb-1">
-                  <label className="text-slate-700 font-bold">
-                    Template Content <span className="text-slate-400 font-normal">(use &#123;&#123;variable&#125;&#125; placeholders)</span>
-                  </label>
-                  <button
-                    type="button"
-                    onClick={() => handleValidate(formContent, formType)}
-                    className="text-[11px] text-purple-700 hover:underline font-bold"
-                  >
-                    Validate Syntax
-                  </button>
-                </div>
-                <textarea
-                  rows={8}
-                  required
-                  value={formContent}
-                  onChange={(e) => {
-                    setFormContent(e.target.value);
-                    handleValidate(e.target.value, formType);
-                  }}
-                  placeholder="Paste schema JSON or content markdown with {{business_name}}, {{city}}, {{phone}}..."
-                  className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-slate-900 font-mono focus:outline-none focus:border-purple-500 font-medium"
-                />
-              </div>
-
-              {/* Live Validation Feedback */}
-              {validationResult && (
-                <div className={`p-3 rounded-xl border text-xs space-y-1 ${
-                  validationResult.is_valid ? 'bg-emerald-50 border-emerald-200 text-emerald-900' : 'bg-rose-50 border-rose-200 text-rose-900'
-                }`}>
-                  <div className="font-bold flex items-center space-x-1.5">
-                    {validationResult.is_valid ? <CheckCircle2 className="w-4 h-4 text-emerald-600" /> : <AlertCircle className="w-4 h-4 text-rose-600" />}
-                    <span>{validationResult.is_valid ? 'Template Syntax Valid' : 'Syntax Issues Detected'}</span>
-                  </div>
-                  {validationResult.errors.map((err, idx) => (
-                    <div key={idx} className="text-[11px] font-medium">• {err}</div>
-                  ))}
-                  {validationResult.detected_variables.length > 0 && (
-                    <div className="text-[11px] text-slate-600 pt-1">
-                      Detected Variables: {validationResult.detected_variables.map(v => `{{${v}}}`).join(', ')}
-                    </div>
-                  )}
+              {validationResult.errors.map((err, idx) => (
+                <div key={idx} className="text-[11px] font-medium">• {err}</div>
+              ))}
+              {validationResult.detected_variables.length > 0 && (
+                <div className="text-[11px] text-slate-600 pt-1">
+                  Detected Variables: {validationResult.detected_variables.map(v => `{{${v}}}`).join(', ')}
                 </div>
               )}
+            </div>
+          )}
 
-              <div className="flex items-center justify-end space-x-2 pt-3 border-t border-slate-100">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setIsCreateOpen(false);
-                    setIsEditOpen(false);
-                  }}
-                  className="px-4 py-2 rounded-xl bg-slate-100 text-slate-700 font-bold hover:bg-slate-200"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  className="px-5 py-2 btn-vibrant-primary rounded-xl font-bold shadow-md"
-                >
-                  Save Template
-                </button>
-              </div>
-            </form>
+          <div className="flex items-center justify-end space-x-2 pt-3 border-t border-slate-100">
+            <button
+              type="button"
+              onClick={() => {
+                setIsCreateOpen(false);
+                setIsEditOpen(false);
+              }}
+              className="px-4 py-2 rounded-xl bg-slate-100 text-slate-700 font-bold hover:bg-slate-200"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              className="px-5 py-2 bg-emerald-700 hover:bg-emerald-800 text-white rounded-xl font-bold shadow-xs"
+            >
+              Save Template
+            </button>
           </div>
-        </div>
-      )}
+        </form>
+      </Modal>
 
       {/* Import Modal */}
-      {isImportOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
-          <div className="bg-white rounded-2xl p-6 max-w-lg w-full space-y-4 shadow-2xl border border-slate-200">
-            <h3 className="text-base font-black text-slate-900">Import Structured Template</h3>
-            <p className="text-xs text-slate-500">
-              Paste valid JSON-LD schema or structured markdown with <code className="text-purple-700 font-bold">&#123;&#123;variables&#125;&#125;</code>.
-            </p>
-
-            <form onSubmit={handleImport} className="space-y-3 text-xs">
-              <div>
-                <label className="text-slate-700 font-bold block mb-1">Template Name (Optional)</label>
-                <input
-                  type="text"
-                  value={importName}
-                  onChange={(e) => setImportName(e.target.value)}
-                  placeholder="e.g. Custom Schema Template"
-                  className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-slate-900 focus:outline-none focus:border-purple-500 font-medium"
-                />
-              </div>
-
-              <div>
-                <label className="text-slate-700 font-bold block mb-1">File Content / JSON-LD / Markdown</label>
-                <textarea
-                  rows={8}
-                  required
-                  value={importContent}
-                  onChange={(e) => setImportContent(e.target.value)}
-                  placeholder="Paste JSON or Markdown..."
-                  className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-slate-900 font-mono focus:outline-none focus:border-purple-500 font-medium"
-                />
-              </div>
-
-              {importError && (
-                <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl text-rose-900 text-xs font-medium">
-                  {importError}
-                </div>
-              )}
-
-              <div className="flex items-center justify-end space-x-2 pt-3 border-t border-slate-100">
-                <button
-                  type="button"
-                  onClick={() => setIsImportOpen(false)}
-                  className="px-4 py-2 rounded-xl bg-slate-100 text-slate-700 font-bold hover:bg-slate-200"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  className="px-5 py-2 btn-vibrant-primary rounded-xl font-bold shadow-md"
-                >
-                  Validate & Import
-                </button>
-              </div>
-            </form>
+      <Modal
+        isOpen={isImportOpen}
+        onClose={() => setIsImportOpen(false)}
+        maxWidth="lg"
+        title="Import Structured Template"
+        description="Paste valid JSON-LD schema or structured markdown with {{variables}}"
+      >
+        <form onSubmit={handleImport} className="space-y-3 text-xs">
+          <div>
+            <label className="text-slate-700 font-bold block mb-1">Template Name (Optional)</label>
+            <input
+              type="text"
+              value={importName}
+              onChange={(e) => setImportName(e.target.value)}
+              placeholder="e.g. Custom Schema Template"
+              className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-slate-900 focus:outline-none focus:border-emerald-500 font-medium"
+            />
           </div>
-        </div>
-      )}
+
+          <div>
+            <label className="text-slate-700 font-bold block mb-1">File Content / JSON-LD / Markdown *</label>
+            <textarea
+              rows={8}
+              required
+              value={importContent}
+              onChange={(e) => setImportContent(e.target.value)}
+              placeholder="Paste JSON or Markdown..."
+              className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-slate-900 font-mono focus:outline-none focus:border-emerald-500 font-medium"
+            />
+          </div>
+
+          {importError && (
+            <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl text-rose-900 text-xs font-medium">
+              {importError}
+            </div>
+          )}
+
+          <div className="flex items-center justify-end space-x-2 pt-3 border-t border-slate-100">
+            <button
+              type="button"
+              onClick={() => setIsImportOpen(false)}
+              className="px-4 py-2 rounded-xl bg-slate-100 text-slate-700 font-bold hover:bg-slate-200"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              className="px-5 py-2 bg-emerald-700 hover:bg-emerald-800 text-white rounded-xl font-bold shadow-xs"
+            >
+              Validate & Import
+            </button>
+          </div>
+        </form>
+      </Modal>
     </div>
   );
 };

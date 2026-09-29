@@ -6,23 +6,26 @@ class WebsitePageOut(BaseModel):
     id: int
     website_id: int
     url: str
-    status_code: int
+    status_code: Optional[int] = 200
     title: Optional[str] = None
     meta_description: Optional[str] = None
     h1: Optional[str] = None
-    h2_list: List[str] = []
-    word_count: int = 0
+    h2_list: Optional[List[Any]] = []
+    word_count: Optional[int] = 0
     canonical_url: Optional[str] = None
-    is_indexable: bool = True
-    load_time_ms: int = 0
-    schema_types: List[str] = []
-    images_count: int = 0
-    missing_alt_count: int = 0
-    internal_links_count: int = 0
-    external_links_count: int = 0
-    broken_links: List[str] = []
-    issues_detected: List[str] = []
-    created_at: datetime
+    is_indexable: Optional[bool] = True
+    load_time_ms: Optional[int] = 0
+    schema_types: Optional[List[Any]] = []
+    schema_data: Optional[Dict[str, Any]] = {}
+    phones_found: Optional[List[Any]] = []
+    emails_found: Optional[List[Any]] = []
+    images_count: Optional[int] = 0
+    missing_alt_count: Optional[int] = 0
+    internal_links_count: Optional[int] = 0
+    external_links_count: Optional[int] = 0
+    broken_links: Optional[List[Any]] = []
+    issues_detected: Optional[List[Any]] = []
+    created_at: Optional[datetime] = None
 
     class Config:
         from_attributes = True
@@ -46,7 +49,7 @@ class SEOIssueOut(SEOIssueBase):
     id: int
     project_id: int
     audit_id: Optional[int] = None
-    created_at: datetime
+    created_at: Optional[datetime] = None
     resolved_at: Optional[datetime] = None
 
     class Config:
@@ -55,17 +58,17 @@ class SEOIssueOut(SEOIssueBase):
 class SEOAuditOut(BaseModel):
     id: int
     project_id: int
-    audit_type: str
-    overall_score: int
-    pages_analyzed: int
-    critical_issues: int
-    warnings: int
-    opportunities: int
-    passed_checks: int
+    audit_type: Optional[str] = "technical"
+    overall_score: Optional[int] = None
+    pages_analyzed: Optional[int] = 0
+    critical_issues: Optional[int] = 0
+    warnings: Optional[int] = 0
+    opportunities: Optional[int] = 0
+    passed_checks: Optional[int] = 0
     summary: Optional[str] = None
-    details: Dict[str, Any] = {}
-    created_at: datetime
-    issues: List[SEOIssueOut] = []
+    details: Optional[Dict[str, Any]] = {}
+    created_at: Optional[datetime] = None
+    issues: Optional[List[SEOIssueOut]] = []
 
     class Config:
         from_attributes = True
@@ -138,6 +141,20 @@ class LocalAuditFindingOut(BaseModel):
     status: str
     severity: str
     score_impact: float
+    
+    # Forensic structured details
+    rule_definition: Optional[str] = None
+    what_was_checked: Optional[str] = None
+    observed_value: Optional[str] = None
+    expected_value: Optional[str] = None
+    why_it_matters: Optional[str] = None
+    affected_urls: Optional[List[str]] = []
+    technical_evidence: Optional[Dict[str, Any]] = {}
+    remediation_steps: Optional[List[str]] = []
+    verification_steps: Optional[List[str]] = []
+    crawl_id: Optional[int] = None
+    source_timestamp: Optional[datetime] = None
+    
     evidence: Optional[str] = None
     source: Optional[str] = None
     source_url: Optional[str] = None
@@ -154,6 +171,7 @@ class LocalAuditFindingOut(BaseModel):
 class LocalAuditRunOut(BaseModel):
     id: int
     project_id: int
+    crawl_id: Optional[int] = None
     framework_version: str
     status: str
     overall_score: Optional[int] = None
@@ -170,5 +188,8 @@ class LocalAuditRunOut(BaseModel):
 
 class LocalAuditRunCreate(BaseModel):
     framework_version: Optional[str] = "local_seo_v1"
+    crawl_snapshot_id: Optional[int] = None
+    force_crawl: Optional[bool] = False
+
 
 

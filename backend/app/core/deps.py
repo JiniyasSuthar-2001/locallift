@@ -7,7 +7,7 @@ from sqlalchemy.future import select
 
 from app.database import get_db
 from app.config import settings
-from app.models.user import User, OrganizationMember, OrgRole
+from app.models.user import User, OrganizationMember, OrgRole, PlatformRole
 from app.schemas.auth import TokenPayload
 
 
@@ -36,6 +36,46 @@ async def get_current_user(
     if user is None or not user.is_active:
         raise credentials_exception
     return user
+
+PLATFORM_ROLES = {"super_admin", "platform_admin", "operations", "support", "finance", "viewer"}
+
+def is_platform_user(user: User) -> bool:
+    if user.is_superuser:
+        return True
+    if user.platform_role and str(user.platform_role).lower() in PLATFORM_ROLES:
+        return True
+    return False
+
+async def verify_platform_admin(
+    current_user: User = Depends(get_current_user),
+) -> User:
+    """
+    Enforces that the user has a platform-level role (SUPER_ADMIN, PLATFORM_ADMIN,
+    OPERATIONS, SUPPORT, FINANCE, VIEWER) or is a superuser.
+    Normal organization owners/clients receive 403 Forbidden.
+    """
+    if not is_platform_user(current_user):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied: MasterPlace platform operator privileges required."
+        )
+    return current_user
+
+async def verify_platform_super_admin(
+    current_user: User = Depends(get_current_user),
+) -> User:
+    """
+    Strict platform authorization for dangerous administrative actions
+    (Global AI Kill Switch, customer suspension, direct provider routing changes).
+    """
+    if current_user.is_superuser:
+        return current_user
+    if current_user.platform_role and str(current_user.platform_role).lower() in {"super_admin", "platform_admin"}:
+        return current_user
+    raise HTTPException(
+        status_code=status.HTTP_403_FORBIDDEN,
+        detail="Access denied: Super Admin platform privileges required for this action."
+    )
 
 async def get_current_active_superuser(
     current_user: User = Depends(get_current_user),

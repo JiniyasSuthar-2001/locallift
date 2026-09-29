@@ -12,6 +12,14 @@ class OrgRole(str, enum.Enum):
     CLIENT = "client"
     VIEWER = "viewer"
 
+class PlatformRole(str, enum.Enum):
+    SUPER_ADMIN = "super_admin"
+    PLATFORM_ADMIN = "platform_admin"
+    OPERATIONS = "operations"
+    SUPPORT = "support"
+    FINANCE = "finance"
+    VIEWER = "viewer"
+
 class User(Base):
     __tablename__ = "users"
 
@@ -21,6 +29,7 @@ class User(Base):
     hashed_password = Column(String(255), nullable=False)
     is_active = Column(Boolean, default=True)
     is_superuser = Column(Boolean, default=False)
+    platform_role = Column(String(50), nullable=True, default=None)  # super_admin, platform_admin, operations, etc.
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
     memberships = relationship("OrganizationMember", back_populates="user", cascade="all, delete-orphan")
@@ -39,6 +48,7 @@ class Organization(Base):
     name = Column(String(255), nullable=False)
     slug = Column(String(255), unique=True, index=True, nullable=False)
     plan = Column(String(50), default="agency_pro")
+    status = Column(String(50), default="active")  # active, suspended, trial, cancelled
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
     members = relationship("OrganizationMember", back_populates="organization", cascade="all, delete-orphan")

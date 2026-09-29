@@ -20,6 +20,7 @@ from app.services.seo_auditor import SEOAuditor
 from app.config import settings
 import logging
 import traceback
+import re
 
 logger = logging.getLogger("locallift.audits")
 
@@ -27,6 +28,8 @@ router = APIRouter(prefix="/audits", tags=["Audits & Crawler"])
 
 import time
 from app.services.crawl_storage import CrawlStorage
+
+AUDIT_CANCELLATION_REGISTRY: Dict[int, bool] = {}
 
 async def run_crawler_and_audit_task(
     job_id: int,
@@ -70,10 +73,11 @@ async def run_crawler_and_audit_task(
                     j = res.scalars().first()
                     if j:
                         # Check for cancellation
-                        if j.status == AuditJobStatus.CANCEL_REQUESTED:
+                        if j.status in (AuditJobStatus.CANCEL_REQUESTED, AuditJobStatus.CANCELLED) or AUDIT_CANCELLATION_REGISTRY.get(job_id, False):
                             j.status = AuditJobStatus.CANCELLED
                             j.crawler_status = "cancelled"
                             j.current_stage = "Crawl cancelled by user request"
+                            AUDIT_CANCELLATION_REGISTRY[job_id] = True
                             await cb_session.commit()
                             return
 
@@ -113,9 +117,23 @@ async def run_crawler_and_audit_task(
                         
                         await cb_session.commit()
 
-            def cancellation_check() -> bool:
-                # Synchronous check for fast cancellation polling
-                return job.status == AuditJobStatus.CANCEL_REQUESTED
+            async def cancellation_check() -> bool:
+                # 1. Fast in-memory check
+                if AUDIT_CANCELLATION_REGISTRY.get(job_id, False):
+                    return True
+                # 2. Fresh transactional DB lookup to ensure multi-process/session safety
+                try:
+                    async with AsyncSessionLocal() as chk_session:
+                        chk_res = await chk_session.execute(
+                            select(AuditJob.status).where(AuditJob.id == job_id)
+                        )
+                        st = chk_res.scalar_one_or_none()
+                        if st in (AuditJobStatus.CANCEL_REQUESTED, AuditJobStatus.CANCELLED):
+                            AUDIT_CANCELLATION_REGISTRY[job_id] = True
+                            return True
+                except Exception as e:
+                    logger.warning(f"Error checking audit cancellation state: {e}")
+                return False
 
             crawler = WebsiteCrawler(
                 start_url=start_url,
@@ -140,12 +158,20 @@ async def run_crawler_and_audit_task(
 
             pages_data = await crawler.crawl()
 
-            # Check if job was cancelled during crawl
-            if job.status == AuditJobStatus.CANCEL_REQUESTED:
-                job.status = AuditJobStatus.CANCELLED
-                job.crawler_status = "cancelled"
-                job.current_stage = "Crawl cancelled by user request"
-                await session.commit()
+            # Check if job was cancelled during or immediately after crawl
+            is_cancelled = await cancellation_check()
+            if is_cancelled:
+                AUDIT_CANCELLATION_REGISTRY.pop(job_id, None)
+                async with AsyncSessionLocal() as cancel_session:
+                    c_res = await cancel_session.execute(select(AuditJob).where(AuditJob.id == job_id))
+                    c_job = c_res.scalars().first()
+                    if c_job:
+                        c_job.status = AuditJobStatus.CANCELLED
+                        c_job.crawler_status = "cancelled"
+                        c_job.current_stage = "Crawl cancelled by user request"
+                        c_job.completed_at = datetime.now(timezone.utc)
+                        c_job.pages_processed = len(pages_data)
+                        await cancel_session.commit()
                 return
 
             # Mark saving stage
@@ -171,10 +197,14 @@ async def run_crawler_and_audit_task(
             old_pages_res = await session.execute(select(WebsitePage).where(WebsitePage.website_id == website.id))
             for old_p in old_pages_res.scalars().all():
                 await session.delete(old_p)
-            await session.flush()
-
             # Save newly crawled pages
             for p in pages_data:
+                page_schema_data = p.get("schema_data") or {
+                    "json_ld_schemas": p.get("json_ld_schemas", []),
+                    "schema_entities": p.get("schema_entities", []),
+                    "schema_formats": p.get("schema_formats", []),
+                    "schema_parse_errors": p.get("schema_parse_errors", [])
+                }
                 page_obj = WebsitePage(
                     website_id=website.id,
                     url=p.get("url"),
@@ -188,6 +218,9 @@ async def run_crawler_and_audit_task(
                     is_indexable=p.get("is_indexable", True),
                     load_time_ms=p.get("load_time_ms", 0),
                     schema_types=p.get("schema_types", []),
+                    schema_data=page_schema_data,
+                    phones_found=p.get("phones_found", []),
+                    emails_found=p.get("emails_found", []),
                     images_count=p.get("images_count", 0),
                     missing_alt_count=p.get("missing_alt_count", 0),
                     internal_links_count=p.get("internal_links_count", 0),
@@ -197,6 +230,12 @@ async def run_crawler_and_audit_task(
                 )
                 session.add(page_obj)
 
+            # Load exact bound GBP context (Part 1 & 2 architecture)
+            gbp_res = await session.execute(
+                select(GoogleBusinessProfile).where(GoogleBusinessProfile.project_id == project_id)
+            )
+            gbp = gbp_res.scalars().first()
+
             # Load Project & Location context
             proj_res = await session.execute(
                 select(Project).options(selectinload(Project.locations)).where(Project.id == project_id)
@@ -205,7 +244,12 @@ async def run_crawler_and_audit_task(
             
             project_context = None
             if proj:
-                loc = proj.locations[0] if proj.locations else None
+                loc = None
+                if gbp and gbp.location_id and proj.locations:
+                    loc = next((l for l in proj.locations if l.id == gbp.location_id), None)
+                elif proj.locations and len(proj.locations) == 1:
+                    loc = proj.locations[0]
+
                 project_context = {
                     "name": proj.name,
                     "domain": proj.domain,
@@ -214,42 +258,16 @@ async def run_crawler_and_audit_task(
                     "address": loc.address if loc else None
                 }
 
-            # Load GBP context
-            acc_res = await session.execute(
-                select(GoogleAccount).where(GoogleAccount.project_id == project_id)
-            )
-            google_account = acc_res.scalars().first()
-            if not google_account and proj:
-                from app.services.google.connections_service import GoogleConnectionsService
-                gbp_conn = await GoogleConnectionsService.get_connection_for_service(proj.organization_id, "business_profile", session)
-                if gbp_conn and gbp_conn.status in ("connected", "expired") and gbp_conn.access_token:
-                    google_account = GoogleAccount(
-                        project_id=project_id,
-                        account_email=gbp_conn.account_email or f"user-{project_id}@google.com",
-                        access_token=gbp_conn.access_token,
-                        refresh_token=gbp_conn.refresh_token,
-                        token_expiry=gbp_conn.token_expiry,
-                        scopes=gbp_conn.scopes or [],
-                        is_connected=True
-                    )
-                    session.add(google_account)
-                    await session.flush()
-
             gbp_context = None
-            if google_account:
-                gbp_res = await session.execute(
-                    select(GoogleBusinessProfile).where(GoogleBusinessProfile.google_account_id == google_account.id)
-                )
-                gbp = gbp_res.scalars().first()
-                if gbp:
-                    gbp_context = {
-                        "connected": True,
-                        "business_name": gbp.business_name,
-                        "phone": gbp.phone,
-                        "address": gbp.address,
-                        "website_url": gbp.website_url,
-                        "primary_category": gbp.primary_category
-                    }
+            if gbp:
+                gbp_context = {
+                    "connected": True,
+                    "business_name": gbp.business_name,
+                    "phone": gbp.phone,
+                    "address": gbp.address,
+                    "website_url": gbp.website_url,
+                    "primary_category": gbp.primary_category
+                }
 
             # Load Citations context
             cit_res = await session.execute(select(Citation).where(Citation.project_id == project_id))
@@ -516,6 +534,7 @@ async def cancel_audit_job(
 
     job.status = AuditJobStatus.CANCEL_REQUESTED
     job.current_stage = "Cancellation requested by user..."
+    AUDIT_CANCELLATION_REGISTRY[job_id] = True
     await db.commit()
     return {"job_id": job_id, "status": "cancel_requested", "message": "Cancellation request submitted"}
 
@@ -601,11 +620,18 @@ async def get_canonical_audit(
                 "title": p.title,
                 "meta_description": p.meta_description,
                 "h1": p.h1,
-                "word_count": p.word_count,
+                "h2_list": p.h2_list or [],
+                "word_count": p.word_count or 0,
                 "canonical_url": p.canonical_url,
+                "is_indexable": p.is_indexable,
+                "load_time_ms": p.load_time_ms or 0,
                 "schema_types": p.schema_types or [],
-                "json_ld_schemas": [],
-                "missing_alt_count": p.missing_alt_count
+                "schema_data": p.schema_data or {},
+                "json_ld_schemas": (p.schema_data or {}).get("json_ld_schemas", []),
+                "schema_entities": (p.schema_data or {}).get("schema_entities", []),
+                "missing_alt_count": p.missing_alt_count or 0,
+                "phones_found": p.phones_found or [],
+                "emails_found": p.emails_found or []
             }
             for p in pages
         ]
@@ -749,9 +775,19 @@ async def get_diagnostic_summary(
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
 
-    location = project.locations[0] if project.locations else None
+    # 2. Google Business Profile via exact project binding
+    gbp_res = await db.execute(
+        select(GoogleBusinessProfile).where(GoogleBusinessProfile.project_id == project_id)
+    )
+    gbp = gbp_res.scalars().first()
 
-    # 2. Latest Audit
+    location = None
+    if gbp and gbp.location_id and project.locations:
+        location = next((l for l in project.locations if l.id == gbp.location_id), None)
+    elif project.locations and len(project.locations) == 1:
+        location = project.locations[0]
+
+    # 3. Latest Audit
     audit_res = await db.execute(
         select(SEOAudit)
         .options(selectinload(SEOAudit.issues))
@@ -760,38 +796,10 @@ async def get_diagnostic_summary(
     )
     latest_audit = audit_res.scalars().first()
 
-    # 3. Google Business Profile via GoogleAccount or GoogleConnection
-    acc_res = await db.execute(
-        select(GoogleAccount).where(GoogleAccount.project_id == project_id)
-    )
-    google_acc = acc_res.scalars().first()
-    if not google_acc:
-        from app.services.google.connections_service import GoogleConnectionsService
-        gbp_conn = await GoogleConnectionsService.get_connection_for_service(project.organization_id, "business_profile", db)
-        if gbp_conn and gbp_conn.status in ("connected", "expired") and gbp_conn.access_token:
-            google_acc = GoogleAccount(
-                project_id=project_id,
-                account_email=gbp_conn.account_email or f"user-{project_id}@google.com",
-                access_token=gbp_conn.access_token,
-                refresh_token=gbp_conn.refresh_token,
-                token_expiry=gbp_conn.token_expiry,
-                scopes=gbp_conn.scopes or [],
-                is_connected=True
-            )
-            db.add(google_acc)
-            await db.flush()
-
-    gbp = None
-    if google_acc:
-        gbp_res = await db.execute(
-            select(GoogleBusinessProfile).where(GoogleBusinessProfile.google_account_id == google_acc.id)
-        )
-        gbp = gbp_res.scalars().first()
-
     # 4. Citations
     cit_res = await db.execute(select(Citation).where(Citation.project_id == project_id))
     citations = cit_res.scalars().all()
-    cit_mismatches = [c for c in citations if c.nap_status == "mismatch" or c.status == "incorrect"]
+    cit_mismatches = [c for c in citations if c.nap_status in ("mismatch", "incorrect") or c.status in ("incorrect", "missing")]
 
     # 5. Reviews
     rev_res = await db.execute(select(Review).where(Review.project_id == project_id))
@@ -799,7 +807,86 @@ async def get_diagnostic_summary(
     unanswered_reviews = [r for r in reviews if r.response_status == "unanswered"]
     avg_rating = round(sum(r.rating for r in reviews) / len(reviews), 1) if reviews else 0.0
 
-    # 6. Build Discrepancy Matrix (Website vs GBP vs Citations)
+    # 6. Load Crawled Pages Data
+    web_res = await db.execute(select(Website).where(Website.project_id == project_id))
+    website = web_res.scalars().first()
+    pages = []
+    if website:
+        pages_res = await db.execute(select(WebsitePage).where(WebsitePage.website_id == website.id).order_by(WebsitePage.id.asc()))
+        pages = pages_res.scalars().all()
+
+    pages_data = [
+        {
+            "url": p.url,
+            "status_code": p.status_code,
+            "title": p.title,
+            "meta_description": p.meta_description,
+            "h1": p.h1,
+            "h2_list": p.h2_list or [],
+            "word_count": p.word_count or 0,
+            "canonical_url": p.canonical_url,
+            "is_indexable": p.is_indexable,
+            "load_time_ms": p.load_time_ms or 0,
+            "schema_types": p.schema_types or [],
+            "schema_data": p.schema_data or {},
+            "json_ld_schemas": (p.schema_data or {}).get("json_ld_schemas", []),
+            "schema_entities": (p.schema_data or {}).get("schema_entities", []),
+            "missing_alt_count": p.missing_alt_count or 0,
+            "phones_found": p.phones_found or [],
+            "emails_found": p.emails_found or []
+        }
+        for p in pages
+    ]
+
+    project_context = {
+        "name": project.name,
+        "domain": project.domain,
+        "city": location.city if location else None,
+        "phone": location.phone if location else None,
+        "address": location.address if location else None
+    }
+
+    gbp_context = None
+    if gbp:
+        gbp_context = {
+            "connected": True,
+            "business_name": gbp.business_name,
+            "phone": gbp.phone,
+            "address": gbp.address,
+            "website_url": gbp.website_url,
+            "primary_category": gbp.primary_category
+        }
+
+    citation_context = [
+        {"source_name": c.source_name, "status": c.status, "nap_status": c.nap_status}
+        for c in citations
+    ] if citations else None
+
+    review_context = {
+        "total_reviews": len(reviews),
+        "average_rating": avg_rating,
+        "unanswered_count": len(unanswered_reviews)
+    } if reviews else None
+
+    # Audit pages using SEOAuditor
+    live_audit_res = SEOAuditor.audit_pages(
+        pages_data,
+        project_context=project_context,
+        gbp_context=gbp_context,
+        citation_context=citation_context,
+        review_context=review_context
+    )
+
+    # If details JSON exists in latest audit, merge saved details
+    saved_details = dict(latest_audit.details) if (latest_audit and latest_audit.details) else {}
+    crawl_details = saved_details.get("crawl") or live_audit_res.get("crawl")
+    onpage_details = saved_details.get("local_on_page") or live_audit_res.get("local_on_page")
+    schema_details = saved_details.get("schema") or live_audit_res.get("schema")
+    gbp_details = saved_details.get("gbp_match") or live_audit_res.get("gbp_match")
+    citations_details = saved_details.get("citations") or live_audit_res.get("citations")
+    reviews_details = saved_details.get("reviews") or live_audit_res.get("reviews")
+
+    # 7. Discrepancy Matrix
     web_name = project.name
     web_phone = location.phone if location else None
     web_addr = location.address if location else None
@@ -814,7 +901,6 @@ async def get_diagnostic_summary(
         return s.strip().lower() if s else ""
 
     def clean_phone(p):
-        import re
         return re.sub(r"[^\d+]", "", p) if p else ""
 
     name_aligned = bool(gbp_name and clean_str(web_name) == clean_str(gbp_name))
@@ -848,25 +934,13 @@ async def get_diagnostic_summary(
         }
     }
 
-    # Calculate honest component scores when project level overrides are not stored
-    gbp_calc_score = None
-    if gbp:
-        alignment_fields = [name_aligned, phone_aligned, addr_aligned, url_aligned]
-        gbp_calc_score = round((sum(1 for f in alignment_fields if f) / len(alignment_fields)) * 100)
-
-    cit_calc_score = None
-    if citations:
-        matching_cits = max(0, len(citations) - len(cit_mismatches))
-        cit_calc_score = round((matching_cits / len(citations)) * 100)
-
-    # Pillar Scores - honest evaluation, None if data source is absent
     pillar_scores = {
-        "crawl_health": latest_audit.overall_score if latest_audit else project.technical_score,
-        "onpage_content": project.onpage_score,
-        "schema_structured_data": project.local_score,
-        "gbp_alignment": project.gbp_score if project.gbp_score is not None else gbp_calc_score,
-        "citations_nap": project.citations_score if project.citations_score is not None else cit_calc_score,
-        "reviews_reputation": project.reviews_score if project.reviews_score is not None else (round(avg_rating * 20) if reviews else None)
+        "crawl_health": (crawl_details.get("score") if crawl_details else None) if len(pages_data) > 0 else None,
+        "onpage_content": (onpage_details.get("score") if onpage_details else None) if len(pages_data) > 0 else None,
+        "schema_structured_data": (schema_details.get("score") if schema_details else None) if len(pages_data) > 0 else None,
+        "gbp_alignment": gbp_details.get("score") if gbp_details else None,
+        "citations_nap": citations_details.get("score") if citations_details else None,
+        "reviews_reputation": reviews_details.get("score") if reviews_details else None
     }
 
     issues_out = []
@@ -884,21 +958,31 @@ async def get_diagnostic_summary(
                 "affected_url": i.affected_url,
                 "status": i.status.value if hasattr(i.status, "value") else str(i.status)
             })
+    elif live_audit_res.get("issues"):
+        issues_out = live_audit_res["issues"]
 
-    pillar_weights = SEOAuditor.get_pillar_weights_formatted()
-    scoring_methodology = SEOAuditor.get_scoring_methodology()
+    overall_score = latest_audit.overall_score if latest_audit else live_audit_res.get("score")
 
     return {
         "project_id": project_id,
-        "overall_score": latest_audit.overall_score if latest_audit else project.health_score,
-        "pages_analyzed": latest_audit.pages_analyzed if latest_audit else 0,
-        "critical_issues": latest_audit.critical_issues if latest_audit else 0,
-        "warnings": latest_audit.warnings if latest_audit else 0,
-        "opportunities": latest_audit.opportunities if latest_audit else 0,
-        "passed_checks": latest_audit.passed_checks if latest_audit else 0,
+        "overall_score": overall_score,
+        "pages_analyzed": len(pages_data),
+        "critical_issues": len([i for i in issues_out if (i.get("severity") or "").lower() == "critical"]),
+        "warnings": len([i for i in issues_out if (i.get("severity") or "").lower() == "warning"]),
+        "opportunities": len([i for i in issues_out if (i.get("severity") or "").lower() == "opportunity"]),
+        "passed_checks": latest_audit.passed_checks if latest_audit else live_audit_res.get("passed", 0),
         "pillar_scores": pillar_scores,
-        "pillar_weights": pillar_weights,
-        "scoring_methodology": scoring_methodology,
+        "pillar_weights": SEOAuditor.get_pillar_weights_formatted(),
+        "scoring_methodology": SEOAuditor.get_scoring_methodology(),
+        
+        # 6 Pillars Full Data Payloads
+        "crawl": crawl_details,
+        "local_on_page": onpage_details,
+        "schema": schema_details,
+        "gbp_match": gbp_details,
+        "citations": citations_details,
+        "reviews": reviews_details,
+        
         "discrepancy_matrix": discrepancy_matrix,
         "gbp_status": {
             "connected": bool(gbp),

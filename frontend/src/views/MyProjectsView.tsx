@@ -24,6 +24,7 @@ import api from '../api/client';
 import { useProject } from '../context/ProjectContext';
 import { BusinessCategory, Project } from '../types';
 import { CountrySelector } from '../components/ui/CountrySelector';
+import { Modal } from '../components/ui/Modal';
 import { getErrorMessage } from '../utils/error';
 import { normalizeExternalUrl } from '../utils/url';
 
@@ -35,21 +36,6 @@ export const MyProjectsView: React.FC = () => {
   const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'archived'>('all');
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
-
-  // Create Project Modal State
-  const [showCreateModal, setShowCreateModal] = useState<boolean>(false);
-  const [newName, setNewName] = useState<string>('');
-  const [newDomain, setNewDomain] = useState<string>('');
-  const [newCategory, setNewCategory] = useState<string>('Local Contractor / Service');
-  const [newCity, setNewCity] = useState<string>('');
-  const [newState, setNewState] = useState<string>('');
-  const [newPhone, setNewPhone] = useState<string>('');
-  const [newCountry, setNewCountry] = useState<string>('');
-  const [newMapsUrl, setNewMapsUrl] = useState<string>('');
-  const [creating, setCreating] = useState<boolean>(false);
-
-  // Category suggestions
-  const [categorySuggestions, setCategorySuggestions] = useState<BusinessCategory[]>([]);
 
   // Edit Project Modal State
   const [editingProject, setEditingProject] = useState<Project | null>(null);
@@ -84,70 +70,9 @@ export const MyProjectsView: React.FC = () => {
     }
   };
 
-  // Load category suggestions for autocomplete
-  useEffect(() => {
-    const fetchCategories = async () => {
-      try {
-        const res = await api.get<{ items: BusinessCategory[] }>('/projects/categories?popular_only=true&limit=20');
-        setCategorySuggestions(res.data.items);
-      } catch (e) {
-        // Fallback silently
-      }
-    };
-    fetchCategories();
-  }, []);
-
   const handleOpenDashboard = (project: Project) => {
     setActiveProject(project);
     navigate('/');
-  };
-
-  const handleCreateProject = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newName.trim() || !newDomain.trim()) {
-      setErrorMsg('Please enter both business name and website domain.');
-      return;
-    }
-    if (!newCountry.trim()) {
-      setErrorMsg('Please select a country.');
-      return;
-    }
-
-    setCreating(true);
-    setErrorMsg(null);
-    try {
-      const cleanDomain = newDomain.trim().replace(/^https?:\/\//, '').replace(/\/+$/, '');
-      const selectedCountry = newCountry.trim();
-      const res = await api.post<Project>('/projects', {
-        name: newName.trim(),
-        domain: cleanDomain,
-        primary_category: newCategory,
-        country: selectedCountry,
-        public_maps_url: newMapsUrl.trim() || undefined,
-        location: newCity ? {
-          name: `${newName.trim()} Primary Location`,
-          city: newCity.trim(),
-          state: newState.trim() || undefined,
-          phone: newPhone.trim() || undefined,
-          country: selectedCountry
-        } : undefined
-      });
-
-      setSuccessMsg(`Project "${res.data.name}" created successfully.`);
-      setShowCreateModal(false);
-      setNewName('');
-      setNewDomain('');
-      setNewCity('');
-      setNewState('');
-      setNewPhone('');
-      setNewCountry('');
-      setNewMapsUrl('');
-      await refreshProjects(res.data.id);
-    } catch (err: any) {
-      setErrorMsg(getErrorMessage(err, 'Failed to create project.'));
-    } finally {
-      setCreating(false);
-    }
   };
 
   const handleSaveEdit = async (e: React.FormEvent) => {
@@ -215,7 +140,7 @@ export const MyProjectsView: React.FC = () => {
         </div>
 
         <button
-          onClick={() => setShowCreateModal(true)}
+          onClick={() => navigate('/onboarding')}
           className="px-5 py-2.5 btn-vibrant-primary text-xs font-bold rounded-xl shadow-md transition-all flex items-center space-x-2 shrink-0"
         >
           <Plus className="w-4 h-4" />
@@ -297,7 +222,7 @@ export const MyProjectsView: React.FC = () => {
               : 'Create your first local SEO project to get started.'}
           </p>
           <button
-            onClick={() => setShowCreateModal(true)}
+            onClick={() => navigate('/onboarding')}
             className="px-4 py-2 btn-vibrant-primary text-xs font-bold rounded-xl inline-flex items-center space-x-1.5"
           >
             <Plus className="w-4 h-4" />
@@ -453,268 +378,122 @@ export const MyProjectsView: React.FC = () => {
 
       {/* MODAL: Delete Confirmation */}
       {deletingProject && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fade-in">
-          <div className="bg-white rounded-3xl max-w-md w-full p-6 sm:p-7 shadow-2xl border border-slate-200 space-y-4">
-            <div className="flex items-center space-x-3 text-rose-600">
-              <div className="w-10 h-10 rounded-2xl bg-rose-100 flex items-center justify-center">
-                <Trash2 className="w-5 h-5" />
-              </div>
-              <div>
-                <h3 className="text-base font-black text-slate-900">Delete Project</h3>
-                <p className="text-xs text-slate-500">This action cannot be undone.</p>
-              </div>
-            </div>
+        <Modal
+          isOpen={!!deletingProject}
+          onClose={() => setDeletingProject(null)}
+          maxWidth="md"
+          icon={<Trash2 className="w-5 h-5 text-rose-600" />}
+          title="Delete Project"
+          subtitle="This action cannot be undone."
+          bodyClassName="space-y-4 text-xs"
+        >
+          <p className="text-xs text-[#2E4E40] leading-relaxed">
+            Are you sure you want to permanently delete <strong className="text-[#142820]">{deletingProject.name}</strong> ({deletingProject.domain}) and all associated audits, crawl pages, keywords, and reports?
+          </p>
 
-            <p className="text-xs text-slate-600">
-              Are you sure you want to permanently delete <strong className="text-slate-900">{deletingProject.name}</strong> ({deletingProject.domain}) and all associated audits, crawl pages, keywords, and reports?
-            </p>
+          <div className="flex items-center justify-end space-x-3 pt-2">
+            <button
+              onClick={() => setDeletingProject(null)}
+              disabled={isDeleting}
+              className="px-4 py-2 border border-[#DCE8DC] rounded-xl text-xs font-bold text-[#587568] hover:bg-[#F7FAF7] transition-all cursor-pointer"
+            >
+              Cancel
+            </button>
 
-            <div className="flex items-center justify-end space-x-3 pt-2">
-              <button
-                onClick={() => setDeletingProject(null)}
-                disabled={isDeleting}
-                className="px-4 py-2 border border-slate-200 rounded-xl text-xs font-bold text-slate-600 hover:bg-slate-50 transition-all"
-              >
-                Cancel
-              </button>
-
-              <button
-                onClick={handleDeleteProject}
-                disabled={isDeleting}
-                className="px-5 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-bold shadow-md transition-all flex items-center space-x-1.5 disabled:opacity-50"
-              >
-                <Trash2 className="w-3.5 h-3.5" />
-                <span>{isDeleting ? 'Deleting...' : 'Delete Permanently'}</span>
-              </button>
-            </div>
+            <button
+              onClick={handleDeleteProject}
+              disabled={isDeleting}
+              className="px-5 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-bold shadow-md transition-all flex items-center space-x-1.5 disabled:opacity-50 cursor-pointer"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+              <span>{isDeleting ? 'Deleting...' : 'Delete Permanently'}</span>
+            </button>
           </div>
-        </div>
-      )}
-
-      {/* MODAL: Create Project */}
-      {showCreateModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fade-in">
-          <div className="bg-white rounded-3xl max-w-lg w-full p-6 sm:p-7 shadow-2xl border border-slate-200 space-y-4 max-h-[90vh] overflow-y-auto">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-              <h3 className="text-base font-black text-slate-900 flex items-center space-x-2">
-                <Plus className="w-5 h-5 text-purple-600" />
-                <span>Create New Local SEO Project</span>
-              </h3>
-              <button
-                onClick={() => setShowCreateModal(false)}
-                className="text-slate-400 hover:text-slate-600 text-sm font-bold"
-              >
-                ✕
-              </button>
-            </div>
-
-            <form onSubmit={handleCreateProject} className="space-y-4 text-xs">
-              <div>
-                <label className="font-bold text-slate-700 block mb-1">
-                  Business / Project Name <span className="text-rose-500">*</span>
-                </label>
-                <input
-                  type="text"
-                  required
-                  value={newName}
-                  onChange={(e) => setNewName(e.target.value)}
-                  placeholder="e.g. Apex Dental Studio"
-                  className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-slate-900 focus:outline-none focus:border-purple-500 font-medium"
-                />
-              </div>
-
-              <div>
-                <label className="font-bold text-slate-700 block mb-1">
-                  Website Domain <span className="text-rose-500">*</span>
-                </label>
-                <input
-                  type="text"
-                  required
-                  value={newDomain}
-                  onChange={(e) => setNewDomain(e.target.value)}
-                  placeholder="e.g. apexdentalstudio.com"
-                  className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-slate-900 focus:outline-none focus:border-purple-500 font-medium"
-                />
-              </div>
-
-              <div>
-                <label className="font-bold text-slate-700 block mb-1">
-                  Country <span className="text-rose-500">*</span>
-                </label>
-                <CountrySelector
-                  value={newCountry}
-                  onChange={setNewCountry}
-                  required
-                />
-              </div>
-
-              <div>
-                <label className="font-bold text-slate-700 block mb-1">Primary Business Category</label>
-                <input
-                  type="text"
-                  value={newCategory}
-                  onChange={(e) => setNewCategory(e.target.value)}
-                  list="category-options"
-                  placeholder="Select or type category..."
-                  className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-slate-900 focus:outline-none focus:border-purple-500 font-medium"
-                />
-                <datalist id="category-options">
-                  {categorySuggestions.map((cat) => (
-                    <option key={cat.id} value={cat.name} />
-                  ))}
-                </datalist>
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="font-bold text-slate-700 block mb-1">City / Location (Optional)</label>
-                  <input
-                    type="text"
-                    value={newCity}
-                    onChange={(e) => setNewCity(e.target.value)}
-                    placeholder="e.g. Ahmedabad, Denver, Sydney"
-                    className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-slate-900 focus:outline-none focus:border-purple-500 font-medium"
-                  />
-                </div>
-                <div>
-                  <label className="font-bold text-slate-700 block mb-1">State / Province</label>
-                  <input
-                    type="text"
-                    value={newState}
-                    onChange={(e) => setNewState(e.target.value)}
-                    placeholder="e.g. Gujarat, CO, NSW"
-                    className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-slate-900 focus:outline-none focus:border-purple-500 font-medium"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="font-bold text-slate-700 block mb-1">
-                  Google Maps / Business Profile URL (Optional)
-                </label>
-                <input
-                  type="url"
-                  value={newMapsUrl}
-                  onChange={(e) => setNewMapsUrl(e.target.value)}
-                  placeholder="https://maps.google.com/?cid=... or https://maps.app.goo.gl/..."
-                  className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-slate-900 focus:outline-none focus:border-purple-500 font-medium"
-                />
-                <p className="text-[11px] text-slate-400 mt-1">
-                  Paste the public Google Maps listing link for this business. Ownership is not required for public business information.
-                </p>
-              </div>
-
-              <div className="flex items-center justify-end space-x-2 pt-2">
-                <button
-                  type="button"
-                  onClick={() => setShowCreateModal(false)}
-                  className="px-4 py-2 bg-white border border-slate-200 text-slate-700 rounded-xl text-xs font-bold hover:bg-slate-50"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={creating}
-                  className="px-5 py-2 btn-vibrant-primary text-xs font-bold rounded-xl shadow-md transition-all flex items-center space-x-1.5 disabled:opacity-50"
-                >
-                  <Plus className="w-3.5 h-3.5" />
-                  <span>{creating ? 'Creating...' : 'Create Project'}</span>
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
+        </Modal>
       )}
 
       {/* MODAL: Edit Project */}
       {editingProject && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fade-in">
-          <div className="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl border border-slate-200 space-y-4 max-h-[90vh] overflow-y-auto">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-              <h3 className="text-base font-black text-slate-900 flex items-center space-x-2">
-                <Edit2 className="w-5 h-5 text-purple-600" />
-                <span>Edit Project</span>
-              </h3>
-              <button
-                onClick={() => setEditingProject(null)}
-                className="text-slate-400 hover:text-slate-600 text-sm font-bold"
-              >
-                ✕
-              </button>
+        <Modal
+          isOpen={!!editingProject}
+          onClose={() => setEditingProject(null)}
+          maxWidth="md"
+          icon={<Edit2 className="w-5 h-5 text-[#236B4F]" />}
+          title="Edit Project"
+          subtitle="Update business domain and category details"
+          bodyClassName="space-y-4"
+        >
+          <form onSubmit={handleSaveEdit} className="space-y-4 text-xs">
+            <div>
+              <label className="font-bold text-[#142820] block mb-1">Project Name</label>
+              <input
+                type="text"
+                required
+                value={editName}
+                onChange={(e) => setEditName(e.target.value)}
+                className="w-full bg-[#F7FAF7] border border-[#DCE8DC] rounded-xl p-2.5 text-[#142820] focus:outline-none focus:border-[#236B4F] font-medium"
+              />
             </div>
 
-            <form onSubmit={handleSaveEdit} className="space-y-4 text-xs">
-              <div>
-                <label className="font-bold text-slate-700 block mb-1">Project Name</label>
-                <input
-                  type="text"
-                  required
-                  value={editName}
-                  onChange={(e) => setEditName(e.target.value)}
-                  className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-slate-900 focus:outline-none focus:border-purple-500 font-medium"
-                />
-              </div>
+            <div>
+              <label className="font-bold text-[#142820] block mb-1">Website Domain</label>
+              <input
+                type="text"
+                required
+                value={editDomain}
+                onChange={(e) => setEditDomain(e.target.value)}
+                className="w-full bg-[#F7FAF7] border border-[#DCE8DC] rounded-xl p-2.5 text-[#142820] focus:outline-none focus:border-[#236B4F] font-medium"
+              />
+            </div>
 
-              <div>
-                <label className="font-bold text-slate-700 block mb-1">Website Domain</label>
-                <input
-                  type="text"
-                  required
-                  value={editDomain}
-                  onChange={(e) => setEditDomain(e.target.value)}
-                  className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-slate-900 focus:outline-none focus:border-purple-500 font-medium"
-                />
-              </div>
+            <div>
+              <label className="font-bold text-[#142820] block mb-1">Primary Category</label>
+              <input
+                type="text"
+                required
+                value={editCategory}
+                onChange={(e) => setEditCategory(e.target.value)}
+                className="w-full bg-[#F7FAF7] border border-[#DCE8DC] rounded-xl p-2.5 text-[#142820] focus:outline-none focus:border-[#236B4F] font-medium"
+              />
+            </div>
 
-              <div>
-                <label className="font-bold text-slate-700 block mb-1">Primary Category</label>
-                <input
-                  type="text"
-                  required
-                  value={editCategory}
-                  onChange={(e) => setEditCategory(e.target.value)}
-                  className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-slate-900 focus:outline-none focus:border-purple-500 font-medium"
-                />
-              </div>
+            <div>
+              <label className="font-bold text-[#142820] block mb-1">Target Country</label>
+              <CountrySelector
+                value={editCountry}
+                onChange={setEditCountry}
+              />
+            </div>
 
-              <div>
-                <label className="font-bold text-slate-700 block mb-1">Target Country</label>
-                <CountrySelector
-                  value={editCountry}
-                  onChange={setEditCountry}
-                />
-              </div>
+            <div>
+              <label className="font-bold text-[#142820] block mb-1">Google Maps URL</label>
+              <input
+                type="url"
+                value={editMapsUrl}
+                onChange={(e) => setEditMapsUrl(e.target.value)}
+                placeholder="https://maps.google.com/?cid=..."
+                className="w-full bg-[#F7FAF7] border border-[#DCE8DC] rounded-xl p-2.5 text-[#142820] focus:outline-none focus:border-[#236B4F] font-medium"
+              />
+            </div>
 
-              <div>
-                <label className="font-bold text-slate-700 block mb-1">Google Maps URL</label>
-                <input
-                  type="url"
-                  value={editMapsUrl}
-                  onChange={(e) => setEditMapsUrl(e.target.value)}
-                  placeholder="https://maps.google.com/?cid=..."
-                  className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-slate-900 focus:outline-none focus:border-purple-500 font-medium"
-                />
-              </div>
-
-              <div className="flex items-center justify-end space-x-2 pt-2">
-                <button
-                  type="button"
-                  onClick={() => setEditingProject(null)}
-                  className="px-4 py-2 bg-white border border-slate-200 text-slate-700 rounded-xl text-xs font-bold hover:bg-slate-50"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={savingEdit}
-                  className="px-5 py-2 btn-vibrant-primary text-xs font-bold rounded-xl shadow-md transition-all disabled:opacity-50"
-                >
-                  <span>{savingEdit ? 'Saving...' : 'Save Changes'}</span>
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
+            <div className="flex items-center justify-end space-x-2 pt-2">
+              <button
+                type="button"
+                onClick={() => setEditingProject(null)}
+                className="px-4 py-2 bg-white border border-[#DCE8DC] text-[#2E4E40] rounded-xl text-xs font-bold hover:bg-[#F7FAF7] cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={savingEdit}
+                className="px-5 py-2 btn-primary-gradient text-xs font-bold rounded-xl shadow-md transition-all disabled:opacity-50 cursor-pointer text-white"
+              >
+                <span>{savingEdit ? 'Saving...' : 'Save Changes'}</span>
+              </button>
+            </div>
+          </form>
+        </Modal>
       )}
     </div>
   );

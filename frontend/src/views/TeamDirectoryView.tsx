@@ -20,6 +20,7 @@ import { TeamDirectoryMember } from '../types';
 import { useProject } from '../context/ProjectContext';
 import { useAuth } from '../context/AuthContext';
 import { ALL_AVAILABLE_PERMISSIONS } from '../components/team/ProjectTeamSection';
+import { Modal } from '../components/ui/Modal';
 
 export const TeamDirectoryView: React.FC = () => {
   const { memberId } = useParams<{ memberId?: string }>();
@@ -245,123 +246,115 @@ export const TeamDirectoryView: React.FC = () => {
 
       {/* MODAL: Invite Member */}
       {showInviteModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fade-in">
-          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-slate-200 space-y-4">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-              <h3 className="text-base font-black text-slate-900 flex items-center space-x-2">
-                <UserPlus className="w-5 h-5 text-purple-600" />
-                <span>Invite Collaborator</span>
-              </h3>
-              <button
-                onClick={() => setShowInviteModal(false)}
-                aria-label="Close invite modal"
-                className="text-slate-400 hover:text-slate-600 text-sm font-bold"
+        <Modal
+          isOpen={showInviteModal}
+          onClose={() => setShowInviteModal(false)}
+          maxWidth="md"
+          icon={<UserPlus className="w-5 h-5 text-[#236B4F]" />}
+          title="Invite Collaborator"
+          subtitle="Assign member permissions & project access"
+          bodyClassName="space-y-4"
+        >
+          <form onSubmit={handleInvite} className="space-y-4 text-xs">
+            <div>
+              <label className="font-bold text-[#142820] block mb-1">
+                Target Project <span className="text-rose-500">*</span>
+              </label>
+              <select
+                value={selectedProjectId}
+                onChange={(e) => setSelectedProjectId(e.target.value)}
+                required
+                className="w-full bg-[#F7FAF7] border border-[#DCE8DC] rounded-xl p-2.5 text-[#142820] focus:outline-none focus:border-[#236B4F] font-medium"
               >
-                ✕
-              </button>
+                {projects.map((proj) => (
+                  <option key={proj.id} value={proj.id}>
+                    {proj.name} ({proj.domain})
+                  </option>
+                ))}
+              </select>
+              <p className="text-[10px] text-[#587568] mt-1">
+                Select which project this team member will be granted access to.
+              </p>
             </div>
 
-            <form onSubmit={handleInvite} className="space-y-4 text-xs">
-              <div>
-                <label className="font-bold text-slate-700 block mb-1">
-                  Target Project <span className="text-rose-500">*</span>
-                </label>
-                <select
-                  value={selectedProjectId}
-                  onChange={(e) => setSelectedProjectId(e.target.value)}
-                  required
-                  className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-slate-900 focus:outline-none focus:border-purple-500 font-medium"
-                >
-                  {projects.map((proj) => (
-                    <option key={proj.id} value={proj.id}>
-                      {proj.name} ({proj.domain})
-                    </option>
-                  ))}
-                </select>
-                <p className="text-[10px] text-slate-400 mt-1">
-                  Select which project this team member will be granted access to.
-                </p>
-              </div>
+            <div>
+              <label className="font-bold text-[#142820] block mb-1">
+                Collaborator Email <span className="text-rose-500">*</span>
+              </label>
+              <input
+                type="email"
+                required
+                value={inviteEmail}
+                onChange={(e) => setInviteEmail(e.target.value)}
+                placeholder="colleague@example.com"
+                className="w-full bg-[#F7FAF7] border border-[#DCE8DC] rounded-xl p-2.5 text-[#142820] focus:outline-none focus:border-[#236B4F] font-medium"
+              />
+              <p className="text-[10px] text-[#587568] mt-1">
+                If they don't have a LocalLift account yet, they will receive a pending invitation upon registering with this email.
+              </p>
+            </div>
 
-              <div>
-                <label className="font-bold text-slate-700 block mb-1">
-                  Collaborator Email <span className="text-rose-500">*</span>
-                </label>
-                <input
-                  type="email"
-                  required
-                  value={inviteEmail}
-                  onChange={(e) => setInviteEmail(e.target.value)}
-                  placeholder="colleague@example.com"
-                  className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-slate-900 focus:outline-none focus:border-purple-500 font-medium"
-                />
-                <p className="text-[10px] text-slate-400 mt-1">
-                  If they don't have a LocalLift account yet, they will receive a pending invitation upon registering with this email.
-                </p>
-              </div>
+            <div>
+              <label className="font-bold text-[#142820] block mb-1">Project Role Title</label>
+              <select
+                value={inviteRole}
+                onChange={(e) => setInviteRole(e.target.value)}
+                className="w-full bg-[#F7FAF7] border border-[#DCE8DC] rounded-xl p-2.5 text-[#142820] focus:outline-none focus:border-[#236B4F] font-medium"
+              >
+                <option value="SEO Specialist">SEO Specialist</option>
+                <option value="Local SEO Manager">Local SEO Manager</option>
+                <option value="Content Specialist">Content Specialist</option>
+                <option value="Technical SEO Auditor">Technical SEO Auditor</option>
+                <option value="Client Stakeholder">Client Stakeholder (Viewer)</option>
+                <option value="Member">Team Member</option>
+              </select>
+            </div>
 
-              <div>
-                <label className="font-bold text-slate-700 block mb-1">Project Role Title</label>
-                <select
-                  value={inviteRole}
-                  onChange={(e) => setInviteRole(e.target.value)}
-                  className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-slate-900 focus:outline-none focus:border-purple-500 font-medium"
-                >
-                  <option value="SEO Specialist">SEO Specialist</option>
-                  <option value="Local SEO Manager">Local SEO Manager</option>
-                  <option value="Content Specialist">Content Specialist</option>
-                  <option value="Technical SEO Auditor">Technical SEO Auditor</option>
-                  <option value="Client Stakeholder">Client Stakeholder (Viewer)</option>
-                  <option value="Member">Team Member</option>
-                </select>
+            <div>
+              <label className="font-bold text-[#142820] block mb-2">Project Permissions</label>
+              <div className="space-y-2 max-h-48 overflow-y-auto border border-[#DCE8DC] rounded-xl p-2.5 bg-[#F7FAF7]">
+                {ALL_AVAILABLE_PERMISSIONS.map((p) => {
+                  const isChecked = selectedPermissions.includes(p.id);
+                  return (
+                    <label key={p.id} className="flex items-center space-x-2.5 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={isChecked}
+                        onChange={(e) => {
+                          if (e.target.checked) {
+                            setSelectedPermissions([...selectedPermissions, p.id]);
+                          } else {
+                            setSelectedPermissions(selectedPermissions.filter((id) => id !== p.id));
+                          }
+                        }}
+                        className="rounded border-[#B8DFC9] text-[#236B4F] focus:ring-[#236B4F]"
+                      />
+                      <span className="text-[11px] font-medium text-[#2E4E40]">{p.label}</span>
+                    </label>
+                  );
+                })}
               </div>
+            </div>
 
-              <div>
-                <label className="font-bold text-slate-700 block mb-2">Project Permissions</label>
-                <div className="space-y-2 max-h-48 overflow-y-auto border border-slate-100 rounded-xl p-2.5 bg-slate-50/50">
-                  {ALL_AVAILABLE_PERMISSIONS.map((p) => {
-                    const isChecked = selectedPermissions.includes(p.id);
-                    return (
-                      <label key={p.id} className="flex items-center space-x-2.5 cursor-pointer">
-                        <input
-                          type="checkbox"
-                          checked={isChecked}
-                          onChange={(e) => {
-                            if (e.target.checked) {
-                              setSelectedPermissions([...selectedPermissions, p.id]);
-                            } else {
-                              setSelectedPermissions(selectedPermissions.filter((id) => id !== p.id));
-                            }
-                          }}
-                          className="rounded border-slate-300 text-purple-600 focus:ring-purple-500"
-                        />
-                        <span className="text-[11px] font-medium text-slate-800">{p.label}</span>
-                      </label>
-                    );
-                  })}
-                </div>
-              </div>
-
-              <div className="flex items-center justify-end space-x-2 pt-2">
-                <button
-                  type="button"
-                  onClick={() => setShowInviteModal(false)}
-                  className="px-4 py-2 bg-white border border-slate-200 text-slate-700 rounded-xl text-xs font-bold hover:bg-slate-50"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={inviting}
-                  className="px-5 py-2 btn-vibrant-primary text-xs font-bold rounded-xl shadow-md transition-all flex items-center space-x-1.5 disabled:opacity-50"
-                >
-                  <Mail className="w-3.5 h-3.5" />
-                  <span>{inviting ? 'Sending Invite...' : 'Send Project Invitation'}</span>
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
+            <div className="flex items-center justify-end space-x-2 pt-2">
+              <button
+                type="button"
+                onClick={() => setShowInviteModal(false)}
+                className="px-4 py-2 bg-white border border-[#DCE8DC] text-[#2E4E40] rounded-xl text-xs font-bold hover:bg-[#F7FAF7] cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={inviting}
+                className="px-5 py-2 btn-primary-gradient text-xs font-bold rounded-xl shadow-md transition-all flex items-center space-x-1.5 disabled:opacity-50 cursor-pointer text-white"
+              >
+                <Mail className="w-3.5 h-3.5" />
+                <span>{inviting ? 'Sending Invite...' : 'Send Project Invitation'}</span>
+              </button>
+            </div>
+          </form>
+        </Modal>
       )}
     </div>
   );

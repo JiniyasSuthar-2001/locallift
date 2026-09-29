@@ -57,13 +57,41 @@ class MapGA4PropertyRequest(BaseModel):
 class DiscoveredGBPLocation(BaseModel):
     account_id: str
     location_id: str
-    business_name: str
-    primary_category: str
+    business_name: str = "Local Business"
+    location_name: Optional[str] = None
+    primary_category: Optional[str] = "Local Business"
+    category: Optional[str] = None
+    additional_categories: Optional[List[str]] = []
     address: Optional[str] = None
+    address_lines: Optional[List[str]] = []
+    city: Optional[str] = None
+    state: Optional[str] = None
+    postal_code: Optional[str] = None
+    country: Optional[str] = None
     phone: Optional[str] = None
     website_url: Optional[str] = None
+    latitude: Optional[float] = None
+    longitude: Optional[float] = None
+    place_id: Optional[str] = None
+    maps_uri: Optional[str] = None
+    regular_hours: Optional[Dict[str, Any]] = None
+    special_hours: Optional[List[Dict[str, Any]]] = None
     is_verified: bool = False
     is_imported: bool = False
+    already_linked_to_project_id: Optional[int] = None
+    already_linked_project_name: Optional[str] = None
+    already_linked_to_current_project: Optional[bool] = False
+    nap_match: Optional[Dict[str, Any]] = None
+
+
+class BindGBPLocationRequest(BaseModel):
+    project_id: int
+    location: Dict[str, Any]
+    force_relink: bool = False
+
+
+class CreateProjectsFromGBPRequest(BaseModel):
+    locations: List[Dict[str, Any]]
 
 
 class SingleServiceStatus(BaseModel):

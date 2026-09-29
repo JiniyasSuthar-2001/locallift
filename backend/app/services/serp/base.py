@@ -9,20 +9,24 @@ class SERPCapabilities(BaseModel):
     maps_search: bool = False
     coordinate_search: bool = False
     geo_grid: bool = False
+    maps_reviews: bool = False
 
 class SERPItem(BaseModel):
     position: int
-    title: str
-    link: str = ""
-    domain: str = ""
+    title: Optional[str] = ""
+    link: Optional[str] = ""
+    domain: Optional[str] = ""
     snippet: Optional[str] = None
     item_type: str = "organic"  # organic, local_pack, featured_snippet, ad
     rating: Optional[float] = None
     reviews_count: Optional[int] = None
+    category: Optional[str] = None
     phone: Optional[str] = None
     address: Optional[str] = None
     place_id: Optional[str] = None
     data_cid: Optional[str] = None
+    data_id: Optional[str] = None
+    matched_by: Optional[str] = None
 
 class SERPResponse(BaseModel):
     provider: str
@@ -60,7 +64,7 @@ class SERPProvider(ABC):
         self,
         keyword: str,
         location: Optional[str] = None,
-        country: Optional[str] = "us",
+        country: Optional[str] = None,
         language: Optional[str] = "en",
         device: str = "desktop",
         num_results: int = 100
@@ -153,7 +157,7 @@ class NotConfiguredSERPProvider(SERPProvider):
             location=location,
             success=False,
             error_code="SERP_PROVIDER_NOT_CONFIGURED",
-            error_message="SERP provider not configured. Add your SerpApi key in Settings to enable keyword tracking and Geo-Grid searches."
+            error_message="Connect your SerpApi account in Settings to enable keyword tracking and Geo-Grid."
         )
 
     async def search_local_grid_point(
@@ -170,5 +174,5 @@ class NotConfiguredSERPProvider(SERPProvider):
             location=location_name,
             success=False,
             error_code="SERP_PROVIDER_NOT_CONFIGURED",
-            error_message="SERP provider not configured. Add your SerpApi key in Settings to enable keyword tracking and Geo-Grid searches."
+            error_message="Connect your SerpApi account in Settings to enable keyword tracking and Geo-Grid."
         )

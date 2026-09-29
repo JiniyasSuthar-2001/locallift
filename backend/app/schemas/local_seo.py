@@ -5,29 +5,88 @@ from datetime import datetime
 class ReviewOut(BaseModel):
     id: int
     project_id: int
+    external_review_id: Optional[str] = None
     source: str
     author_name: str
     author_photo_url: Optional[str] = None
-    rating: int
+    author_uri: Optional[str] = None
+    rating: Optional[int] = None
     review_text: Optional[str] = None
-    review_date: datetime
+    review_date: Optional[datetime] = None
+    published_at: Optional[str] = None
+    relative_publish_time_description: Optional[str] = None
+    google_maps_uri: Optional[str] = None
+    category: Optional[str] = None
+    category_confidence: Optional[float] = None
     response_text: Optional[str] = None
-    response_status: str  # unanswered, drafted, approved, published
+    response_status: Optional[str] = "unanswered"  # unanswered, drafted, approved, published
     response_date: Optional[datetime] = None
-    sentiment: str  # positive, neutral, negative
-    sentiment_score: float
-    topics: List[str] = []
-    created_at: datetime
+    sentiment: Optional[str] = None  # positive, neutral, negative, or None
+    sentiment_score: Optional[float] = None
+    topics: Optional[Any] = []
+    topic_list: Optional[List[str]] = []
+    created_at: Optional[datetime] = None
 
     class Config:
         from_attributes = True
+
+
+class PublicPlaceInfo(BaseModel):
+    place_id: str
+    name: str
+    formatted_address: Optional[str] = None
+    rating: Optional[float] = None
+    user_rating_count: Optional[int] = None
+    maps_url: Optional[str] = None
+    website_url: Optional[str] = None
+    last_synced_at: Optional[str] = None
+    connected_google_account: Optional[str] = None
+
+
+class PublicReviewSummary(BaseModel):
+    total_google_reviews: int = 0
+    reviews_available: int = 0
+    average_rating: Optional[float] = None
+    positive_count: int = 0
+    neutral_count: int = 0
+    negative_count: int = 0
+    categories_breakdown: Dict[str, int] = {}
+    reviews_ordering: str = "Google Relevance"
+    last_synced_at: Optional[str] = None
+    connected_google_account: Optional[str] = None
+    places_api_configured: bool = True
+    has_place_id: bool = True
+
+
+class PublicReviewsResponse(BaseModel):
+    status: str
+    error: Optional[str] = None
+    place: Optional[PublicPlaceInfo] = None
+    reviews: List[ReviewOut] = []
+    summary: Optional[PublicReviewSummary] = None
+
+
+class PlaceSelectRequest(BaseModel):
+    project_id: int
+    place_id: str
+    name: Optional[str] = None
+    formatted_address: Optional[str] = None
+    maps_url: Optional[str] = None
+    website_url: Optional[str] = None
+    rating: Optional[float] = None
+    user_rating_count: Optional[int] = None
+    latitude: Optional[float] = None
+    longitude: Optional[float] = None
+
 
 class ReviewDraftResponse(BaseModel):
     review_id: int
     custom_tone: Optional[str] = "professional_friendly"
 
+
 class ReviewApprovePublish(BaseModel):
     response_text: str
+    action: Optional[str] = "approved"
 
 class CitationCreate(BaseModel):
     project_id: int
@@ -37,8 +96,8 @@ class CitationCreate(BaseModel):
     listing_url: Optional[str] = None
     category: Optional[str] = "General Directory"
     domain_authority: Optional[int] = None
-    status: Optional[str] = "listed"
-    nap_status: Optional[str] = "match"
+    status: Optional[str] = "NOT_VERIFIED"
+    nap_status: Optional[str] = "not_checked"
     citation_type: Optional[str] = "USER_PROVIDED"
     verification_status: Optional[str] = "NOT_VERIFIED"
     confidence: Optional[float] = None
@@ -69,16 +128,47 @@ class CitationOut(BaseModel):
     class Config:
         from_attributes = True
 
+class CitationDistributionOut(BaseModel):
+    health_score: int
+    total_directories: int
+    total_citations: Optional[int] = 0
+    submitted_count: int
+    approved_count: int
+    verified_count: Optional[int] = 0
+    observed_count: Optional[int] = 0
+    mismatch_count: Optional[int] = 0
+    unable_to_verify_count: Optional[int] = 0
+    pending_count: int
+    rejected_count: int
+    failed_count: int
+    nap_consistency_pct: int
+    missing_count: int
+    completion_pct: int
+    last_scanned_at: Optional[datetime] = None
+    canonical_profile: Optional[Dict[str, Any]] = None
+    nap_comparisons: Optional[List[Dict[str, Any]]] = []
+    citations: List[CitationOut]
+
+class CitationStatusUpdate(BaseModel):
+    status: str
+    nap_status: Optional[str] = None
+    listing_url: Optional[str] = None
+
 class CompetitorCreate(BaseModel):
     project_id: int
     name: str
     domain: Optional[str] = None
+    website: Optional[str] = None
     gbp_name: Optional[str] = None
     rating: Optional[float] = None
     reviews_count: Optional[int] = 0
     place_id: Optional[str] = None
     categories: Optional[List[str]] = []
+    category: Optional[str] = None
     gbp_status: Optional[str] = None
+    address: Optional[str] = None
+    phone: Optional[str] = None
+    source: Optional[str] = "manual"
 
 
 class NAPRecordOut(BaseModel):
@@ -103,6 +193,7 @@ class CompetitorOut(BaseModel):
     project_id: int
     name: str
     domain: str
+    website: Optional[str] = None
     gbp_name: Optional[str] = None
     place_id: Optional[str] = None
     categories: List[str] = []
@@ -116,11 +207,50 @@ class CompetitorOut(BaseModel):
     top_keywords_count: int = 0
     tracked_keywords_overlap: List[str] = []
     avg_maps_rank: Optional[float] = None
+    source: str = "manual"
+    address: Optional[str] = None
+    phone: Optional[str] = None
+    best_rank: Optional[int] = None
+    worst_rank: Optional[int] = None
+    grid_appearances: int = 0
+    keywords_found: List[str] = []
+    scans_data: List[Dict[str, Any]] = []
+    last_seen_at: Optional[datetime] = None
+    created_at: Optional[datetime] = None
     comparison_data: Dict[str, Any] = {}
     opportunities_found: List[Any] = []
 
     class Config:
         from_attributes = True
+
+
+class CompetitorCandidateOut(BaseModel):
+    title: str
+    domain: Optional[str] = None
+    rating: Optional[float] = None
+    reviews_count: Optional[int] = None
+    address: Optional[str] = None
+    phone: Optional[str] = None
+    place_id: Optional[str] = None
+    source: str = "local_pack"
+    position: Optional[int] = None
+    category: Optional[str] = None
+    is_already_tracked: bool = False
+
+
+class CompetitorSearchRequest(BaseModel):
+    project_id: int
+    query: Optional[str] = None
+    location: Optional[str] = None
+    country: Optional[str] = None
+
+
+class CompetitorSearchResponse(BaseModel):
+    query: str
+    location: Optional[str] = None
+    total_found: int
+    results: List[CompetitorCandidateOut] = []
+
 
 
 class BusinessProfileBase(BaseModel):
@@ -187,7 +317,7 @@ class SchemaRecordOut(BaseModel):
     page_type: Optional[str] = "Homepage"
     business_type: Optional[str] = "LocalBusiness"
     is_valid: bool
-    quality_score: Optional[int] = 85
+    quality_score: Optional[int] = None
     score_breakdown: Optional[Dict[str, Any]] = {}
     detected_types: List[str] = []
     applicable_schemas: Optional[Dict[str, Any]] = {}
@@ -207,9 +337,9 @@ class SchemaRecordOut(BaseModel):
         from_attributes = True
 
 class SchemaGenerateRequest(BaseModel):
-    business_name: str
+    business_name: Optional[str] = None
     business_type: str = "LocalBusiness"
-    url: str
+    url: Optional[str] = None
     phone: Optional[str] = None
     street_address: Optional[str] = None
     city: Optional[str] = None
@@ -225,15 +355,33 @@ class SchemaGenerateRequest(BaseModel):
     service_description: Optional[str] = None
     breadcrumbs: Optional[List[Dict[str, str]]] = None
     include_graph: Optional[bool] = True
+    # Universal support
+    custom_properties: Optional[Dict[str, Any]] = None
+    connected_entities: Optional[List[Dict[str, Any]]] = None
 
 class SchemaValidateRequest(BaseModel):
     json_ld: str
+    project_id: Optional[int] = None
+
+class SchemaValidateUrlRequest(BaseModel):
+    url: str
+    project_id: Optional[int] = None
+
+class SchemaDraftSaveRequest(BaseModel):
+    project_id: int
+    page_url: str
+    schema_type: str
+    generated_json_ld: str
+    entities: Optional[List[Dict[str, Any]]] = None
 
 class SchemaValidateResponse(BaseModel):
     is_valid: bool
+    syntax_valid: Optional[bool] = True
     errors: List[str] = []
     warnings: List[str] = []
     entities: List[str] = []
+    rich_results: Optional[List[Dict[str, Any]]] = []
+    nap_status: Optional[str] = "Consistent"
 
 class SchemaIntelligenceSummaryOut(BaseModel):
     project_id: int
@@ -243,6 +391,8 @@ class SchemaIntelligenceSummaryOut(BaseModel):
     deductions: List[str] = []
     stats: Dict[str, int]
     tier_1_status: Dict[str, Dict[str, Any]]
+    tier1_coverage: Optional[List[Dict[str, Any]]] = None
     industry_type: str
     records: List[SchemaRecordOut]
     recommendations: List[Dict[str, Any]]
+

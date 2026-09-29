@@ -5,6 +5,7 @@ import { ProjectProvider } from './context/ProjectContext';
 import { AppLayout } from './components/layout/AppLayout';
 
 import { Dashboard } from './views/Dashboard';
+import { UserCentralDashboardView } from './views/UserCentralDashboardView';
 import { WebsiteAuditView } from './views/WebsiteAuditView';
 import { LocalSEOAuditView } from './views/LocalSEOAuditView';
 import { GBPView } from './views/GBPView';
@@ -13,6 +14,7 @@ import { GA4View } from './views/GA4View';
 import { KeywordsView } from './views/KeywordsView';
 import { LocalGridRankingsView } from './views/LocalGridRankingsView';
 import { ReviewsView } from './views/ReviewsView';
+import { ProductsServicesView } from './views/ProductsServicesView';
 import { CitationsView } from './views/CitationsView';
 import { NAPConsistencyView } from './views/NAPConsistencyView';
 import { CompetitorsView } from './views/CompetitorsView';
@@ -32,22 +34,39 @@ import { ProjectDetailsView } from './views/ProjectDetailsView';
 import { TeamDirectoryView } from './views/TeamDirectoryView';
 import { InvitationNotificationModal } from './components/team/InvitationNotificationModal';
 import { ScanProvider } from './context/ScanContext';
+import { TaskManagerProvider } from './context/TaskManagerContext';
 import { ScanProgressModal } from './components/scan/ScanProgressModal';
 import { ScanCompleteModal } from './components/scan/ScanCompleteModal';
 
 import { AuthModal } from './components/auth/AuthModal';
 
+import { MasterPlaceLayout } from './views/masterplace/MasterPlaceLayout';
+import { MasterPlaceOverview } from './views/masterplace/MasterPlaceOverview';
+import { MasterPlaceCustomers } from './views/masterplace/MasterPlaceCustomers';
+import { MasterPlaceWebsites } from './views/masterplace/MasterPlaceWebsites';
+import { MasterPlaceGoogleAPIs } from './views/masterplace/MasterPlaceGoogleAPIs';
+import { MasterPlaceSERP } from './views/masterplace/MasterPlaceSERP';
+import { MasterPlaceAI } from './views/masterplace/MasterPlaceAI';
+import { MasterPlaceJobs } from './views/masterplace/MasterPlaceJobs';
+import { MasterPlaceHealth } from './views/masterplace/MasterPlaceHealth';
+import { MasterPlaceAlerts } from './views/masterplace/MasterPlaceAlerts';
+import { MasterPlaceAudit } from './views/masterplace/MasterPlaceAudit';
+import { MasterPlaceSecurity } from './views/masterplace/MasterPlaceSecurity';
+import { MasterPlaceSettings } from './views/masterplace/MasterPlaceSettings';
+
 const AuthenticatedApp: React.FC = () => {
   return (
     <ProjectProvider>
-      <ScanProvider>
-        <InvitationNotificationModal />
-        <ScanProgressModal />
-        <ScanCompleteModal />
-        <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
-          <Routes>
-            <Route path="/" element={<AppLayout />}>
+      <TaskManagerProvider>
+        <ScanProvider>
+          <InvitationNotificationModal />
+          <ScanProgressModal />
+          <ScanCompleteModal />
+        <Routes>
+          <Route path="/" element={<AppLayout />}>
             <Route index element={<Dashboard />} />
+            <Route path="dashboard" element={<UserCentralDashboardView />} />
+            <Route path="central-dashboard" element={<UserCentralDashboardView />} />
             <Route path="onboarding" element={<OnboardingWizard />} />
             
             {/* Project Management & Team */}
@@ -60,6 +79,8 @@ const AuthenticatedApp: React.FC = () => {
             <Route path="audits/website" element={<WebsiteAuditView />} />
             <Route path="audits/local" element={<LocalSEOAuditView />} />
             <Route path="seo/schema" element={<SchemaGeneratorView />} />
+            <Route path="schemas" element={<Navigate to="/seo/schema" replace />} />
+            <Route path="schema" element={<Navigate to="/seo/schema" replace />} />
             <Route path="seo/content-gaps" element={<ContentGapsView />} />
 
             {/* Google & Integrations */}
@@ -76,8 +97,10 @@ const AuthenticatedApp: React.FC = () => {
 
             {/* Local & Reputation */}
             <Route path="local/reviews" element={<ReviewsView />} />
+            <Route path="local/products-services" element={<ProductsServicesView />} />
             <Route path="local/citations" element={<CitationsView />} />
-            <Route path="local/nap" element={<NAPConsistencyView />} />
+            <Route path="citations" element={<Navigate to="/local/citations" replace />} />
+            <Route path="local/nap" element={<Navigate to="/local/citations" replace />} />
             <Route path="local/competitors" element={<CompetitorsView />} />
 
             {/* Operations & AI */}
@@ -90,9 +113,28 @@ const AuthenticatedApp: React.FC = () => {
 
             <Route path="*" element={<Navigate to="/" replace />} />
           </Route>
+
+          {/* MasterPlace Platform Owner Control Center */}
+          <Route path="/masterplace" element={<MasterPlaceLayout />}>
+            <Route index element={<MasterPlaceOverview />} />
+            <Route path="customers" element={<MasterPlaceCustomers />} />
+            <Route path="organizations" element={<Navigate to="/masterplace/customers" replace />} />
+            <Route path="websites" element={<MasterPlaceWebsites />} />
+            <Route path="projects" element={<Navigate to="/masterplace/websites" replace />} />
+            <Route path="google" element={<MasterPlaceGoogleAPIs />} />
+            <Route path="serp" element={<MasterPlaceSERP />} />
+            <Route path="ai" element={<MasterPlaceAI />} />
+            <Route path="jobs" element={<MasterPlaceJobs />} />
+            <Route path="health" element={<MasterPlaceHealth />} />
+            <Route path="alerts" element={<MasterPlaceAlerts />} />
+            <Route path="audit" element={<MasterPlaceAudit />} />
+            <Route path="security" element={<MasterPlaceSecurity />} />
+            <Route path="settings" element={<MasterPlaceSettings />} />
+            <Route path="*" element={<Navigate to="/masterplace" replace />} />
+          </Route>
         </Routes>
-      </BrowserRouter>
-      </ScanProvider>
+        </ScanProvider>
+      </TaskManagerProvider>
     </ProjectProvider>
   );
 };
@@ -136,9 +178,11 @@ const AppContent: React.FC = () => {
 
 export const App: React.FC = () => {
   return (
-    <AuthProvider>
-      <AppContent />
-    </AuthProvider>
+    <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+      <AuthProvider>
+        <AppContent />
+      </AuthProvider>
+    </BrowserRouter>
   );
 };
 

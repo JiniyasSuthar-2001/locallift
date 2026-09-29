@@ -15,6 +15,7 @@ from sqlalchemy.orm import selectinload
 
 from app.models.local_seo import BusinessProfile, VerificationStatus
 from app.models.project import Project, Location
+from app.models.gbp import GoogleBusinessProfile
 from app.schemas.local_seo import BusinessProfileUpdate
 
 logger = logging.getLogger("locallift.business_profile")
@@ -25,7 +26,7 @@ class BusinessProfileService:
     async def get_or_create_canonical_profile(
         project_id: int,
         db: AsyncSession
-    ) -> BusinessProfile:
+    ) -> Optional[BusinessProfile]:
         """
         Retrieves existing canonical BusinessProfile or initializes one from
         the Project and primary Location records.
@@ -46,9 +47,16 @@ class BusinessProfileService:
         proj_res = await db.execute(proj_stmt)
         project = proj_res.scalars().first()
         if not project:
-            raise ValueError(f"Project {project_id} does not exist.")
+            return None
 
-        primary_loc = project.locations[0] if project.locations else None
+        # Resolve location: 1. Location matching bound GBP -> 2. Unique location -> 3. None if ambiguous
+        primary_loc = None
+        gbp_res = await db.execute(select(GoogleBusinessProfile).where(GoogleBusinessProfile.project_id == project_id))
+        gbp = gbp_res.scalars().first()
+        if gbp and gbp.location_id and project.locations:
+            primary_loc = next((l for l in project.locations if l.id == gbp.location_id), None)
+        elif project.locations and len(project.locations) == 1:
+            primary_loc = project.locations[0]
 
         profile = BusinessProfile(
             project_id=project_id,

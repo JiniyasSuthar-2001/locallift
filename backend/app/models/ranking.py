@@ -1,5 +1,5 @@
 from datetime import datetime, timezone
-from sqlalchemy import Column, Integer, String, Float, DateTime, ForeignKey, Text, JSON, UniqueConstraint
+from sqlalchemy import Column, Integer, String, Float, DateTime, ForeignKey, Text, JSON, UniqueConstraint, Boolean
 from sqlalchemy.orm import relationship
 from app.database import Base
 
@@ -15,16 +15,26 @@ class Keyword(Base):
     difficulty = Column(Integer, nullable=True, default=None)
     target_location = Column(String(255), nullable=True)
     
-    current_rank = Column(Integer, nullable=True)
+    # Authoritative Separate Ranking Surfaces
+    current_rank = Column(Integer, nullable=True)  # Primary display / lowest positive rank
     previous_rank = Column(Integer, nullable=True)
+    organic_rank = Column(Integer, nullable=True)
+    local_pack_rank = Column(Integer, nullable=True)
+    maps_rank = Column(Integer, nullable=True)
+    rank_status = Column(String(50), default="NOT_CHECKED")  # NOT_CHECKED, CHECKING, RANKED, NOT_IN_TOP_100, PROVIDER_ERROR, NOT_CONFIGURED, TIMEOUT
+    
     target_rank = Column(Integer, nullable=True, default=None)
     ranking_url = Column(String(1000), nullable=True)
+    ranking_title = Column(String(500), nullable=True)
     serp_type = Column(String(50), default="Local Pack")  # Local Pack, Organic, Featured Snippet
     
     opportunity_score = Column(String(20), nullable=True, default=None)  # HIGH, MEDIUM, LOW
     business_relevance = Column(String(20), default="High")
     
-    last_checked_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    last_checked_at = Column(DateTime, nullable=True, default=None)
+    last_attempted_at = Column(DateTime, nullable=True, default=None)
+    last_successful_check_at = Column(DateTime, nullable=True, default=None)
+    last_failed_at = Column(DateTime, nullable=True, default=None)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
     project = relationship("Project", back_populates="keywords")
@@ -38,7 +48,14 @@ class KeywordRanking(Base):
     keyword_id = Column(Integer, ForeignKey("keywords.id", ondelete="CASCADE"), nullable=False)
     location_name = Column(String(255), nullable=False)
     rank_position = Column(Integer, nullable=True)
+    organic_rank = Column(Integer, nullable=True)
+    local_pack_rank = Column(Integer, nullable=True)
+    maps_rank = Column(Integer, nullable=True)
+    rank_status = Column(String(50), default="RANKED")  # RANKED, NOT_IN_TOP_100, PROVIDER_ERROR, NOT_CONFIGURED, TIMEOUT
     serp_type = Column(String(50), default="Local Pack")
+    ranking_url = Column(String(1000), nullable=True)
+    country = Column(String(10), default="us")
+    device = Column(String(20), default="desktop")
     checked_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
     keyword_rel = relationship("Keyword", back_populates="rank_history")
@@ -53,6 +70,9 @@ class GeoGridScan(Base):
     center_name = Column(String(255), nullable=True, default=None)
     center_lat = Column(Float, nullable=False)
     center_lng = Column(Float, nullable=False)
+    location_precision = Column(String(50), nullable=True, default="EXACT")  # EXACT, ADDRESS_RESOLVED, CITY_LEVEL, UNKNOWN
+    center_source = Column(String(50), nullable=True, default=None)          # USER_PROVIDED_COORDINATES, STORED_BUSINESS_COORDINATES, GOOGLE_PLACES, PLACE_ID_RESOLVED, GEOCODED_ADDRESS, CITY_FALLBACK
+    center_address = Column(String(500), nullable=True, default=None)
     radius_km = Column(Float, default=10.0)
     grid_size = Column(Integer, default=5)  # 5x5 grid
     
@@ -60,7 +80,7 @@ class GeoGridScan(Base):
     local_visibility_pct = Column(Float, default=0.0)
     
     # Real execution statistics
-    scan_status = Column(String(50), default="completed")  # completed, completed_with_errors, failed
+    scan_status = Column(String(50), default="completed")  # running, completed, completed_with_errors, failed, cancelled
     total_points = Column(Integer, default=25)
     completed_points = Column(Integer, default=0)
     ranking_found_points = Column(Integer, default=0)
@@ -70,9 +90,16 @@ class GeoGridScan(Base):
     successful_points = Column(Integer, default=0)
     failed_points = Column(Integer, default=0)
     
+    # Cooperative cancellation fields
+    cancel_requested = Column(Boolean, default=False, nullable=False)
+    cancelled_at = Column(DateTime, nullable=True, default=None)
+    started_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=True)
+    cancellation_reason = Column(String(255), nullable=True, default=None)
+
     # Grid pins matrix data (JSON cache for legacy/fast rendering)
     grid_points = Column(JSON, default=list)
     scanned_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    completed_at = Column(DateTime, nullable=True, default=None)
 
     project = relationship("Project", back_populates="geo_grid_scans")
     keyword_rel = relationship("Keyword", back_populates="grid_scans")
@@ -92,6 +119,7 @@ class GeoGridPointResult(Base):
     col = Column(Integer, nullable=True)
     latitude = Column(Float, nullable=False)
     longitude = Column(Float, nullable=False)
+    area_name = Column(String(255), nullable=True, default=None)
     
     keyword = Column(String(255), nullable=False)
     provider = Column(String(50), nullable=False)
@@ -102,6 +130,10 @@ class GeoGridPointResult(Base):
     matched_place_id = Column(String(255), nullable=True)
     matched_domain = Column(String(255), nullable=True)
     ranking_url = Column(String(1000), nullable=True)
+    
+    distance_km = Column(Float, nullable=True)
+    direction = Column(String(50), nullable=True)
+    competitors = Column(JSON, default=list)
     
     searched_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
     error = Column(Text, nullable=True)

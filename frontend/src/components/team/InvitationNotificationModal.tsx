@@ -15,6 +15,7 @@ import { useProject } from '../../context/ProjectContext';
 import { useAuth } from '../../context/AuthContext';
 import { getErrorMessage } from '../../utils/error';
 import { UserPendingInvitation } from '../../types';
+import { Portal } from '../ui/Portal';
 
 export const InvitationNotificationModal: React.FC = () => {
   const { isAuthenticated } = useAuth();
@@ -118,107 +119,109 @@ export const InvitationNotificationModal: React.FC = () => {
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fade-in">
-      <div className="bg-white rounded-3xl max-w-lg w-full p-6 sm:p-7 shadow-2xl border border-slate-200 space-y-5">
-        {/* Header */}
-        <div className="flex items-center justify-between border-b border-slate-100 pb-4">
-          <div className="flex items-center space-x-3">
-            <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-purple-600 to-pink-600 flex items-center justify-center text-white shadow-md shadow-purple-500/20">
-              <Sparkles className="w-5 h-5 text-white" />
+    <Portal>
+      <div className="fixed inset-0 z-[9999] flex items-center justify-center p-3 sm:p-4 bg-slate-900/75 backdrop-blur-[2px] animate-fade-in">
+        <div className="bg-white rounded-2xl sm:rounded-3xl max-w-lg w-full p-6 sm:p-7 shadow-2xl border border-[#DCE8DC] space-y-5">
+          {/* Header */}
+          <div className="flex items-center justify-between border-b border-[#DCE8DC] pb-4">
+            <div className="flex items-center space-x-3">
+              <div className="w-10 h-10 rounded-2xl bg-[#EAF2EA] border border-[#B8DFC9] flex items-center justify-center text-[#236B4F] shadow-sm">
+                <Sparkles className="w-5 h-5 text-[#236B4F]" />
+              </div>
+              <div>
+                <h3 className="text-base font-black text-[#142820]">Project Team Invitation</h3>
+                <p className="text-xs text-[#587568] font-medium">
+                  Invitation {currentIndex + 1} of {invitations.length}
+                </p>
+              </div>
             </div>
+
+            <button
+              onClick={() => setMinimized(true)}
+              className="text-xs text-[#587568] hover:text-[#142820] font-bold px-2.5 py-1.5 rounded-lg hover:bg-[#EAF2EA] transition-all cursor-pointer"
+            >
+              Decide Later
+            </button>
+          </div>
+
+          {/* Feedback Alert */}
+          {feedback && (
+            <div
+              className={`p-3 rounded-xl flex items-center space-x-2 text-xs font-bold ${
+                feedback.type === 'success'
+                  ? 'bg-emerald-50 text-emerald-800 border border-emerald-200'
+                  : 'bg-rose-50 text-rose-800 border border-rose-200'
+              }`}
+            >
+              {feedback.type === 'success' ? (
+                <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+              ) : (
+                <XCircle className="w-4 h-4 text-rose-600 shrink-0" />
+              )}
+              <span>{feedback.message}</span>
+            </div>
+          )}
+
+          {/* Invitation Card */}
+          <div className="p-4 rounded-2xl bg-[#F7FAF7] border border-[#DCE8DC] space-y-4">
             <div>
-              <h3 className="text-base font-black text-slate-900">Project Team Invitation</h3>
-              <p className="text-xs text-slate-400 font-medium">
-                Invitation {currentIndex + 1} of {invitations.length}
+              <div className="text-[11px] uppercase font-black tracking-wider text-[#236B4F] mb-1">
+                {currentInvite.organization_name}
+              </div>
+              <h4 className="text-lg font-black text-[#142820] leading-tight">
+                {currentInvite.project_name}
+              </h4>
+              <p className="text-xs text-[#587568] mt-0.5">
+                Invited by <strong className="text-[#142820]">{currentInvite.invited_by_name}</strong> to collaborate as <span className="font-bold text-[#236B4F]">{currentInvite.role}</span>.
               </p>
             </div>
-          </div>
 
-          <button
-            onClick={() => setMinimized(true)}
-            className="text-xs text-slate-400 hover:text-slate-600 font-bold px-2 py-1 rounded-lg hover:bg-slate-100 transition-all"
-          >
-            Decide Later
-          </button>
-        </div>
-
-        {/* Feedback Alert */}
-        {feedback && (
-          <div
-            className={`p-3 rounded-xl flex items-center space-x-2 text-xs font-bold ${
-              feedback.type === 'success'
-                ? 'bg-emerald-50 text-emerald-800 border border-emerald-200'
-                : 'bg-rose-50 text-rose-800 border border-rose-200'
-            }`}
-          >
-            {feedback.type === 'success' ? (
-              <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-            ) : (
-              <XCircle className="w-4 h-4 text-rose-600 shrink-0" />
-            )}
-            <span>{feedback.message}</span>
-          </div>
-        )}
-
-        {/* Invitation Card */}
-        <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200/80 space-y-4">
-          <div>
-            <div className="text-[11px] uppercase font-black tracking-wider text-purple-700 mb-1">
-              {currentInvite.organization_name}
+            {/* Permissions Breakdown */}
+            <div>
+              <div className="text-[11px] font-bold text-[#2E4E40] mb-2 flex items-center space-x-1.5">
+                <ShieldCheck className="w-3.5 h-3.5 text-[#236B4F]" />
+                <span>Assigned Project Permissions:</span>
+              </div>
+              <div className="flex flex-wrap gap-1.5">
+                {currentInvite.permissions.map(perm => (
+                  <span
+                    key={perm}
+                    className="px-2.5 py-0.5 bg-white border border-[#DCE8DC] rounded-lg text-[10px] font-bold text-[#2E4E40] shadow-2xs"
+                  >
+                    {perm.replace('_', ' ')}
+                  </span>
+                ))}
+              </div>
             </div>
-            <h4 className="text-lg font-black text-slate-900 leading-tight">
-              {currentInvite.project_name}
-            </h4>
-            <p className="text-xs text-slate-500 mt-0.5">
-              Invited by <strong className="text-slate-800">{currentInvite.invited_by_name}</strong> to collaborate as <span className="font-bold text-purple-700">{currentInvite.role}</span>.
-            </p>
-          </div>
 
-          {/* Permissions Breakdown */}
-          <div>
-            <div className="text-[11px] font-bold text-slate-700 mb-2 flex items-center space-x-1.5">
-              <ShieldCheck className="w-3.5 h-3.5 text-purple-600" />
-              <span>Assigned Project Permissions:</span>
-            </div>
-            <div className="flex flex-wrap gap-1.5">
-              {currentInvite.permissions.map(perm => (
-                <span
-                  key={perm}
-                  className="px-2.5 py-0.5 bg-white border border-slate-200 rounded-lg text-[10px] font-bold text-slate-700 shadow-2xs"
-                >
-                  {perm.replace('_', ' ')}
-                </span>
-              ))}
+            <div className="flex items-center space-x-2 text-[11px] text-[#587568] font-medium pt-1">
+              <Clock className="w-3.5 h-3.5 text-[#587568]" />
+              <span>Invitation expires: {new Date(currentInvite.expires_at).toLocaleDateString()}</span>
             </div>
           </div>
 
-          <div className="flex items-center space-x-2 text-[11px] text-slate-400 font-medium pt-1">
-            <Clock className="w-3.5 h-3.5" />
-            <span>Invitation expires: {new Date(currentInvite.expires_at).toLocaleDateString()}</span>
+          {/* Actions */}
+          <div className="flex items-center justify-end space-x-3 pt-2">
+            <button
+              type="button"
+              disabled={submitting}
+              onClick={() => handleDecline(currentInvite.id)}
+              className="px-4 py-2.5 bg-white border border-[#DCE8DC] hover:bg-[#F7FAF7] text-[#2E4E40] text-xs font-bold rounded-xl transition-all disabled:opacity-50 cursor-pointer"
+            >
+              Decline
+            </button>
+            <button
+              type="button"
+              disabled={submitting}
+              onClick={() => handleAccept(currentInvite.id)}
+              className="px-6 py-2.5 btn-primary-gradient text-xs font-bold rounded-xl shadow-md transition-all flex items-center space-x-2 disabled:opacity-50 cursor-pointer text-white"
+            >
+              <CheckCircle2 className="w-4 h-4" />
+              <span>{submitting ? 'Accepting...' : 'Accept Invitation'}</span>
+            </button>
           </div>
-        </div>
-
-        {/* Actions */}
-        <div className="flex items-center justify-end space-x-3 pt-2">
-          <button
-            type="button"
-            disabled={submitting}
-            onClick={() => handleDecline(currentInvite.id)}
-            className="px-4 py-2.5 bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 text-xs font-bold rounded-xl transition-all disabled:opacity-50"
-          >
-            Decline
-          </button>
-          <button
-            type="button"
-            disabled={submitting}
-            onClick={() => handleAccept(currentInvite.id)}
-            className="px-6 py-2.5 btn-vibrant-primary text-xs font-bold rounded-xl shadow-md transition-all flex items-center space-x-2 disabled:opacity-50"
-          >
-            <CheckCircle2 className="w-4 h-4" />
-            <span>{submitting ? 'Accepting...' : 'Accept Invitation'}</span>
-          </button>
         </div>
       </div>
-    </div>
+    </Portal>
   );
 };

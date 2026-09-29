@@ -111,6 +111,9 @@ class WebsitePage(Base):
     is_indexable = Column(Boolean, default=True)
     load_time_ms = Column(Integer, default=0)
     schema_types = Column(JSON, default=list)
+    schema_data = Column(JSON, default=dict)
+    phones_found = Column(JSON, default=list)
+    emails_found = Column(JSON, default=list)
     images_count = Column(Integer, default=0)
     missing_alt_count = Column(Integer, default=0)
     internal_links_count = Column(Integer, default=0)
@@ -127,7 +130,7 @@ class SEOAudit(Base):
     id = Column(Integer, primary_key=True, index=True)
     project_id = Column(Integer, ForeignKey("projects.id", ondelete="CASCADE"), nullable=False)
     audit_type = Column(String(50), default="technical")  # technical, local, gbp, schema
-    overall_score = Column(Integer, default=80)
+    overall_score = Column(Integer, nullable=True, default=None)
     pages_analyzed = Column(Integer, default=0)
     critical_issues = Column(Integer, default=0)
     warnings = Column(Integer, default=0)
@@ -197,6 +200,7 @@ class LocalAuditRun(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     project_id = Column(Integer, ForeignKey("projects.id", ondelete="CASCADE"), nullable=False, index=True)
+    crawl_id = Column(Integer, nullable=True)
     
     framework_version = Column(String(50), default="local_seo_v1")
     status = Column(String(50), default="completed")  # running, completed, completed_with_warnings, failed
@@ -232,6 +236,19 @@ class LocalAuditFinding(Base):
     status = Column(String(50), default="NOT_VERIFIED")  # PASS, PARTIAL, FAIL, NOT_VERIFIED, NOT_APPLICABLE, ERROR
     severity = Column(String(50), default="warning")  # critical, warning, opportunity, info
     score_impact = Column(Float, default=0.0)  # Points awarded or deducted
+    
+    # Structured forensic detail fields
+    rule_definition = Column(Text, nullable=True)
+    what_was_checked = Column(Text, nullable=True)
+    observed_value = Column(Text, nullable=True)
+    expected_value = Column(Text, nullable=True)
+    why_it_matters = Column(Text, nullable=True)
+    affected_urls = Column(JSON, default=list)
+    technical_evidence = Column(JSON, default=dict)
+    remediation_steps = Column(JSON, default=list)
+    verification_steps = Column(JSON, default=list)
+    crawl_id = Column(Integer, nullable=True)
+    source_timestamp = Column(DateTime, nullable=True)
     
     evidence = Column(Text, nullable=True)
     source = Column(String(100), nullable=True)  # GBP API, Website Crawl, Directory Citation, SERP

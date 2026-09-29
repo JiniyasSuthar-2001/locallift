@@ -127,15 +127,22 @@ class OrganizationSERPConfig(Base):
     id = Column(Integer, primary_key=True, index=True)
     organization_id = Column(Integer, ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False, unique=True, index=True)
 
-    provider = Column(String(50), default="serpapi", nullable=False)  # serpapi, openserp, not_configured
+    provider = Column(String(50), default="serpapi", nullable=False)  # serpapi, serper, dataforseo, searchapi, openserp, not_configured
     base_url = Column(String(500), nullable=True)  # Base URL for OpenSERP or custom proxy
-    auth_mode = Column(String(50), default="api_key")  # api_key, none
+    auth_mode = Column(String(50), default="api_key")  # api_key, basic_auth, none
     api_key = Column(Text, nullable=True)  # Encrypted at rest via encrypt_token
+    credentials_extra = Column(Text, nullable=True)  # Encrypted JSON at rest for multi-field credentials (e.g. login/password)
+
     capabilities = Column(JSON, default=dict)
+    account_info = Column(JSON, default=dict)  # plan_id, plan_name, account_email, status, etc.
+    usage_info = Column(JSON, default=dict)    # model, used, limit, remaining, balance, currency, unit, percentage_used, renewal_date, etc.
+
     enabled = Column(Boolean, default=True)
     connection_status = Column(String(50), default="not_configured")  # not_configured, connected, invalid_key, quota_exceeded, error
     status_message = Column(Text, nullable=True)
     last_tested_at = Column(DateTime, nullable=True)
+    last_synced_at = Column(DateTime, nullable=True)
+    last_sync_error = Column(Text, nullable=True)
 
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
     updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))

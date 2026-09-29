@@ -19,10 +19,18 @@ class KeywordOut(KeywordBase):
     project_id: int
     current_rank: Optional[int] = None
     previous_rank: Optional[int] = None
+    organic_rank: Optional[int] = None
+    local_pack_rank: Optional[int] = None
+    maps_rank: Optional[int] = None
+    rank_status: Optional[str] = "NOT_CHECKED"
     ranking_url: Optional[str] = None
+    ranking_title: Optional[str] = None
     serp_type: str = "Local Pack"
     opportunity_score: Optional[str] = None
-    last_checked_at: datetime
+    last_checked_at: Optional[datetime] = None
+    last_attempted_at: Optional[datetime] = None
+    last_successful_check_at: Optional[datetime] = None
+    last_failed_at: Optional[datetime] = None
     created_at: datetime
 
     class Config:
@@ -34,13 +42,19 @@ class KeywordCheckResponse(BaseModel):
     target_domain: str
     current_rank: Optional[int] = None
     previous_rank: Optional[int] = None
+    organic_rank: Optional[int] = None
+    local_pack_rank: Optional[int] = None
+    maps_rank: Optional[int] = None
     rank_movement: Optional[int] = None
+    movement_label: Optional[str] = None
     ranking_url: Optional[str] = None
+    ranking_title: Optional[str] = None
     serp_type: str = "Local Pack"
     provider: str = "serpapi"
-    status: str = "checked"  # checked, not_found, provider_error, not_configured
+    status: str = "checked"  # checked, not_in_top_100, provider_error, not_configured, timeout
     error_message: Optional[str] = None
-    last_checked_at: datetime
+    last_checked_at: Optional[datetime] = None
+
 
 class KeywordCheckAllResponse(BaseModel):
     project_id: int
@@ -60,6 +74,10 @@ class GeoGridScanOut(BaseModel):
     center_name: Optional[str] = "Business Location"
     center_lat: float
     center_lng: float
+    location_precision: Optional[str] = "EXACT"
+    center_source: Optional[str] = None
+    center_address: Optional[str] = None
+    warning_message: Optional[str] = None
     radius_km: float
     grid_size: int
     average_rank: Optional[float] = None
@@ -78,6 +96,7 @@ class GeoGridScanOut(BaseModel):
     provider: Optional[Dict[str, Any]] = None
     center: Optional[Dict[str, float]] = None
     scanned_at: datetime
+    completed_at: Optional[datetime] = None
 
     class Config:
         from_attributes = True
@@ -89,7 +108,7 @@ class GeoGridScanRequest(BaseModel):
     center_name: Optional[str] = None
     center_lat: Optional[float] = None
     center_lng: Optional[float] = None
-    radius_km: Optional[float] = 10.0
+    radius_km: Optional[float] = 5.0
     grid_size: Optional[int] = 5
 
     @field_validator("center_lat")

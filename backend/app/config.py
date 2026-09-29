@@ -2,7 +2,7 @@ import os
 import logging
 from pathlib import Path
 from pydantic_settings import BaseSettings
-from typing import List
+from typing import List, Optional, Union
 
 logger = logging.getLogger("locallift.config")
 
@@ -27,8 +27,15 @@ class Settings(BaseSettings):
     
     # Security
     SECRET_KEY: str = "locallift-super-secret-key-production-change-me-12345"
+    CURRENT_ENCRYPTION_KEY: Optional[str] = None
+    LEGACY_ENCRYPTION_KEY: Optional[str] = None
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24 * 7  # 7 days
+    
+    # Auth Security & Rate Limiting
+    AUTH_RATE_LIMIT_MAX_ATTEMPTS: int = 5
+    AUTH_RATE_LIMIT_WINDOW_SECONDS: int = 300
+    AUTH_LOCKOUT_DURATION_SECONDS: int = 900
     
     # Database
     DATABASE_URL: str = "sqlite+aiosqlite:///./locallift.db"
@@ -60,6 +67,11 @@ class Settings(BaseSettings):
     OPENSERP_DEFAULT_ENGINE: str = "google"
     SERP_FALLBACK_PROVIDER: str = ""
     SERPAPI_KEY: str = ""
+    
+    # Audit & Scan Limits
+    LOCAL_AUDIT_MONTHLY_LIMIT: int = 3
+    SERPAPI_MAX_REVIEW_PAGES: int = 5
+    SCAN_MAX_RUNTIME_SECONDS: int = 300  # Central 5-minute execution limit for all long-running scans
     
     # AI Engine
     AI_PROVIDER: str = "rule_based"  # Supported AI Provider: Gemini

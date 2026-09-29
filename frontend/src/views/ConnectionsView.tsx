@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   Link2,
   CheckCircle2,
@@ -7,31 +7,38 @@ import {
   Trash2,
   ExternalLink,
   Plus,
-  Building2,
   Store,
   Layers,
   Search,
   BarChart3,
   Globe,
   MapPin,
-  HelpCircle,
   Lock,
-  ArrowRight,
   ShieldCheck,
-  Radio,
-  Eye,
   RefreshCw,
-  FolderPlus
+  FolderPlus,
+  Check,
+  X,
+  AlertTriangle,
+  Info,
+  Sparkles,
+  Filter,
+  Building,
+  Phone,
+  HelpCircle
 } from 'lucide-react';
 import api from '../api/client';
 import { useAuth } from '../context/AuthContext';
 import { useProject } from '../context/ProjectContext';
+import { Modal } from '../components/ui/Modal';
 import { getErrorMessage } from '../utils/error';
 import {
   GoogleConnectionSummary,
   SingleServiceStatus,
   DiscoveredResourcesResponse,
-  PublicBusinessListingItem
+  PublicBusinessListingItem,
+  DiscoveredGBPLocation,
+  GoogleBusinessProfile
 } from '../types';
 import { normalizeExternalUrl } from '../utils/url';
 
@@ -41,10 +48,11 @@ export const ConnectionsView: React.FC = () => {
 
   const [loading, setLoading] = useState<boolean>(true);
   const [syncing, setSyncing] = useState<boolean>(false);
-  const [importing, setImporting] = useState<boolean>(false);
   const [connectionStatus, setConnectionStatus] = useState<GoogleConnectionSummary | null>(null);
   const [discoveredResources, setDiscoveredResources] = useState<DiscoveredResourcesResponse | null>(null);
   const [publicListings, setPublicListings] = useState<PublicBusinessListingItem[]>([]);
+  const [activeProjectGbp, setActiveProjectGbp] = useState<GoogleBusinessProfile | null>(null);
+  const [loadingActiveProjectGbp, setLoadingActiveProjectGbp] = useState<boolean>(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
 
@@ -58,15 +66,24 @@ export const ConnectionsView: React.FC = () => {
 
   // Modal & action state
   const [showMapsModal, setShowMapsModal] = useState<boolean>(false);
-  const [showImportModal, setShowImportModal] = useState<boolean>(false);
+  const [showGbpModal, setShowGbpModal] = useState<boolean>(false);
   const [mapsUrl, setMapsUrl] = useState<string>('');
   const [mapsName, setMapsName] = useState<string>('');
   const [mapsCategory, setMapsCategory] = useState<string>('');
   const [submittingMaps, setSubmittingMaps] = useState<boolean>(false);
   const [disconnectingService, setDisconnectingService] = useState<string | null>(null);
 
-  // Selected GBP locations for import
-  const [selectedLocations, setSelectedLocations] = useState<Record<string, boolean>>({});
+  // GBP Locations state
+  const [gbpLocations, setGbpLocations] = useState<DiscoveredGBPLocation[]>([]);
+  const [loadingGbpLocations, setLoadingGbpLocations] = useState<boolean>(false);
+  const [gbpSearchQuery, setGbpSearchQuery] = useState<string>('');
+  const [gbpFilter, setGbpFilter] = useState<'all' | 'matches' | 'unlinked' | 'linked'>('all');
+  const [gbpWorkflow, setGbpWorkflow] = useState<'link_active' | 'create_new'>('link_active');
+  const [selectedLocationsForCreate, setSelectedLocationsForCreate] = useState<Record<string, boolean>>({});
+  const [bindingLocationId, setBindingLocationId] = useState<string | null>(null);
+  const [creatingProjects, setCreatingProjects] = useState<boolean>(false);
+  const [relinkConfirmLocation, setRelinkConfirmLocation] = useState<DiscoveredGBPLocation | null>(null);
+  const [gbpApiErrorStatus, setGbpApiErrorStatus] = useState<string | null>(null);
 
   // Property mapping state for active project
   const [activeGscProperty, setActiveGscProperty] = useState<string | null>(null);
@@ -75,6 +92,27 @@ export const ConnectionsView: React.FC = () => {
   const [mappingGa4, setMappingGa4] = useState<boolean>(false);
   const [selectedGscUrl, setSelectedGscUrl] = useState<string>('');
   const [selectedGa4PropId, setSelectedGa4PropId] = useState<string>('');
+
+  // Fetch active project's bound GBP profile
+  const fetchActiveProjectGbp = async () => {
+    if (!activeProject?.id) {
+      setActiveProjectGbp(null);
+      return;
+    }
+    setLoadingActiveProjectGbp(true);
+    try {
+      const res = await api.get<GoogleBusinessProfile>(`/gbp/${activeProject.id}/owner-profile`);
+      setActiveProjectGbp(res.data);
+    } catch {
+      setActiveProjectGbp(null);
+    } finally {
+      setLoadingActiveProjectGbp(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchActiveProjectGbp();
+  }, [activeProject?.id]);
 
   useEffect(() => {
     if (!activeProject) return;
@@ -141,6 +179,36 @@ export const ConnectionsView: React.FC = () => {
     }
   };
 
+  const fetchGbpLocations = async () => {
+    setLoadingGbpLocations(true);
+    setGbpApiErrorStatus(null);
+    try {
+      const url = activeProject?.id
+        ? `/connections/google/gbp/locations?project_id=${activeProject.id}`
+        : '/connections/google/gbp/locations';
+      const res = await api.get<any>(url);
+      if (Array.isArray(res.data)) {
+        setGbpLocations(res.data);
+      } else if (res.data && Array.isArray(res.data.locations)) {
+        setGbpLocations(res.data.locations);
+        if (res.data.error) {
+          setGbpApiErrorStatus(res.data.error);
+        }
+      } else {
+        setGbpLocations([]);
+        if (res.data?.error) {
+          setGbpApiErrorStatus(res.data.error);
+        }
+      }
+    } catch (err: any) {
+      const msg = getErrorMessage(err, 'Failed to discover GBP locations.');
+      setGbpApiErrorStatus(msg);
+      setGbpLocations([]);
+    } finally {
+      setLoadingGbpLocations(false);
+    }
+  };
+
   const fetchConnectionData = async () => {
     setLoading(true);
     setErrorMsg(null);
@@ -164,14 +232,6 @@ export const ConnectionsView: React.FC = () => {
         try {
           const discRes = await api.post<DiscoveredResourcesResponse>('/connections/google/discover');
           setDiscoveredResources(discRes.data);
-
-          const initialSelected: Record<string, boolean> = {};
-          (discRes.data.gbp_locations || []).forEach((loc) => {
-            if (!loc.already_imported) {
-              initialSelected[loc.location_id] = true;
-            }
-          });
-          setSelectedLocations(initialSelected);
         } catch (discErr) {
           console.warn('Google discovery notice:', discErr);
         }
@@ -206,7 +266,6 @@ export const ConnectionsView: React.FC = () => {
       setSuccessMsg('Google Service connected successfully.');
       window.history.replaceState({}, document.title, window.location.pathname);
     } else if (googleStatus === 'error') {
-      const targetService = googleService || 'general';
       const decodedErr = msg ? decodeURIComponent(msg) : 'Authorization failed or was cancelled.';
       if (googleService && serviceErrors.hasOwnProperty(googleService)) {
         setServiceErrors((prev) => ({ ...prev, [googleService]: decodedErr }));
@@ -241,7 +300,7 @@ export const ConnectionsView: React.FC = () => {
     try {
       await api.post(`/connections/google/${serviceKey}/disconnect`);
       setDisconnectingService(null);
-      
+
       const formattedName =
         serviceKey === 'business_profile'
           ? 'Google Business Profile'
@@ -253,6 +312,7 @@ export const ConnectionsView: React.FC = () => {
 
       setSuccessMsg(`${formattedName} disconnected successfully.`);
       await fetchConnectionData();
+      await fetchActiveProjectGbp();
     } catch (err: any) {
       const errTxt = getErrorMessage(err, `Failed to disconnect ${serviceKey}.`);
       setServiceErrors((prev) => ({ ...prev, [serviceKey]: errTxt }));
@@ -266,6 +326,7 @@ export const ConnectionsView: React.FC = () => {
       await api.post('/connections/google/sync');
       setSuccessMsg('Connected Google services synchronized successfully.');
       await fetchConnectionData();
+      await fetchActiveProjectGbp();
     } catch (err: any) {
       setErrorMsg(getErrorMessage(err, 'Synchronization failed.'));
     } finally {
@@ -273,31 +334,56 @@ export const ConnectionsView: React.FC = () => {
     }
   };
 
-  const handleImportResources = async () => {
-    if (!discoveredResources) return;
-    setImporting(true);
+  const handleOpenGbpModal = () => {
+    setShowGbpModal(true);
+    fetchGbpLocations();
+  };
+
+  // Workflow A: Bind exact GBP location to active project
+  const handleBindLocation = async (loc: DiscoveredGBPLocation, forceRelink = false) => {
+    if (!activeProject) return;
+    setBindingLocationId(loc.location_id);
     setErrorMsg(null);
     try {
-      const selectedLocList = discoveredResources.gbp_locations.filter(
-        (l) => selectedLocations[l.location_id]
-      );
+      await api.post('/connections/google/gbp/bind', {
+        project_id: activeProject.id,
+        location: loc,
+        force_relink: forceRelink
+      });
+      setSuccessMsg(`Successfully bound "${loc.location_name}" to project "${activeProject.name}".`);
+      setRelinkConfirmLocation(null);
+      await fetchActiveProjectGbp();
+      await fetchGbpLocations();
+      await fetchConnectionData();
+    } catch (err: any) {
+      setErrorMsg(getErrorMessage(err, 'Failed to bind Google Business Profile location.'));
+    } finally {
+      setBindingLocationId(null);
+    }
+  };
 
-      const res = await api.post<{ created_projects_count: number; message: string }>(
-        '/connections/google/import-resources',
-        {
-          selected_gbp_locations: selectedLocList,
-          create_new_projects: true
-        }
-      );
+  // Workflow B: Create new LocalLift projects from selected GBP locations
+  const handleCreateProjectsFromSelected = async () => {
+    const list = Array.isArray(gbpLocations) ? gbpLocations : [];
+    const selectedLocs = list.filter(loc => selectedLocationsForCreate[loc.location_id]);
+    if (selectedLocs.length === 0) return;
 
-      setSuccessMsg(res.data.message);
-      setShowImportModal(false);
+    setCreatingProjects(true);
+    setErrorMsg(null);
+    try {
+      const res = await api.post<{ created_count: number; message: string; projects: any[] }>(
+        '/connections/google/gbp/create-projects',
+        { locations: selectedLocs }
+      );
+      setSuccessMsg(res.data.message || `Created ${res.data.created_count} new project(s).`);
+      setSelectedLocationsForCreate({});
+      setShowGbpModal(false);
       await refreshProjects();
       await fetchConnectionData();
     } catch (err: any) {
-      setErrorMsg(getErrorMessage(err, 'Import failed.'));
+      setErrorMsg(getErrorMessage(err, 'Failed to create projects from GBP locations.'));
     } finally {
-      setImporting(false);
+      setCreatingProjects(false);
     }
   };
 
@@ -330,6 +416,48 @@ export const ConnectionsView: React.FC = () => {
       setSubmittingMaps(false);
     }
   };
+
+  // Filtered GBP locations for modal
+  const filteredGbpLocations = useMemo(() => {
+    const list = Array.isArray(gbpLocations) ? gbpLocations : [];
+    return list.filter(loc => {
+      const q = gbpSearchQuery.toLowerCase().trim();
+      const matchesQuery = !q ||
+        loc.location_name?.toLowerCase().includes(q) ||
+        loc.address?.toLowerCase().includes(q) ||
+        loc.phone?.toLowerCase().includes(q) ||
+        loc.category?.toLowerCase().includes(q) ||
+        loc.account_id?.toLowerCase().includes(q) ||
+        loc.location_id?.toLowerCase().includes(q);
+
+      if (!matchesQuery) return false;
+
+      if (gbpFilter === 'matches') {
+        return loc.nap_match?.state === 'MATCH' || loc.nap_match?.state === 'PARTIAL_MATCH';
+      }
+      if (gbpFilter === 'unlinked') {
+        return !loc.already_linked_to_project_id;
+      }
+      if (gbpFilter === 'linked') {
+        return !!loc.already_linked_to_project_id;
+      }
+      return true;
+    });
+  }, [gbpLocations, gbpSearchQuery, gbpFilter]);
+
+  // Match statistics for Workflow A
+  const matchStats = useMemo(() => {
+    let exactMatches = 0;
+    let partialMatches = 0;
+    let ambiguousMatches = 0;
+    const list = Array.isArray(gbpLocations) ? gbpLocations : [];
+    list.forEach(loc => {
+      if (loc.nap_match?.state === 'MATCH') exactMatches++;
+      else if (loc.nap_match?.state === 'PARTIAL_MATCH') partialMatches++;
+      else if (loc.nap_match?.state === 'AMBIGUOUS') ambiguousMatches++;
+    });
+    return { exactMatches, partialMatches, ambiguousMatches, total: list.length };
+  }, [gbpLocations]);
 
   if (loading) {
     return (
@@ -386,13 +514,13 @@ export const ConnectionsView: React.FC = () => {
               <RefreshCw className={`w-3.5 h-3.5 ${syncing ? 'animate-spin' : ''}`} />
               <span>{syncing ? 'Syncing...' : 'Sync All Connected Services'}</span>
             </button>
-            {discoveredResources && discoveredResources.gbp_locations.length > 0 && (
+            {bpStatus.connected && (
               <button
-                onClick={() => setShowImportModal(true)}
+                onClick={handleOpenGbpModal}
                 className="px-3.5 py-2 bg-purple-50 hover:bg-purple-100 text-purple-700 border border-purple-200 text-xs font-bold rounded-xl transition-all flex items-center space-x-1.5"
               >
                 <FolderPlus className="w-3.5 h-3.5 text-purple-600" />
-                <span>Import Resources</span>
+                <span>Select / Link GBP</span>
               </button>
             )}
           </div>
@@ -456,6 +584,36 @@ export const ConnectionsView: React.FC = () => {
               </div>
             )}
 
+            {/* Active Project Bound GBP Summary */}
+            {activeProject && (
+              <div className="p-3 bg-purple-50/50 border border-purple-100 rounded-xl space-y-1.5">
+                <div className="text-[11px] font-bold text-purple-900 flex items-center justify-between">
+                  <span>Active Project Binding: {activeProject.name}</span>
+                  {activeProjectGbp ? (
+                    <span className="px-1.5 py-0.5 rounded text-[9px] font-black bg-emerald-100 text-emerald-800 border border-emerald-200">
+                      BOUND
+                    </span>
+                  ) : (
+                    <span className="px-1.5 py-0.5 rounded text-[9px] font-black bg-amber-100 text-amber-800 border border-amber-200">
+                      NOT BOUND
+                    </span>
+                  )}
+                </div>
+                {activeProjectGbp ? (
+                  <div className="text-xs text-slate-700">
+                    <div className="font-bold">{activeProjectGbp.business_name}</div>
+                    <div className="text-[11px] text-slate-500 truncate">
+                      {activeProjectGbp.address || 'Address on file'} • {activeProjectGbp.primary_category || 'Local Business'}
+                    </div>
+                  </div>
+                ) : (
+                  <div className="text-[11px] text-slate-500">
+                    No Google Business Profile is currently bound to this project. Click below to select or link a location.
+                  </div>
+                )}
+              </div>
+            )}
+
             {serviceErrors.business_profile && (
               <div className="p-2.5 bg-rose-50 border border-rose-200 rounded-xl text-xs text-rose-700 flex items-start space-x-2">
                 <AlertCircle className="w-3.5 h-3.5 text-rose-600 shrink-0 mt-0.5" />
@@ -468,15 +626,22 @@ export const ConnectionsView: React.FC = () => {
             {bpStatus.connected ? (
               <>
                 <button
+                  onClick={handleOpenGbpModal}
+                  className="px-3.5 py-2 btn-vibrant-primary text-xs font-bold rounded-xl shadow-sm transition-all flex items-center space-x-1"
+                >
+                  <FolderPlus className="w-3.5 h-3.5" />
+                  <span>Select / Link GBP</span>
+                </button>
+                <button
                   onClick={() => handleStartOAuthForService('business_profile')}
-                  className="px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-xl transition-all flex items-center space-x-1"
+                  className="px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-xl transition-all flex items-center space-x-1"
                 >
                   <RotateCw className="w-3.5 h-3.5 text-slate-500" />
                   <span>Reconnect</span>
                 </button>
                 <button
                   onClick={() => setDisconnectingService('business_profile')}
-                  className="px-3.5 py-2 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 text-xs font-bold rounded-xl transition-all flex items-center space-x-1"
+                  className="px-3 py-2 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 text-xs font-bold rounded-xl transition-all flex items-center space-x-1"
                 >
                   <Trash2 className="w-3.5 h-3.5 text-rose-600" />
                   <span>Disconnect</span>
@@ -509,7 +674,7 @@ export const ConnectionsView: React.FC = () => {
               {adsStatus.connected ? (
                 <span className="inline-flex items-center space-x-1 px-2.5 py-1 rounded-full text-[10px] font-black bg-blue-100 text-blue-800 border border-blue-200">
                   <CheckCircle2 className="w-3 h-3 text-blue-600" />
-                  <span>Account Discovered (Metrics Coming Soon)</span>
+                  <span>Account Discovered</span>
                 </span>
               ) : (
                 <span className="inline-flex items-center space-x-1 px-2.5 py-1 rounded-full text-[10px] font-black bg-slate-100 text-slate-600 border border-slate-200">
@@ -831,95 +996,6 @@ export const ConnectionsView: React.FC = () => {
         </div>
       )}
 
-      {/* Discovered GBP Locations Table (when Business Profile connected) */}
-      {discoveredResources && discoveredResources.gbp_locations.length > 0 && (
-        <div className="card-vibrant p-6 border border-slate-200/80 rounded-2xl shadow-sm bg-white space-y-4">
-          <div className="flex items-center justify-between">
-            <div>
-              <h3 className="text-sm font-black text-slate-900 flex items-center space-x-2">
-                <Store className="w-4 h-4 text-purple-600" />
-                <span>Discovered Google Business Profiles ({discoveredResources.gbp_locations.length})</span>
-              </h3>
-              <p className="text-xs text-slate-500 mt-0.5">
-                Verified locations available from your connected Google Business Profile account.
-              </p>
-            </div>
-            <button
-              onClick={() => setShowImportModal(true)}
-              className="px-4 py-2 btn-vibrant-primary text-xs font-bold rounded-xl shadow-sm flex items-center space-x-1.5"
-            >
-              <FolderPlus className="w-3.5 h-3.5" />
-              <span>Import Selected to LocalLift</span>
-            </button>
-          </div>
-
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs">
-              <thead className="bg-slate-50 border-y border-slate-200 text-slate-600 font-bold">
-                <tr>
-                  <th className="py-2.5 px-3">Location Name</th>
-                  <th className="py-2.5 px-3">Category</th>
-                  <th className="py-2.5 px-3">Address</th>
-                  <th className="py-2.5 px-3">Website</th>
-                  <th className="py-2.5 px-3">Status</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {discoveredResources.gbp_locations.map((loc) => (
-                  <tr key={loc.location_id} className="hover:bg-slate-50/60 transition-colors">
-                    <td className="py-2.5 px-3 font-bold text-slate-900">
-                      <div className="flex items-center space-x-2">
-                        <span>{loc.location_name}</span>
-                        {loc.maps_uri && normalizeExternalUrl(loc.maps_uri) && (
-                          <a
-                            href={normalizeExternalUrl(loc.maps_uri)!}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="text-slate-400 hover:text-purple-600"
-                            aria-label="View on Google Maps"
-                          >
-                            <ExternalLink className="w-3 h-3" />
-                          </a>
-                        )}
-                      </div>
-                    </td>
-                    <td className="py-2.5 px-3 text-slate-600">{loc.category || 'Local Business'}</td>
-                    <td className="py-2.5 px-3 text-slate-600">{loc.address || `${loc.city || ''}, ${loc.state || ''}`}</td>
-                    <td className="py-2.5 px-3">
-                      {loc.website_url && normalizeExternalUrl(loc.website_url) ? (
-                        <a
-                          href={normalizeExternalUrl(loc.website_url)!}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="text-purple-600 hover:underline flex items-center space-x-1"
-                        >
-                          <Globe className="w-3 h-3 text-slate-400" />
-                          <span className="truncate max-w-[140px]">{loc.website_url.replace(/^https?:\/\//, '')}</span>
-                        </a>
-                      ) : (
-                        <span className="text-slate-400 italic">No website found</span>
-                      )}
-                    </td>
-                    <td className="py-2.5 px-3">
-                      {loc.already_imported ? (
-                        <span className="inline-flex items-center space-x-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800">
-                          <CheckCircle2 className="w-3 h-3 text-emerald-600" />
-                          <span>Imported</span>
-                        </span>
-                      ) : (
-                        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-purple-100 text-purple-800">
-                          Available to Import
-                        </span>
-                      )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
-
       {/* Discovered Search Console Properties Table */}
       {discoveredResources && (discoveredResources.gsc_properties?.length || 0) > 0 && (
         <div className="card-vibrant p-6 border border-slate-200/80 rounded-2xl shadow-sm bg-white space-y-4">
@@ -1056,11 +1132,12 @@ export const ConnectionsView: React.FC = () => {
         </div>
       )}
 
+      {/* Public Google Maps Monitoring Card */}
       <div className="card-vibrant p-6 border border-slate-200/80 rounded-2xl shadow-sm bg-white space-y-4">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-4">
           <div className="flex items-center space-x-3">
             <div className="w-10 h-10 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center">
-              <Eye className="w-5 h-5" />
+              <MapPin className="w-5 h-5" />
             </div>
             <div>
               <div className="flex items-center space-x-2">
@@ -1160,166 +1237,569 @@ export const ConnectionsView: React.FC = () => {
         )}
       </div>
 
-      {/* MODAL: Import Discovered Resources */}
-      {showImportModal && discoveredResources && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fade-in">
-          <div className="bg-white rounded-2xl max-w-xl w-full p-6 shadow-2xl border border-slate-200 space-y-4">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-              <h3 className="text-base font-black text-slate-900 flex items-center space-x-2">
-                <FolderPlus className="w-5 h-5 text-purple-600" />
-                <span>Import Google Business Profiles</span>
-              </h3>
-              <button
-                onClick={() => setShowImportModal(false)}
-                className="text-slate-400 hover:text-slate-600 text-sm font-bold"
-              >
-                ✕
-              </button>
+      {/* ENHANCED MODAL: Select Google Business Profiles (Workflows A & B) */}
+      <Modal
+        isOpen={showGbpModal}
+        onClose={() => {
+          setShowGbpModal(false);
+          setRelinkConfirmLocation(null);
+        }}
+        maxWidth="4xl"
+        title="Select Google Business Profiles"
+        description="Discover and link authorized Business Profiles to LocalLift projects with verified NAP matching."
+        footer={
+          <div className="flex items-center justify-between border-t border-slate-100 pt-3 text-xs w-full">
+            <div className="text-xs text-slate-500">
+              {gbpWorkflow === 'create_new' ? (
+                <span>
+                  Selected: <strong>{Object.values(selectedLocationsForCreate).filter(Boolean).length}</strong> location(s)
+                </span>
+              ) : (
+                <span>
+                  Active Project: <strong>{activeProject?.name || 'None selected'}</strong>
+                </span>
+              )}
             </div>
 
-            <p className="text-xs text-slate-500">
-              Select which discovered Google Business Profiles you want to automatically import as LocalLift projects and websites.
-            </p>
-
-            <div className="max-h-60 overflow-y-auto space-y-2 border border-slate-100 rounded-xl p-2 bg-slate-50/50">
-              {discoveredResources.gbp_locations.map((loc) => (
-                <label
-                  key={loc.location_id}
-                  className="flex items-start space-x-3 p-2.5 rounded-lg bg-white border border-slate-200/80 hover:border-purple-300 cursor-pointer transition-all"
-                >
-                  <input
-                    type="checkbox"
-                    checked={!!selectedLocations[loc.location_id]}
-                    onChange={(e) =>
-                      setSelectedLocations({
-                        ...selectedLocations,
-                        [loc.location_id]: e.target.checked
-                      })
-                    }
-                    className="mt-0.5 rounded border-slate-300 text-purple-600 focus:ring-purple-500"
-                  />
-                  <div className="flex-1 text-xs">
-                    <div className="font-bold text-slate-900">{loc.location_name}</div>
-                    <div className="text-[11px] text-slate-500">
-                      {loc.address || `${loc.city || ''}, ${loc.state || ''}`} • {loc.website_url || 'No website'}
-                    </div>
-                  </div>
-                </label>
-              ))}
-            </div>
-
-            <div className="flex items-center justify-end space-x-2 pt-2">
+            <div className="flex items-center space-x-2">
               <button
-                onClick={() => setShowImportModal(false)}
+                onClick={() => {
+                  setShowGbpModal(false);
+                  setRelinkConfirmLocation(null);
+                }}
                 className="px-4 py-2 bg-white border border-slate-200 text-slate-700 rounded-xl text-xs font-bold hover:bg-slate-50"
               >
-                Cancel
+                Close
               </button>
-              <button
-                onClick={handleImportResources}
-                disabled={importing}
-                className="px-5 py-2 btn-vibrant-primary text-xs font-bold rounded-xl shadow-md transition-all flex items-center space-x-1.5"
-              >
-                <CheckCircle2 className="w-4 h-4" />
-                <span>{importing ? 'Importing...' : 'Import Selected'}</span>
-              </button>
+
+              {gbpWorkflow === 'create_new' && (
+                <button
+                  onClick={handleCreateProjectsFromSelected}
+                  disabled={
+                    creatingProjects ||
+                    Object.values(selectedLocationsForCreate).filter(Boolean).length === 0
+                  }
+                  className="px-5 py-2 bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-bold rounded-xl shadow-xs transition-all flex items-center space-x-1.5 disabled:opacity-50"
+                >
+                  {creatingProjects ? (
+                    <>
+                      <RotateCw className="w-3.5 h-3.5 animate-spin" />
+                      <span>Creating Projects...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Plus className="w-3.5 h-3.5" />
+                      <span>
+                        Create {Object.values(selectedLocationsForCreate).filter(Boolean).length} Project(s)
+                      </span>
+                    </>
+                  )}
+                </button>
+              )}
             </div>
           </div>
-        </div>
-      )}
+        }
+      >
+        <div className="space-y-4">
 
-      {/* MODAL: Add Business from Google Maps (Public Monitoring) */}
-      {showMapsModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fade-in">
-          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-slate-200 space-y-4">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-              <h3 className="text-base font-black text-slate-900 flex items-center space-x-2">
-                <MapPin className="w-5 h-5 text-blue-600" />
-                <span>Add Business from Google Maps</span>
-              </h3>
-              <button
-                onClick={() => setShowMapsModal(false)}
-                className="text-slate-400 hover:text-slate-600 text-sm font-bold"
-              >
-                ✕
-              </button>
-            </div>
-
-            <form onSubmit={handleAddPublicMaps} className="space-y-3.5 text-xs">
-              <div>
-                <label className="font-bold text-slate-700 block mb-1">
-                  Google Maps URL <span className="text-rose-500">*</span>
-                </label>
-                <input
-                  type="url"
-                  required
-                  value={mapsUrl}
-                  onChange={(e) => setMapsUrl(e.target.value)}
-                  placeholder="https://www.google.com/maps/place/..."
-                  className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-slate-900 focus:outline-none focus:border-purple-500 font-medium"
-                />
-                <p className="text-[10px] text-slate-400 mt-1">
-                  Paste the public Google Maps share link, place link, or CID URL.
-                </p>
-              </div>
-
-              <div>
-                <label className="font-bold text-slate-700 block mb-1">
-                  Business Name (Optional override)
-                </label>
-                <input
-                  type="text"
-                  value={mapsName}
-                  onChange={(e) => setMapsName(e.target.value)}
-                  placeholder="Leave blank to auto-detect from URL"
-                  className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-slate-900 focus:outline-none focus:border-purple-500 font-medium"
-                />
-              </div>
-
-              <div>
-                <label className="font-bold text-slate-700 block mb-1">
-                  Industry / Category (Optional)
-                </label>
-                <input
-                  type="text"
-                  value={mapsCategory}
-                  onChange={(e) => setMapsCategory(e.target.value)}
-                  placeholder="e.g. Dental Clinic, Plumbing"
-                  className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-slate-900 focus:outline-none focus:border-purple-500 font-medium"
-                />
-              </div>
-
-              <div className="p-3 bg-blue-50 border border-blue-200 rounded-xl text-[11px] text-blue-800 space-y-1">
-                <div className="font-bold flex items-center space-x-1">
-                  <ShieldCheck className="w-3.5 h-3.5 text-blue-600" />
-                  <span>Public Monitoring Mode</span>
-                </div>
-                <p>
-                  No owner credentials required. LocalLift imports public ranking, review signals, and NAP records without violating Google access permissions.
-                </p>
-              </div>
-
-              <div className="flex items-center justify-end space-x-2 pt-2">
+            {/* Workflow Mode Tabs */}
+            <div className="flex items-center justify-between border-b border-slate-100 pb-2 shrink-0">
+              <div className="flex items-center space-x-2">
                 <button
-                  type="button"
-                  onClick={() => setShowMapsModal(false)}
-                  className="px-4 py-2 bg-white border border-slate-200 text-slate-700 rounded-xl text-xs font-bold hover:bg-slate-50"
+                  onClick={() => setGbpWorkflow('link_active')}
+                  className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center space-x-1.5 ${
+                    gbpWorkflow === 'link_active'
+                      ? 'bg-purple-600 text-white shadow-sm'
+                      : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                  }`}
                 >
-                  Cancel
+                  <Building className="w-3.5 h-3.5" />
+                  <span>
+                    Workflow A: Connect to "{activeProject?.name || 'Active Project'}"
+                  </span>
                 </button>
                 <button
-                  type="submit"
-                  disabled={submittingMaps}
-                  className="px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl shadow-md transition-all flex items-center space-x-1.5"
+                  onClick={() => setGbpWorkflow('create_new')}
+                  className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center space-x-1.5 ${
+                    gbpWorkflow === 'create_new'
+                      ? 'bg-purple-600 text-white shadow-sm'
+                      : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                  }`}
                 >
                   <Plus className="w-3.5 h-3.5" />
-                  <span>{submittingMaps ? 'Importing...' : 'Add Business'}</span>
+                  <span>Workflow B: Create New Projects</span>
                 </button>
               </div>
-            </form>
+
+              <button
+                onClick={fetchGbpLocations}
+                disabled={loadingGbpLocations}
+                className="text-xs text-purple-600 hover:text-purple-800 font-bold flex items-center space-x-1"
+              >
+                <RefreshCw className={`w-3 h-3 ${loadingGbpLocations ? 'animate-spin' : ''}`} />
+                <span>Refresh Locations</span>
+              </button>
+            </div>
+
+            {/* Google API Status Alerts */}
+            {gbpApiErrorStatus && (
+              <div className={`p-4 rounded-xl text-xs border flex items-start space-x-3 shrink-0 ${
+                gbpApiErrorStatus.toLowerCase().includes('ciphertext') || gbpApiErrorStatus.toLowerCase().includes('expired') || gbpApiErrorStatus.toLowerCase().includes('securely read')
+                  ? 'bg-rose-50 border-rose-200 text-rose-800'
+                  : 'bg-amber-50 border-amber-200 text-amber-800'
+              }`}>
+                <AlertTriangle className={`w-4 h-4 shrink-0 mt-0.5 ${
+                  gbpApiErrorStatus.toLowerCase().includes('ciphertext') || gbpApiErrorStatus.toLowerCase().includes('expired') || gbpApiErrorStatus.toLowerCase().includes('securely read')
+                    ? 'text-rose-600'
+                    : 'text-amber-600'
+                }`} />
+                <div className="space-y-1.5 flex-1">
+                  <div className="font-bold flex items-center justify-between">
+                    <span>
+                      {gbpApiErrorStatus.toLowerCase().includes('ciphertext') || gbpApiErrorStatus.toLowerCase().includes('securely read') || gbpApiErrorStatus.toLowerCase().includes('expired')
+                        ? 'Authentication Expired / Reconnect Required'
+                        : gbpApiErrorStatus.toLowerCase().includes('quota') || gbpApiErrorStatus.toLowerCase().includes('not been granted')
+                        ? 'Google Cloud GBP API Access Required'
+                        : gbpApiErrorStatus.toLowerCase().includes('permission')
+                        ? 'Google Account Permission Notice'
+                        : 'Google Business Profile Status Notice'}
+                    </span>
+                  </div>
+                  <div className="leading-relaxed">
+                    {gbpApiErrorStatus.toLowerCase().includes('ciphertext') || gbpApiErrorStatus.toLowerCase().includes('securely read')
+                      ? 'Your saved Google connection could not be securely read. Reconnect your Google account to restore access.'
+                      : gbpApiErrorStatus.toLowerCase().includes('quota') || gbpApiErrorStatus.toLowerCase().includes('not been granted')
+                      ? 'Your Google account is connected, but this Google Cloud project does not currently have approved Business Profile API access (quota=0). Follow Google Cloud Console Business Profile API access approval procedures.'
+                      : gbpApiErrorStatus}
+                  </div>
+                  {(gbpApiErrorStatus.toLowerCase().includes('ciphertext') || gbpApiErrorStatus.toLowerCase().includes('expired') || gbpApiErrorStatus.toLowerCase().includes('securely read')) && (
+                    <div className="pt-1">
+                      <button
+                        onClick={() => handleStartOAuthForService('business_profile')}
+                        className="px-3 py-1.5 bg-rose-600 hover:bg-rose-700 text-white rounded-lg text-xs font-bold transition-all shadow-xs"
+                      >
+                        Reconnect Google Business Profile
+                      </button>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* Workflow A NAP Summary Notice */}
+            {gbpWorkflow === 'link_active' && activeProject && (
+              <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-700 space-y-1.5 shrink-0">
+                <div className="flex items-center justify-between">
+                  <div className="font-bold flex items-center space-x-1.5">
+                    <Sparkles className="w-3.5 h-3.5 text-purple-600" />
+                    <span>Project NAP Comparison for "{activeProject.name}"</span>
+                  </div>
+                  <div className="text-[11px] space-x-2">
+                    <span className="font-semibold text-emerald-700">
+                      {matchStats.exactMatches} Exact Match{matchStats.exactMatches === 1 ? '' : 'es'}
+                    </span>
+                    <span className="text-slate-300">•</span>
+                    <span className="font-semibold text-amber-700">
+                      {matchStats.partialMatches} Partial Match{matchStats.partialMatches === 1 ? '' : 'es'}
+                    </span>
+                  </div>
+                </div>
+                <div className="text-[11px] text-slate-500">
+                  Comparing current project name, address, phone, and website against discovered GBP locations. Normalized for whitespace, formatting, protocols, and street abbreviations.
+                </div>
+              </div>
+            )}
+
+            {/* Search and Filters */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 shrink-0">
+              <div className="relative flex-1">
+                <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-2.5" />
+                <input
+                  type="text"
+                  value={gbpSearchQuery}
+                  onChange={(e) => setGbpSearchQuery(e.target.value)}
+                  placeholder="Search by business name, address, phone, account or location ID..."
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-8 pr-3 py-1.5 text-xs text-slate-900 focus:outline-none focus:border-purple-500"
+                />
+              </div>
+
+              <div className="flex items-center space-x-2">
+                <Filter className="w-3.5 h-3.5 text-slate-400" />
+                <select
+                  value={gbpFilter}
+                  onChange={(e: any) => setGbpFilter(e.target.value)}
+                  className="bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-1.5 text-xs text-slate-700 font-bold focus:outline-none"
+                >
+                  <option value="all">All Locations ({gbpLocations.length})</option>
+                  {gbpWorkflow === 'link_active' && (
+                    <option value="matches">Matching Only ({matchStats.exactMatches + matchStats.partialMatches})</option>
+                  )}
+                  <option value="unlinked">Unlinked Only</option>
+                  <option value="linked">Already Linked Only</option>
+                </select>
+              </div>
+            </div>
+
+            {/* Locations List */}
+            <div className="flex-1 overflow-y-auto space-y-3 pr-1">
+              {loadingGbpLocations ? (
+                <div className="flex items-center justify-center p-8 space-x-2 text-xs text-slate-500">
+                  <RotateCw className="w-4 h-4 animate-spin text-purple-600" />
+                  <span>Discovering accessible Google Business Profile accounts and locations...</span>
+                </div>
+              ) : filteredGbpLocations.length === 0 ? (
+                <div className="text-center py-10 border border-dashed border-slate-200 rounded-xl bg-slate-50/50 space-y-2">
+                  <Store className="w-8 h-8 text-slate-300 mx-auto" />
+                  <div className="text-xs font-bold text-slate-700">No matching Google Business Profile found</div>
+                  <p className="text-[11px] text-slate-400 max-w-sm mx-auto">
+                    {gbpSearchQuery
+                      ? `No profiles match "${gbpSearchQuery}". Try clearing your search or filter.`
+                      : 'No accessible GBP locations were found for the authorized Google account.'}
+                  </p>
+                </div>
+              ) : (
+                filteredGbpLocations.map((loc) => {
+                  const isLinkedToActive = loc.already_linked_to_project_id === activeProject?.id;
+                  const isLinkedToOther = loc.already_linked_to_project_id && !isLinkedToActive;
+                  const nap = loc.nap_match;
+                  const isBindingThis = bindingLocationId === loc.location_id;
+
+                  return (
+                    <div
+                      key={loc.location_id}
+                      className={`p-4 rounded-xl border transition-all space-y-3 ${
+                        isLinkedToActive
+                          ? 'border-emerald-300 bg-emerald-50/30 ring-1 ring-emerald-200'
+                          : nap?.state === 'MATCH'
+                          ? 'border-purple-300 bg-purple-50/20'
+                          : 'border-slate-200 bg-white hover:border-slate-300'
+                      }`}
+                    >
+                      {/* Top Bar: Name, Badges, Category */}
+                      <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-2">
+                        <div className="flex items-start space-x-3">
+                          {gbpWorkflow === 'create_new' && (
+                            <input
+                              type="checkbox"
+                              checked={!!selectedLocationsForCreate[loc.location_id]}
+                              disabled={!!loc.already_linked_to_project_id}
+                              onChange={(e) =>
+                                setSelectedLocationsForCreate({
+                                  ...selectedLocationsForCreate,
+                                  [loc.location_id]: e.target.checked
+                                })
+                              }
+                              className="mt-1 rounded border-slate-300 text-purple-600 focus:ring-purple-500"
+                            />
+                          )}
+                          <div className="space-y-0.5">
+                            <div className="flex items-center space-x-2">
+                              <h4 className="text-sm font-black text-slate-900">{loc.location_name}</h4>
+                              {loc.verification_state && (
+                                <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold ${
+                                  loc.verification_state === 'VERIFIED'
+                                    ? 'bg-emerald-100 text-emerald-800'
+                                    : 'bg-amber-100 text-amber-800'
+                                }`}>
+                                  {loc.verification_state}
+                                </span>
+                              )}
+                            </div>
+                            <div className="text-[11px] text-slate-500 font-semibold">
+                              {loc.category || 'Local Business'}
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Linkage Status Badges */}
+                        <div className="flex items-center space-x-2">
+                          {isLinkedToActive ? (
+                            <span className="inline-flex items-center space-x-1 px-2.5 py-1 rounded-full text-[10px] font-black bg-emerald-100 text-emerald-800 border border-emerald-200">
+                              <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                              <span>Linked to This Project</span>
+                            </span>
+                          ) : isLinkedToOther ? (
+                            <span className="inline-flex items-center space-x-1 px-2.5 py-1 rounded-full text-[10px] font-black bg-slate-100 text-slate-700 border border-slate-300" title={`Bound to project ID: ${loc.already_linked_to_project_id}`}>
+                              <Lock className="w-3 h-3 text-slate-500" />
+                              <span>Linked to {loc.already_linked_project_name || `Project #${loc.already_linked_to_project_id}`}</span>
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-black bg-slate-100 text-slate-500">
+                              Available
+                            </span>
+                          )}
+
+                          {/* NAP Match Badge (Workflow A) */}
+                          {gbpWorkflow === 'link_active' && nap && (
+                            <span
+                              className={`px-2.5 py-1 rounded-full text-[10px] font-black uppercase ${
+                                nap.state === 'MATCH'
+                                  ? 'bg-emerald-100 text-emerald-800 border border-emerald-200'
+                                  : nap.state === 'PARTIAL_MATCH'
+                                  ? 'bg-amber-100 text-amber-800 border border-amber-200'
+                                  : nap.state === 'AMBIGUOUS'
+                                  ? 'bg-purple-100 text-purple-800 border border-purple-200'
+                                  : 'bg-slate-100 text-slate-500 border border-slate-200'
+                              }`}
+                            >
+                              NAP: {nap.state.replace('_', ' ')}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Location Details Grid */}
+                      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2 text-xs text-slate-600 bg-slate-50/70 p-2.5 rounded-lg border border-slate-100">
+                        <div className="flex items-start space-x-1.5">
+                          <MapPin className="w-3.5 h-3.5 text-slate-400 shrink-0 mt-0.5" />
+                          <span className="truncate" title={loc.address || 'Address unlisted'}>
+                            {loc.address || 'Address unlisted'}
+                          </span>
+                        </div>
+                        <div className="flex items-center space-x-1.5">
+                          <Phone className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                          <span>{loc.phone || 'No phone number'}</span>
+                        </div>
+                        <div className="flex items-center space-x-1.5">
+                          <Globe className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                          {loc.website_url ? (
+                            <a
+                              href={normalizeExternalUrl(loc.website_url) || '#'}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-purple-600 hover:underline truncate"
+                            >
+                              {loc.website_url.replace(/^https?:\/\//, '')}
+                            </a>
+                          ) : (
+                            <span className="text-slate-400 italic">No website</span>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Google Resource Identifiers */}
+                      <div className="text-[10px] text-slate-400 flex items-center space-x-4 font-mono">
+                        <span>Account: {loc.account_id}</span>
+                        <span>•</span>
+                        <span>Location: {loc.location_id}</span>
+                      </div>
+
+                      {/* Workflow A: Transparent NAP Breakdown */}
+                      {gbpWorkflow === 'link_active' && nap && (
+                        <div className="p-2.5 bg-white border border-slate-200 rounded-lg space-y-2 text-xs">
+                          <div className="font-bold text-slate-800 text-[11px] flex items-center justify-between">
+                            <span>Field Match Breakdown</span>
+                            <span className="text-slate-400 font-normal">Score: {Math.round(nap.score * 100)}%</span>
+                          </div>
+                          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-[11px]">
+                            <div className="p-1.5 bg-slate-50 rounded border border-slate-100">
+                              <div className="text-slate-400 font-medium">Business Name</div>
+                              <div className={`font-bold ${
+                                nap.business_name.status === 'MATCH'
+                                  ? 'text-emerald-700'
+                                  : nap.business_name.status === 'PARTIAL_MATCH'
+                                  ? 'text-amber-700'
+                                  : 'text-slate-500'
+                              }`}>
+                                {nap.business_name.status}
+                              </div>
+                            </div>
+
+                            <div className="p-1.5 bg-slate-50 rounded border border-slate-100">
+                              <div className="text-slate-400 font-medium">Address</div>
+                              <div className={`font-bold ${
+                                nap.address.status === 'MATCH'
+                                  ? 'text-emerald-700'
+                                  : nap.address.status === 'PARTIAL_MATCH'
+                                  ? 'text-amber-700'
+                                  : 'text-slate-500'
+                              }`}>
+                                {nap.address.status}
+                              </div>
+                            </div>
+
+                            <div className="p-1.5 bg-slate-50 rounded border border-slate-100">
+                              <div className="text-slate-400 font-medium">Phone</div>
+                              <div className={`font-bold ${
+                                nap.phone.status === 'MATCH'
+                                  ? 'text-emerald-700'
+                                  : 'text-slate-500'
+                              }`}>
+                                {nap.phone.status}
+                              </div>
+                            </div>
+
+                            <div className="p-1.5 bg-slate-50 rounded border border-slate-100">
+                              <div className="text-slate-400 font-medium">Website</div>
+                              <div className={`font-bold ${
+                                nap.website.status === 'MATCH'
+                                  ? 'text-emerald-700'
+                                  : 'text-slate-500'
+                              }`}>
+                                {nap.website.status}
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Card Action Buttons */}
+                      <div className="flex items-center justify-end space-x-2 pt-1">
+                        {gbpWorkflow === 'link_active' && activeProject && (
+                          <>
+                            {isLinkedToActive ? (
+                              <span className="text-xs font-bold text-emerald-700 flex items-center space-x-1">
+                                <Check className="w-3.5 h-3.5" />
+                                <span>Authoritative Profile for {activeProject.name}</span>
+                              </span>
+                            ) : isLinkedToOther ? (
+                              <button
+                                onClick={() => setRelinkConfirmLocation(loc)}
+                                className="px-3.5 py-1.5 bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 rounded-xl text-xs font-bold transition-all flex items-center space-x-1"
+                              >
+                                <AlertTriangle className="w-3.5 h-3.5 text-amber-600" />
+                                <span>Re-link to {activeProject.name}</span>
+                              </button>
+                            ) : (
+                              <button
+                                onClick={() => handleBindLocation(loc)}
+                                disabled={isBindingThis}
+                                className="px-4 py-1.5 btn-vibrant-primary text-xs font-bold rounded-xl shadow-sm transition-all flex items-center space-x-1.5"
+                              >
+                                {isBindingThis ? (
+                                  <>
+                                    <RotateCw className="w-3.5 h-3.5 animate-spin" />
+                                    <span>Binding...</span>
+                                  </>
+                                ) : (
+                                  <>
+                                    <Check className="w-3.5 h-3.5" />
+                                    <span>Link to {activeProject.name}</span>
+                                  </>
+                                )}
+                              </button>
+                            )}
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+
+            {/* Relink Confirmation Dialog */}
+            {relinkConfirmLocation && activeProject && (
+              <div className="p-3.5 bg-amber-50 border border-amber-300 rounded-xl space-y-2 text-xs shrink-0 animate-fade-in">
+                <div className="font-bold text-amber-900 flex items-center space-x-1.5">
+                  <AlertTriangle className="w-4 h-4 text-amber-600" />
+                  <span>Confirm Location Re-linking</span>
+                </div>
+                <p className="text-amber-800">
+                  "{relinkConfirmLocation.location_name}" is currently bound to <strong>{relinkConfirmLocation.already_linked_project_name || 'another project'}</strong>.
+                  Re-linking will reassign its authoritative Google Business Profile credentials to <strong>{activeProject.name}</strong>.
+                </p>
+                <div className="flex items-center space-x-2 pt-1">
+                  <button
+                    onClick={() => handleBindLocation(relinkConfirmLocation, true)}
+                    disabled={!!bindingLocationId}
+                    className="px-3.5 py-1.5 bg-amber-600 hover:bg-amber-700 text-white font-bold rounded-lg text-xs"
+                  >
+                    Confirm Re-link
+                  </button>
+                  <button
+                    onClick={() => setRelinkConfirmLocation(null)}
+                    className="px-3 py-1.5 bg-white border border-slate-200 text-slate-700 font-bold rounded-lg text-xs hover:bg-slate-50"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
-        </div>
-      )}
+      </Modal>
+
+      {/* MODAL: Add Business from Google Maps (Public Monitoring) */}
+      <Modal
+        isOpen={showMapsModal}
+        onClose={() => setShowMapsModal(false)}
+        maxWidth="md"
+        title="Add Business from Google Maps"
+        description="Public Google Maps Monitoring Mode"
+      >
+        <form onSubmit={handleAddPublicMaps} className="space-y-3.5 text-xs">
+          <div>
+            <label className="font-bold text-slate-700 block mb-1">
+              Google Maps URL <span className="text-rose-500">*</span>
+            </label>
+            <input
+              type="url"
+              required
+              value={mapsUrl}
+              onChange={(e) => setMapsUrl(e.target.value)}
+              placeholder="https://www.google.com/maps/place/..."
+              className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-slate-900 focus:outline-none focus:border-emerald-500 font-medium"
+            />
+            <p className="text-[10px] text-slate-400 mt-1">
+              Paste the public Google Maps share link, place link, or CID URL.
+            </p>
+          </div>
+
+          <div>
+            <label className="font-bold text-slate-700 block mb-1">
+              Business Name (Optional override)
+            </label>
+            <input
+              type="text"
+              value={mapsName}
+              onChange={(e) => setMapsName(e.target.value)}
+              placeholder="Leave blank to auto-detect from URL"
+              className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-slate-900 focus:outline-none focus:border-emerald-500 font-medium"
+            />
+          </div>
+
+          <div>
+            <label className="font-bold text-slate-700 block mb-1">
+              Industry / Category (Optional)
+            </label>
+            <input
+              type="text"
+              value={mapsCategory}
+              onChange={(e) => setMapsCategory(e.target.value)}
+              placeholder="e.g. Dental Clinic, Plumbing"
+              className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-slate-900 focus:outline-none focus:border-emerald-500 font-medium"
+            />
+          </div>
+
+          <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl text-[11px] text-emerald-900 space-y-1">
+            <div className="font-bold flex items-center space-x-1">
+              <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
+              <span>Public Monitoring Mode</span>
+            </div>
+            <p>
+              No owner credentials required. LocalLift imports public ranking, review signals, and NAP records without violating Google access permissions.
+            </p>
+          </div>
+
+          <div className="flex items-center justify-end space-x-2 pt-2 border-t border-slate-100">
+            <button
+              type="button"
+              onClick={() => setShowMapsModal(false)}
+              className="px-4 py-2 bg-white border border-slate-200 text-slate-700 rounded-xl text-xs font-bold hover:bg-slate-50"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={submittingMaps}
+              className="px-5 py-2 bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-bold rounded-xl shadow-xs transition-all flex items-center space-x-1.5"
+            >
+              <Plus className="w-3.5 h-3.5" />
+              <span>{submittingMaps ? 'Importing...' : 'Add Business'}</span>
+            </button>
+          </div>
+        </form>
+      </Modal>
     </div>
   );
 };

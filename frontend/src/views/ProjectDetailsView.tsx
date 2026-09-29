@@ -24,6 +24,7 @@ import { useProject } from '../context/ProjectContext';
 import { getErrorMessage } from '../utils/error';
 import { Project } from '../types';
 import { ProjectTeamSection } from '../components/team/ProjectTeamSection';
+import { Modal } from '../components/ui/Modal';
 import { normalizeExternalUrl } from '../utils/url';
 
 export const ProjectDetailsView: React.FC = () => {
@@ -341,74 +342,67 @@ export const ProjectDetailsView: React.FC = () => {
 
       {/* EDIT MODAL */}
       {showEditModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fade-in">
-          <div className="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl border border-slate-200 space-y-4">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-              <h3 className="text-base font-black text-slate-900 flex items-center space-x-2">
-                <Edit2 className="w-5 h-5 text-purple-600" />
-                <span>Edit Project Details</span>
-              </h3>
-              <button
-                onClick={() => setShowEditModal(false)}
-                className="text-slate-400 hover:text-slate-600 text-sm font-bold"
-              >
-                ✕
-              </button>
+        <Modal
+          isOpen={showEditModal}
+          onClose={() => setShowEditModal(false)}
+          maxWidth="md"
+          icon={<Edit2 className="w-5 h-5 text-[#236B4F]" />}
+          title="Edit Project Details"
+          subtitle="Update business domain and primary category"
+          bodyClassName="space-y-4"
+        >
+          <form onSubmit={handleSaveEdit} className="space-y-4 text-xs">
+            <div>
+              <label className="font-bold text-[#142820] block mb-1">Project Name</label>
+              <input
+                type="text"
+                required
+                value={editName}
+                onChange={(e) => setEditName(e.target.value)}
+                className="w-full bg-[#F7FAF7] border border-[#DCE8DC] rounded-xl p-2.5 text-[#142820] focus:outline-none focus:border-[#236B4F] font-medium"
+              />
             </div>
 
-            <form onSubmit={handleSaveEdit} className="space-y-4 text-xs">
-              <div>
-                <label className="font-bold text-slate-700 block mb-1">Project Name</label>
-                <input
-                  type="text"
-                  required
-                  value={editName}
-                  onChange={(e) => setEditName(e.target.value)}
-                  className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-slate-900 focus:outline-none focus:border-purple-500 font-medium"
-                />
-              </div>
+            <div>
+              <label className="font-bold text-[#142820] block mb-1">Website Domain</label>
+              <input
+                type="text"
+                required
+                value={editDomain}
+                onChange={(e) => setEditDomain(e.target.value)}
+                className="w-full bg-[#F7FAF7] border border-[#DCE8DC] rounded-xl p-2.5 text-[#142820] focus:outline-none focus:border-[#236B4F] font-medium"
+              />
+            </div>
 
-              <div>
-                <label className="font-bold text-slate-700 block mb-1">Website Domain</label>
-                <input
-                  type="text"
-                  required
-                  value={editDomain}
-                  onChange={(e) => setEditDomain(e.target.value)}
-                  className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-slate-900 focus:outline-none focus:border-purple-500 font-medium"
-                />
-              </div>
+            <div>
+              <label className="font-bold text-[#142820] block mb-1">Primary Business Category</label>
+              <input
+                type="text"
+                required
+                value={editCategory}
+                onChange={(e) => setEditCategory(e.target.value)}
+                className="w-full bg-[#F7FAF7] border border-[#DCE8DC] rounded-xl p-2.5 text-[#142820] focus:outline-none focus:border-[#236B4F] font-medium"
+              />
+            </div>
 
-              <div>
-                <label className="font-bold text-slate-700 block mb-1">Primary Business Category</label>
-                <input
-                  type="text"
-                  required
-                  value={editCategory}
-                  onChange={(e) => setEditCategory(e.target.value)}
-                  className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-slate-900 focus:outline-none focus:border-purple-500 font-medium"
-                />
-              </div>
-
-              <div className="flex items-center justify-end space-x-2 pt-2">
-                <button
-                  type="button"
-                  onClick={() => setShowEditModal(false)}
-                  className="px-4 py-2 bg-white border border-slate-200 text-slate-700 rounded-xl text-xs font-bold hover:bg-slate-50"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={savingEdit}
-                  className="px-5 py-2 btn-vibrant-primary text-xs font-bold rounded-xl shadow-md transition-all disabled:opacity-50"
-                >
-                  <span>{savingEdit ? 'Saving...' : 'Save Changes'}</span>
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
+            <div className="flex items-center justify-end space-x-2 pt-2">
+              <button
+                type="button"
+                onClick={() => setShowEditModal(false)}
+                className="px-4 py-2 bg-white border border-[#DCE8DC] text-[#2E4E40] rounded-xl text-xs font-bold hover:bg-[#F7FAF7] cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={savingEdit}
+                className="px-5 py-2 btn-primary-gradient text-xs font-bold rounded-xl shadow-md transition-all disabled:opacity-50 cursor-pointer text-white"
+              >
+                <span>{savingEdit ? 'Saving...' : 'Save Changes'}</span>
+              </button>
+            </div>
+          </form>
+        </Modal>
       )}
     </div>
   );

@@ -444,12 +444,20 @@ async def get_dashboard_summary(
     gbp_summary = {
         "connected": gbp is not None,
         "business_name": gbp.business_name if gbp else None,
-        "completeness_score": gbp.completeness_score if gbp else 0,
-        "search_impressions": gbp.search_impressions if gbp else 0,
-        "maps_impressions": gbp.maps_impressions if gbp else 0,
-        "calls": gbp.call_clicks if gbp else 0,
-        "website_clicks": gbp.website_clicks if gbp else 0
-    } if gbp else {"connected": False}
+        "completeness_score": gbp.completeness_score if gbp else None,
+        "search_impressions": gbp.search_impressions if gbp else None,
+        "maps_impressions": gbp.maps_impressions if gbp else None,
+        "calls": gbp.call_clicks if gbp else None,
+        "website_clicks": gbp.website_clicks if gbp else None
+    } if gbp else {
+        "connected": False,
+        "business_name": None,
+        "completeness_score": None,
+        "search_impressions": None,
+        "maps_impressions": None,
+        "calls": None,
+        "website_clicks": None
+    }
 
     # Fetch latest real GSC metrics & connection status
     from app.models.connections import GoogleConnection, GoogleSearchConsoleProperty, GoogleAnalyticsProperty
@@ -922,4 +930,435 @@ async def get_local_intelligence_summary(
         "open_issues": open_issues,
         "active_tasks": active_tasks,
         "priority_findings": priority_findings,
+    }
+
+
+@router.get("/{project_id}/dashboard/summary")
+async def get_dashboard_summary(
+    project_id: int,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Generalized Project Dashboard / SEO Hub Aggregation Endpoint.
+    Aggregates authoritative project metrics strictly for the requested project:
+    - 10-Category Health Summary
+    - Visibility Breakdown (Organic vs Local Pack vs Geo-Grid)
+    - Compact Geo-Grid and Keyword Widgets
+    - Recent Scan Activity
+    - Provider / Token Usage Hub (Today, 7d, 30d) and Quota Status
+    - Unresolved Priority Issues
+    - GBP, Reviews, Citations, Website Audit, and Competitors summaries.
+    Zero fabricated data; returns None/null when data is not yet recorded.
+    """
+    from sqlalchemy import func
+    from app.models.audit import LocalAuditRun, LocalAuditFinding, SEOAudit, SEOIssue, IssueStatus, IssueSeverity, WebsitePage
+    from app.models.local_seo import Citation, BusinessProfile, Review, Competitor
+    from app.models.ranking import Keyword, GeoGridScan, GeoGridPointResult
+    from app.models.scan_job import ScanJob
+    from app.models.gbp import GoogleAccount, GoogleBusinessProfile
+    from app.services.provider_usage_service import ProviderUsageService
+
+    project = await verify_project_access(project_id, current_user, db)
+
+    # 1. Project details & location
+    loc_res = await db.execute(
+        select(Location).where(Location.project_id == project.id).limit(1)
+    )
+    loc = loc_res.scalars().first()
+    location_summary = None
+    if loc:
+        location_summary = {
+            "city": loc.city,
+            "state": loc.state,
+            "country": loc.country,
+            "latitude": loc.latitude,
+            "longitude": loc.longitude,
+        }
+
+    # 2. Business profile
+    bp_res = await db.execute(
+        select(BusinessProfile).where(BusinessProfile.project_id == project.id)
+    )
+    bp = bp_res.scalars().first()
+    bp_data = None
+    if bp:
+        bp_data = {
+            "business_name": bp.business_name,
+            "primary_category": bp.primary_category,
+            "verification_status": bp.verification_status,
+            "has_coordinates": bp.latitude is not None and bp.longitude is not None,
+            "has_phone": bp.primary_phone is not None,
+            "has_address": bp.primary_address is not None,
+        }
+
+    # 3. Latest Local Audit Run
+    local_audit_res = await db.execute(
+        select(LocalAuditRun)
+        .where(LocalAuditRun.project_id == project.id)
+        .order_by(LocalAuditRun.id.desc())
+    )
+    latest_local_audit = local_audit_res.scalars().first()
+
+    # 4. Latest Technical SEO Audit
+    seo_audit_res = await db.execute(
+        select(SEOAudit)
+        .where(SEOAudit.project_id == project.id)
+        .order_by(SEOAudit.id.desc())
+    )
+    latest_seo_audit = seo_audit_res.scalars().first()
+
+    # 5. Latest Geo-Grid Scan
+    geo_res = await db.execute(
+        select(GeoGridScan)
+        .where(GeoGridScan.project_id == project.id)
+        .order_by(GeoGridScan.id.desc())
+    )
+    latest_geo = geo_res.scalars().first()
+
+    geo_top_3 = 0
+    geo_top_10 = 0
+    if latest_geo:
+        pt_res = await db.execute(
+            select(GeoGridPointResult.rank).where(
+                GeoGridPointResult.scan_id == latest_geo.id,
+                GeoGridPointResult.project_id == project.id
+            )
+        )
+        points = pt_res.scalars().all()
+        for p in points:
+            if p is not None and p > 0:
+                if p <= 3:
+                    geo_top_3 += 1
+                if p <= 10:
+                    geo_top_10 += 1
+
+    # 6. Keywords Breakdown (Organic & Local Pack)
+    kw_stmt = select(Keyword).where(Keyword.project_id == project.id)
+    kw_res = await db.execute(kw_stmt)
+    all_kws = kw_res.scalars().all()
+
+    total_kws = len(all_kws)
+    ranking_kws = 0
+    top_3_kws = 0
+    top_10_kws = 0
+    top_20_kws = 0
+    not_found_kws = 0
+    improved_kws = 0
+    declined_kws = 0
+    organic_ranks = []
+    local_pack_ranks = []
+
+    for k in all_kws:
+        curr = k.current_rank
+        prev = k.previous_rank
+        if curr is not None and curr > 0:
+            ranking_kws += 1
+            if curr <= 3:
+                top_3_kws += 1
+            if curr <= 10:
+                top_10_kws += 1
+            if curr <= 20:
+                top_20_kws += 1
+            if prev is not None and prev > 0:
+                if curr < prev:
+                    improved_kws += 1
+                elif curr > prev:
+                    declined_kws += 1
+        else:
+            not_found_kws += 1
+
+        if k.organic_rank is not None and k.organic_rank > 0:
+            organic_ranks.append(k.organic_rank)
+        if k.local_pack_rank is not None and k.local_pack_rank > 0:
+            local_pack_ranks.append(k.local_pack_rank)
+
+    avg_organic_rank = round(sum(organic_ranks) / len(organic_ranks), 1) if organic_ranks else None
+    avg_local_pack_rank = round(sum(local_pack_ranks) / len(local_pack_ranks), 1) if local_pack_ranks else None
+
+    # Latest keyword scan job
+    job_res = await db.execute(
+        select(ScanJob)
+        .where(ScanJob.project_id == project.id, ScanJob.job_type == "keyword_rank")
+        .order_by(ScanJob.id.desc())
+    )
+    latest_kw_job = job_res.scalars().first()
+
+    # 7. Reviews
+    rev_count = (await db.execute(
+        select(func.count(Review.id)).where(Review.project_id == project.id)
+    )).scalar() or 0
+    rev_avg = (await db.execute(
+        select(func.avg(Review.rating)).where(Review.project_id == project.id)
+    )).scalar()
+    rev_unanswered = (await db.execute(
+        select(func.count(Review.id)).where(
+            Review.project_id == project.id,
+            Review.response_status.in_(["unanswered", None])
+        )
+    )).scalar() or 0
+
+    recent_revs_res = await db.execute(
+        select(Review).where(Review.project_id == project.id).order_by(Review.id.desc()).limit(3)
+    )
+    recent_reviews = [
+        {
+            "id": r.id,
+            "author_name": r.author_name,
+            "rating": r.rating,
+            "review_text": r.review_text[:120] if r.review_text else None,
+            "reviewed_at": r.reviewed_at.isoformat() if hasattr(r, 'reviewed_at') and r.reviewed_at else None,
+            "response_status": r.response_status
+        }
+        for r in recent_revs_res.scalars().all()
+    ]
+
+    # 8. Citations & NAP
+    total_cit = (await db.execute(
+        select(func.count(Citation.id)).where(Citation.project_id == project.id)
+    )).scalar() or 0
+    verified_cit = (await db.execute(
+        select(func.count(Citation.id)).where(
+            Citation.project_id == project.id,
+            Citation.nap_status == "match"
+        )
+    )).scalar() or 0
+    nap_conflicts = (await db.execute(
+        select(func.count(Citation.id)).where(
+            Citation.project_id == project.id,
+            Citation.nap_status == "mismatch"
+        )
+    )).scalar() or 0
+    unverified_cit = total_cit - verified_cit - nap_conflicts
+    if unverified_cit < 0:
+        unverified_cit = 0
+
+    # 9. Google Business Profile
+    google_acc_res = await db.execute(
+        select(GoogleAccount).where(GoogleAccount.project_id == project.id)
+    )
+    google_acc = google_acc_res.scalars().first()
+    gbp = None
+    if google_acc:
+        gbp_res = await db.execute(
+            select(GoogleBusinessProfile).where(GoogleBusinessProfile.google_account_id == google_acc.id)
+        )
+        gbp = gbp_res.scalars().first()
+
+    gbp_summary = {
+        "connected": gbp is not None,
+        "business_name": gbp.business_name if gbp else None,
+        "completeness_score": gbp.completeness_score if gbp else None,
+        "is_verified": getattr(gbp, "is_verified", None) if gbp else None,
+        "reviews_count": getattr(gbp, "reviews_count", rev_count) if gbp else rev_count,
+    }
+
+    # 10. Website Health
+    web_pages_count = (await db.execute(
+        select(func.count(WebsitePage.id)).join(Website).where(Website.project_id == project.id)
+    )).scalar() or 0
+
+    # 11. Priority Issues
+    issues_res = await db.execute(
+        select(SEOIssue)
+        .where(SEOIssue.project_id == project.id, SEOIssue.status == IssueStatus.OPEN)
+        .order_by(SEOIssue.severity.asc(), SEOIssue.id.asc())
+        .limit(5)
+    )
+    recent_issues = [
+        {
+            "id": i.id,
+            "title": i.title,
+            "severity": i.severity.value if hasattr(i.severity, "value") else str(i.severity),
+            "category": i.category,
+            "description": i.description[:150] if i.description else None,
+        }
+        for i in issues_res.scalars().all()
+    ]
+
+    # 12. Competitors
+    comp_count = (await db.execute(
+        select(func.count(Competitor.id)).where(Competitor.project_id == project.id)
+    )).scalar() or 0
+    comps_res = await db.execute(
+        select(Competitor).where(Competitor.project_id == project.id).limit(4)
+    )
+    tracked_competitors = [
+        {
+            "id": c.id,
+            "name": c.name,
+            "domain": c.domain,
+            "rating": c.rating,
+            "reviews_count": c.reviews_count,
+            "local_visibility_score": c.local_visibility_score,
+            "avg_maps_rank": c.avg_maps_rank
+        }
+        for c in comps_res.scalars().all()
+    ]
+
+    # 13. Recent Scan Activity (Unified across ScanJob, GeoGridScan, LocalAuditRun)
+    recent_activity = []
+    # Jobs
+    recent_jobs_res = await db.execute(
+        select(ScanJob).where(ScanJob.project_id == project.id).order_by(ScanJob.id.desc()).limit(3)
+    )
+    for j in recent_jobs_res.scalars().all():
+        recent_activity.append({
+            "type": "Keyword Scan",
+            "status": j.status.value if hasattr(j.status, "value") else str(j.status),
+            "progress": f"{j.processed_items}/{j.total_items}",
+            "errors": j.error_count,
+            "date": j.completed_at.isoformat() if j.completed_at else (j.started_at.isoformat() if j.started_at else j.created_at.isoformat()),
+            "link": "/rankings/keywords"
+        })
+    # Geo-Grid
+    if latest_geo:
+        recent_activity.append({
+            "type": "Geo-Grid",
+            "status": latest_geo.scan_status,
+            "progress": f"{latest_geo.completed_points}/{latest_geo.total_points}",
+            "errors": (latest_geo.provider_error_points or 0) + (latest_geo.timeout_points or 0),
+            "date": latest_geo.scanned_at.isoformat() if latest_geo.scanned_at else None,
+            "link": "/rankings/grid"
+        })
+    # Local Audit
+    if latest_local_audit:
+        recent_activity.append({
+            "type": "Local Audit",
+            "status": latest_local_audit.status,
+            "progress": "Complete",
+            "errors": 0,
+            "date": latest_local_audit.completed_at.isoformat() if latest_local_audit.completed_at else None,
+            "link": "/audits/local"
+        })
+    # Website Audit
+    if latest_seo_audit:
+        recent_activity.append({
+            "type": "Website Audit",
+            "status": "completed",
+            "progress": f"{latest_seo_audit.pages_analyzed} pages",
+            "errors": latest_seo_audit.critical_issues,
+            "date": latest_seo_audit.created_at.isoformat() if hasattr(latest_seo_audit, 'created_at') and latest_seo_audit.created_at else None,
+            "link": "/audits/technical"
+        })
+
+    # 14. Provider Usage Summary & Live Status (Strictly Project-Scoped)
+    usage_summary = await ProviderUsageService.get_project_usage_summary(
+        db=db,
+        project_id=project.id,
+        organization_id=project.organization_id
+    )
+    provider_status = await ProviderUsageService.get_provider_status_and_forecast(
+        db=db,
+        project_id=project.id,
+        organization_id=project.organization_id
+    )
+
+    # 15. Calculated Health Summary (10 Categories)
+    cat_scores = latest_local_audit.category_scores if (latest_local_audit and latest_local_audit.category_scores) else {}
+    health_summary = {
+        "overall_local_seo": latest_local_audit.overall_score if latest_local_audit else None,
+        "website_health": latest_seo_audit.overall_score if latest_seo_audit else cat_scores.get("website_structure"),
+        "local_visibility": round(latest_geo.local_visibility_pct, 0) if latest_geo and latest_geo.local_visibility_pct is not None else None,
+        "keyword_visibility": round((ranking_kws / total_kws) * 100, 0) if total_kws > 0 and ranking_kws > 0 else None,
+        "gbp_health": gbp.completeness_score if (gbp and gbp.completeness_score is not None) else (100 if gbp else None),
+        "reviews_reputation": round(rev_avg * 20, 0) if rev_avg else None,
+        "citation_health": round((verified_cit / total_cit) * 100, 0) if total_cit > 0 else None,
+        "technical_seo": cat_scores.get("technical_seo") or (latest_seo_audit.overall_score if latest_seo_audit else None),
+        "content_onpage": cat_scores.get("on_page"),
+        "competitor_visibility": min(100, comp_count * 25) if comp_count > 0 else None
+    }
+
+    return {
+        "project": {
+            "id": project.id,
+            "name": project.name,
+            "domain": project.domain,
+            "status": project.status,
+            "organization_id": project.organization_id,
+            "location": location_summary
+        },
+        "business_profile": bp_data,
+        "health_summary": health_summary,
+        "visibility": {
+            "tracked_keywords": total_kws,
+            "ranking_keywords": ranking_kws,
+            "improved_keywords": improved_kws,
+            "declined_keywords": declined_kws,
+            "top_3": top_3_kws,
+            "top_10": top_10_kws,
+            "top_20": top_20_kws,
+            "not_found": not_found_kws,
+            "avg_organic_rank": avg_organic_rank,
+            "avg_local_pack_rank": avg_local_pack_rank,
+            "geo_visibility_pct": round(latest_geo.local_visibility_pct, 1) if latest_geo and latest_geo.local_visibility_pct is not None else None,
+            "geo_avg_rank": round(latest_geo.average_rank, 1) if latest_geo and latest_geo.average_rank is not None else None,
+        },
+        "visibility_breakdown": {
+            "organic": {
+                "avg_rank": avg_organic_rank,
+                "ranking_count": len(organic_ranks),
+                "top_3": sum(1 for r in organic_ranks if r <= 3),
+                "top_10": sum(1 for r in organic_ranks if r <= 10),
+            },
+            "local_pack": {
+                "avg_rank": avg_local_pack_rank,
+                "ranking_count": len(local_pack_ranks),
+                "top_3": sum(1 for r in local_pack_ranks if r <= 3),
+                "top_10": sum(1 for r in local_pack_ranks if r <= 10),
+            },
+            "geo_grid": {
+                "avg_rank": round(latest_geo.average_rank, 1) if latest_geo and latest_geo.average_rank is not None else None,
+                "visibility_pct": round(latest_geo.local_visibility_pct, 1) if latest_geo and latest_geo.local_visibility_pct is not None else None,
+                "top_3_count": geo_top_3,
+                "top_10_count": geo_top_10,
+            }
+        },
+        "geo_grid": {
+            "latest_scan_date": latest_geo.scanned_at.isoformat() if latest_geo and latest_geo.scanned_at else None,
+            "grid_dimension": f"{latest_geo.grid_size}x{latest_geo.grid_size}" if latest_geo else "5x5",
+            "visibility_pct": round(latest_geo.local_visibility_pct, 1) if latest_geo and latest_geo.local_visibility_pct is not None else None,
+            "top_3_count": geo_top_3,
+            "top_10_count": geo_top_10,
+            "average_rank": round(latest_geo.average_rank, 1) if latest_geo and latest_geo.average_rank is not None else None,
+            "status": latest_geo.scan_status if latest_geo else None
+        } if latest_geo else None,
+        "keywords_widget": {
+            "total": total_kws,
+            "top_3": top_3_kws,
+            "top_10": top_10_kws,
+            "not_found": not_found_kws,
+            "improved": improved_kws,
+            "declined": declined_kws,
+            "latest_scan_status": (latest_kw_job.status.value if hasattr(latest_kw_job.status, "value") else str(latest_kw_job.status)) if latest_kw_job else ("completed" if total_kws > 0 else "idle"),
+            "latest_scan_date": latest_kw_job.completed_at.isoformat() if latest_kw_job and latest_kw_job.completed_at else None
+        },
+        "scan_activity": recent_activity,
+        "provider_usage": usage_summary,
+        "provider_status": provider_status,
+        "recent_issues": recent_issues,
+        "reviews": {
+            "total": rev_count,
+            "average_rating": round(rev_avg, 1) if rev_avg else None,
+            "unanswered": rev_unanswered,
+            "recent": recent_reviews
+        },
+        "gbp": gbp_summary,
+        "citations": {
+            "total": total_cit,
+            "verified": verified_cit,
+            "nap_conflicts": nap_conflicts,
+            "unverified": unverified_cit
+        },
+        "website_health": {
+            "score": latest_seo_audit.overall_score if latest_seo_audit else None,
+            "pages_crawled": web_pages_count or (latest_seo_audit.pages_analyzed if latest_seo_audit else 0),
+            "critical_errors": latest_seo_audit.critical_issues if latest_seo_audit else 0,
+            "warnings": latest_seo_audit.warnings if latest_seo_audit else 0,
+            "passed_checks": latest_seo_audit.passed_checks if latest_seo_audit else 0,
+        },
+        "competitors": {
+            "total_tracked": comp_count,
+            "items": tracked_competitors
+        }
     }

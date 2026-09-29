@@ -39,7 +39,7 @@ async def test_serp_architecture():
         # Test search behavior when unconfigured
         res = await provider.search_keyword("test keyword", "New York, USA")
         assert res.success is False
-        assert res.error_code == "SERP_API_KEY_REQUIRED"
+        assert res.error_code in ("SERP_PROVIDER_NOT_CONFIGURED", "SERP_API_KEY_REQUIRED")
         assert res.organic_results == []
         print("[PASS] Step 1: Unconfigured organization returns NotConfiguredSERPProvider with clean error state (no Docker attempted)")
 

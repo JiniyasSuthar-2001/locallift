@@ -24,11 +24,11 @@ class GBPProfileOut(BaseModel):
     posts_count: int = 0
     completeness_score: int = 0
     is_verified: bool = False
-    search_impressions: int = 0
-    maps_impressions: int = 0
-    website_clicks: int = 0
-    call_clicks: int = 0
-    direction_requests: int = 0
+    search_impressions: Optional[int] = None
+    maps_impressions: Optional[int] = None
+    website_clicks: Optional[int] = None
+    call_clicks: Optional[int] = None
+    direction_requests: Optional[int] = None
     last_synced_at: Optional[datetime] = None
     created_at: Optional[datetime] = None
 
@@ -70,3 +70,85 @@ class GBPSyncResponse(BaseModel):
     profiles_synced: int
     changes_detected: int
     last_synced_at: datetime
+
+
+class ProductOrServiceItemOut(BaseModel):
+    id: str
+    type: str  # "product" or "service"
+    name: str
+    description: Optional[str] = None
+    category: Optional[str] = None
+    price: Optional[str] = None
+    price_range: Optional[str] = None
+    image_url: Optional[str] = None
+    photo_urls: Optional[List[str]] = []
+    action_url: Optional[str] = None
+    action_type: Optional[str] = None
+    source: str = "GOOGLE_BUSINESS_PROFILE"
+    created_at: Optional[str] = None
+    updated_at: Optional[str] = None
+
+
+class ProductCreate(BaseModel):
+    name: str
+    description: Optional[str] = None
+    category: Optional[str] = None
+    price: Optional[str] = None
+    price_range: Optional[str] = None
+    image_url: Optional[str] = None
+    action_url: Optional[str] = None
+    action_type: Optional[str] = None
+
+
+class ProductUpdate(BaseModel):
+    name: Optional[str] = None
+    description: Optional[str] = None
+    category: Optional[str] = None
+    price: Optional[str] = None
+    price_range: Optional[str] = None
+    image_url: Optional[str] = None
+    action_url: Optional[str] = None
+    action_type: Optional[str] = None
+
+
+class ServiceCreate(BaseModel):
+    name: str
+    description: Optional[str] = None
+    category: Optional[str] = None
+    price: Optional[str] = None
+    price_range: Optional[str] = None
+    action_url: Optional[str] = None
+    action_type: Optional[str] = None
+    attributes: Optional[Dict[str, Any]] = None
+
+
+class ServiceUpdate(BaseModel):
+    name: Optional[str] = None
+    description: Optional[str] = None
+    category: Optional[str] = None
+    price: Optional[str] = None
+    price_range: Optional[str] = None
+    action_url: Optional[str] = None
+    action_type: Optional[str] = None
+    attributes: Optional[Dict[str, Any]] = None
+
+
+class BulkProductsServicesImport(BaseModel):
+    products: Optional[List[ProductCreate]] = []
+    services: Optional[List[ServiceCreate]] = []
+
+
+class ProductsServicesResponseOut(BaseModel):
+    business_name: str
+    place_id: Optional[str] = None
+    is_connected: bool = False
+    connected_account: Optional[str] = None
+    total_products: int = 0
+    total_services: int = 0
+    last_synced_at: Optional[str] = None
+    sync_status: Optional[str] = "NOT_SYNCED"  # SYNCED, PARTIAL, FAILED, NOT_AVAILABLE, CACHED, NOT_SYNCED
+    sync_message: Optional[str] = None
+    can_sync: bool = False
+    items: List[ProductOrServiceItemOut] = []
+
+

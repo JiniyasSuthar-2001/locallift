@@ -30,6 +30,9 @@ from app.api.v1.admin_ai import router as admin_ai_router
 from app.api.v1.business_profile import router as business_profile_router
 from app.api.v1.local_audits import router as local_audits_router
 from app.api.v1.intelligence_scan import router as intelligence_scan_router
+from app.api.v1.jobs import router as jobs_router
+from app.api.v1.masterplace import router as masterplace_router
+from app.api.v1.user_dashboard import router as user_dashboard_router
 
 logger = logging.getLogger("locallift")
 
@@ -42,23 +45,13 @@ app = FastAPI(
 # CORS Configuration
 origins = [str(origin).rstrip("/") for origin in settings.BACKEND_CORS_ORIGINS] if settings.BACKEND_CORS_ORIGINS else []
 
-if settings.ENVIRONMENT.lower() == "production":
-    app.add_middleware(
-        CORSMiddleware,
-        allow_origins=origins,
-        allow_credentials=True,
-        allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-        allow_headers=["*"],
-    )
-else:
-    app.add_middleware(
-        CORSMiddleware,
-        allow_origins=origins,
-        allow_origin_regex=r".*",
-        allow_credentials=True,
-        allow_methods=["*"],
-        allow_headers=["*"],
-    )
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=origins,
+    allow_credentials=True,
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allow_headers=["*"],
+)
 
 import time
 
@@ -109,16 +102,15 @@ app.include_router(admin_ai_router, prefix=settings.API_V1_STR)
 app.include_router(business_profile_router, prefix=settings.API_V1_STR)
 app.include_router(local_audits_router, prefix=settings.API_V1_STR)
 app.include_router(intelligence_scan_router, prefix=settings.API_V1_STR)
+app.include_router(jobs_router, prefix=settings.API_V1_STR)
+app.include_router(masterplace_router, prefix=settings.API_V1_STR)
+app.include_router(user_dashboard_router, prefix=settings.API_V1_STR)
 
 def _is_allowed_origin(origin: Optional[str]) -> bool:
     if not origin:
         return False
     clean_origin = origin.rstrip("/")
-    if clean_origin in origins:
-        return True
-    if settings.ENVIRONMENT.lower() != "production":
-        return True
-    return False
+    return clean_origin in origins
 
 def _add_cors_headers(request: Request, headers: dict = None) -> dict:
     h = dict(headers or {})
@@ -188,9 +180,32 @@ async def startup_event():
     import app.models  # noqa: F401
     from app.core.migrations import run_db_migrations
     from app.services.scheduler import start_scheduler
+    from sqlalchemy.future import select
+    from app.models.ranking import GeoGridScan
+
     settings.validate_production_security()
     await asyncio.to_thread(run_db_migrations)
     start_scheduler()
+
+    # Recover abandoned running scans from previous interrupted process
+    try:
+        async with AsyncSessionLocal() as session:
+            stale_scans_res = await session.execute(
+                select(GeoGridScan).where(GeoGridScan.scan_status == "running")
+            )
+            stale_scans = stale_scans_res.scalars().all()
+            if stale_scans:
+                logger.warning(
+                    f"[STARTUP_RECOVERY] Found {len(stale_scans)} abandoned running scans. "
+                    "Marking them as interrupted."
+                )
+                for s in stale_scans:
+                    s.scan_status = "interrupted"
+                    s.cancellation_reason = "Scan interrupted by server restart"
+                    s.cancelled_at = datetime.now(timezone.utc)
+                await session.commit()
+    except Exception as e:
+        logger.error(f"[STARTUP_RECOVERY] Error recovering stale scans: {e}")
 
 @app.on_event("shutdown")
 async def shutdown_event():
@@ -206,10 +221,26 @@ async def root():
         "docs_url": "/docs"
     }
 
+from sqlalchemy import text
+
 @app.get("/health")
 async def health_check():
-    return {
-        "status": "ok",
-        "timestamp": datetime.now(timezone.utc).isoformat(),
-        "database": "connected"
-    }
+    now_iso = datetime.now(timezone.utc).isoformat()
+    try:
+        async with AsyncSessionLocal() as session:
+            await session.execute(text("SELECT 1"))
+        return {
+            "status": "ok",
+            "timestamp": now_iso,
+            "database": "connected"
+        }
+    except Exception as e:
+        logger.error(f"Database health check failed: {e}")
+        return JSONResponse(
+            status_code=503,
+            content={
+                "status": "degraded",
+                "timestamp": now_iso,
+                "database": "disconnected"
+            }
+        )

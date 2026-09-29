@@ -2,6 +2,7 @@ import React from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
 import {
   LayoutDashboard,
+  LayoutGrid,
   TrendingUp,
   MapPin,
   Store,
@@ -24,7 +25,8 @@ import {
   PhoneCall,
   BarChart3,
   History,
-  Search
+  Search,
+  Package
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 
@@ -46,7 +48,8 @@ export const Sidebar: React.FC = () => {
     {
       title: 'Overview',
       items: [
-        { name: 'Dashboard', path: '/', icon: LayoutDashboard },
+        { name: 'Project Dashboard', path: '/', icon: LayoutDashboard },
+        { name: 'Main Dashboard', path: '/dashboard', icon: LayoutGrid },
         { name: 'My Projects', path: '/projects', icon: FolderKanban },
       ]
     },
@@ -56,8 +59,7 @@ export const Sidebar: React.FC = () => {
         { name: 'Local SEO Audit', path: '/audits/local', icon: ShieldCheck },
         { name: 'Google Business', path: '/google/gbp', icon: Store },
         { name: 'Reviews', path: '/local/reviews', icon: Star },
-        { name: 'NAP Consistency', path: '/local/nap', icon: PhoneCall },
-        { name: 'Citations', path: '/local/citations', icon: BookOpen },
+        { name: 'Citations & NAP', path: '/local/citations', icon: BookOpen },
         { name: 'Schema', path: '/seo/schema', icon: FileCode2 },
       ]
     },

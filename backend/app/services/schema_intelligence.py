@@ -27,6 +27,135 @@ TIER_1_SCHEMAS = [
     "VideoObject",
 ]
 
+SCHEMA_METADATA: Dict[str, Dict[str, Any]] = {
+    "Organization": {
+        "definition": "Represents an umbrella organization, parent company, or brand identity.",
+        "why_it_matters": "Establishes canonical brand authority in Google Knowledge Graph and links official social profiles via sameAs.",
+        "recommended_page_types": ["Homepage", "About", "Contact"],
+        "required_properties": ["@type", "name", "url"],
+        "recommended_properties": ["logo", "sameAs", "contactPoint", "telephone", "address"]
+    },
+    "LocalBusiness": {
+        "definition": "Represents a physical commercial location or service-area business offering local services.",
+        "why_it_matters": "Directly feeds Google Local Pack, Maps search, and voice queries with verified address, geo, phone, and hours.",
+        "recommended_page_types": ["Homepage", "Contact", "Service Location", "About"],
+        "required_properties": ["@type", "name", "address", "telephone"],
+        "recommended_properties": ["geo", "openingHoursSpecification", "priceRange", "image", "url", "areaServed"]
+    },
+    "WebSite": {
+        "definition": "Represents the root website entity hosting the domain's web pages.",
+        "why_it_matters": "Enables Google Sitelinks Search Box and establishes the canonical domain structure.",
+        "recommended_page_types": ["Homepage"],
+        "required_properties": ["@type", "name", "url"],
+        "recommended_properties": ["potentialAction", "publisher", "description", "inLanguage"]
+    },
+    "WebPage": {
+        "definition": "Represents an individual crawled indexable web document on the site.",
+        "why_it_matters": "Provides page-level context, breadcrumb linkage, and isPartOf relations for rich snippet indexation.",
+        "recommended_page_types": ["All Pages"],
+        "required_properties": ["@type", "name", "url"],
+        "recommended_properties": ["description", "isPartOf", "breadcrumb", "inLanguage", "datePublished", "dateModified"]
+    },
+    "BreadcrumbList": {
+        "definition": "Represents the navigational hierarchy leading to the current page URL.",
+        "why_it_matters": "Generates clean breadcrumb navigation trail in Google search results instead of raw URLs.",
+        "recommended_page_types": ["All Subpages", "Service", "Blog Article", "Product"],
+        "required_properties": ["@type", "itemListElement"],
+        "recommended_properties": ["numberOfItems"]
+    },
+    "Service": {
+        "definition": "Represents a specific commercial or trade service offered by the business.",
+        "why_it_matters": "Improves organic ranking for transactional service searches (e.g. 'emergency electrical repair', 'switchboard upgrade').",
+        "recommended_page_types": ["Service", "Service Location", "Homepage"],
+        "required_properties": ["@type", "name", "provider"],
+        "recommended_properties": ["description", "areaServed", "serviceType", "offers", "termsOfService", "hasOfferCatalog"]
+    },
+    "Product": {
+        "definition": "Represents any tangible or digital product item available for purchase or inquiry.",
+        "why_it_matters": "Unlocks Google rich snippets including pricing, availability, and merchant listing badges.",
+        "recommended_page_types": ["Product", "Pricing"],
+        "required_properties": ["@type", "name", "offers"],
+        "recommended_properties": ["image", "description", "brand", "sku", "aggregateRating", "priceRange"]
+    },
+    "Article": {
+        "definition": "Represents an editorial article, news report, or in-depth technical resource.",
+        "why_it_matters": "Qualifies content for Google News, Discover, and headline rich snippet carousels.",
+        "recommended_page_types": ["Blog Article", "News"],
+        "required_properties": ["@type", "headline", "author", "publisher", "datePublished"],
+        "recommended_properties": ["image", "dateModified", "mainEntityOfPage", "description"]
+    },
+    "BlogPosting": {
+        "definition": "A specialized subtype of Article specifically designating a company blog post.",
+        "why_it_matters": "Clarifies editorial freshness and author expertise (E-E-A-T) for informational queries.",
+        "recommended_page_types": ["Blog Article"],
+        "required_properties": ["@type", "headline", "author", "datePublished"],
+        "recommended_properties": ["image", "dateModified", "publisher", "articleBody", "keywords"]
+    },
+    "Person": {
+        "definition": "Represents an individual practitioner, founder, author, or licensed team member.",
+        "why_it_matters": "Crucial for Google's E-E-A-T (Experience, Expertise, Authoritativeness, Trustworthiness) entity linking.",
+        "recommended_page_types": ["About", "Team/Profile", "Blog Article"],
+        "required_properties": ["@type", "name"],
+        "recommended_properties": ["jobTitle", "worksFor", "sameAs", "image", "description"]
+    },
+    "Review": {
+        "definition": "Represents an authentic individual user or customer review testimonial.",
+        "why_it_matters": "Displays verified review snippets and customer credibility directly in search results.",
+        "recommended_page_types": ["Review/Testimonial", "Homepage", "Service Location"],
+        "required_properties": ["@type", "author", "reviewRating", "itemReviewed"],
+        "recommended_properties": ["reviewBody", "datePublished", "publisher"]
+    },
+    "AggregateRating": {
+        "definition": "Represents the overall composite star rating and total review count for a business or service.",
+        "why_it_matters": "Enables the gold star rating rich snippet under your search result listing in SERP.",
+        "recommended_page_types": ["Homepage", "Service", "Service Location"],
+        "required_properties": ["@type", "ratingValue", "reviewCount", "itemReviewed"],
+        "recommended_properties": ["bestRating", "worstRating"]
+    },
+    "Offer": {
+        "definition": "Specifies commercial pricing terms, warranties, and availability for services or products.",
+        "why_it_matters": "Displays price range and instant booking availability in rich search snippets.",
+        "recommended_page_types": ["Pricing", "Service", "Product"],
+        "required_properties": ["@type", "price", "priceCurrency"],
+        "recommended_properties": ["availability", "validFrom", "priceValidUntil", "url", "seller"]
+    },
+    "FAQPage": {
+        "definition": "Represents a list of frequently asked questions and official business answers.",
+        "why_it_matters": "Can earn prominent collapsible FAQ accordion rich snippets directly under search listings.",
+        "recommended_page_types": ["FAQ", "Service", "Homepage"],
+        "required_properties": ["@type", "mainEntity"],
+        "recommended_properties": ["name", "description"]
+    },
+    "Event": {
+        "definition": "Represents an upcoming scheduled public or private event, webinar, or community workshop.",
+        "why_it_matters": "Enables interactive Google Event search card with dates, location, and ticket options.",
+        "recommended_page_types": ["Event", "Workshop"],
+        "required_properties": ["@type", "name", "startDate", "location"],
+        "recommended_properties": ["endDate", "description", "image", "offers", "organizer", "eventStatus"]
+    },
+    "JobPosting": {
+        "definition": "Represents an open employment vacancy or apprenticeship listing.",
+        "why_it_matters": "Directly feeds Google for Jobs specialized search portal.",
+        "recommended_page_types": ["Career/Job"],
+        "required_properties": ["@type", "title", "description", "datePosted", "hiringOrganization", "jobLocation"],
+        "recommended_properties": ["employmentType", "baseSalary", "validThrough"]
+    },
+    "ImageObject": {
+        "definition": "Represents a high-resolution logo, showroom photo, or featured work graphic.",
+        "why_it_matters": "Powers Google Images rich previews and visual search inclusion.",
+        "recommended_page_types": ["All Pages", "Gallery"],
+        "required_properties": ["@type", "contentUrl"],
+        "recommended_properties": ["name", "description", "width", "height", "caption"]
+    },
+    "VideoObject": {
+        "definition": "Represents an embedded video tutorial, customer case study, or company overview.",
+        "why_it_matters": "Generates Video search rich results with duration badge, thumbnail, and key moments.",
+        "recommended_page_types": ["Service", "Homepage", "Blog Article"],
+        "required_properties": ["@type", "name", "description", "thumbnailUrl", "uploadDate"],
+        "recommended_properties": ["contentUrl", "embedUrl", "duration"]
+    }
+}
+
 INDUSTRY_SCHEMAS = [
     "Restaurant",
     "Hotel",
@@ -294,21 +423,39 @@ class SchemaIntelligenceEngine:
         schema_types = []
         parse_errors = []
         formats_detected = set()
+        raw_script_blocks = []
 
         # A. JSON-LD Extraction
-        for script in soup.find_all("script", type="application/ld+json"):
+        for script in soup.find_all("script", type=re.compile(r"application/ld\+json", re.I)):
             formats_detected.add("JSON-LD")
-            raw_text = script.string or ""
-            if not raw_text.strip():
+            raw_text = script.get_text() or script.string or ""
+            raw_text = raw_text.strip()
+            if not raw_text:
                 continue
-            try:
-                data = json.loads(raw_text)
-                json_ld_schemas.append(data)
-                cls._flatten_entities(data, raw_entities, source="JSON-LD")
-            except Exception as e:
-                parse_errors.append(f"JSON-LD syntax error in script tag: {str(e)[:80]}")
 
-        # B. Microdata Extraction (Basic detection)
+            # Strip CDATA and HTML comments
+            clean_text = re.sub(r"^\s*<!\[CDATA\[", "", raw_text)
+            clean_text = re.sub(r"\]\]>\s*$", "", clean_text)
+            clean_text = re.sub(r"^\s*<!--", "", clean_text)
+            clean_text = re.sub(r"-->\s*$", "", clean_text).strip()
+
+            raw_script_blocks.append(clean_text)
+
+            try:
+                data = json.loads(clean_text)
+                json_ld_schemas.append(data)
+                cls._flatten_entities(data, raw_entities, source="JSON-LD", raw_script=clean_text)
+            except Exception as e:
+                # Attempt light sanitization for trailing commas
+                sanitized = re.sub(r",\s*([\]}])", r"\1", clean_text)
+                try:
+                    data = json.loads(sanitized)
+                    json_ld_schemas.append(data)
+                    cls._flatten_entities(data, raw_entities, source="JSON-LD", raw_script=clean_text)
+                except Exception:
+                    parse_errors.append(f"JSON-LD syntax error in script tag: {str(e)[:120]}")
+
+        # B. Microdata Extraction (Detection & property gathering)
         microdata_items = soup.find_all(attrs={"itemscope": True})
         if microdata_items:
             formats_detected.add("Microdata")
@@ -317,10 +464,17 @@ class SchemaIntelligenceEngine:
                 if item_type:
                     type_name = item_type.split("/")[-1].strip()
                     if type_name:
+                        props = {}
+                        for prop_tag in item.find_all(attrs={"itemprop": True}):
+                            prop_name = prop_tag.get("itemprop")
+                            prop_val = prop_tag.get("content") or prop_tag.get("href") or prop_tag.get_text(strip=True)
+                            if prop_name and prop_val:
+                                props[prop_name] = prop_val
                         raw_entities.append({
                             "@type": type_name,
                             "source": "Microdata",
-                            "raw": {"@type": type_name, "itemtype": item_type}
+                            "properties": {"@type": type_name, "itemtype": item_type, **props},
+                            "raw": {"@type": type_name, "itemtype": item_type, **props}
                         })
 
         # C. RDFa Extraction
@@ -330,10 +484,17 @@ class SchemaIntelligenceEngine:
             for item in rdfa_items:
                 type_name = item.get("typeof", "").split(":")[-1].split("/")[-1].strip()
                 if type_name:
+                    props = {}
+                    for prop_tag in item.find_all(attrs={"property": True}):
+                        prop_name = prop_tag.get("property", "").split(":")[-1].strip()
+                        prop_val = prop_tag.get("content") or prop_tag.get("href") or prop_tag.get_text(strip=True)
+                        if prop_name and prop_val:
+                            props[prop_name] = prop_val
                     raw_entities.append({
                         "@type": type_name,
                         "source": "RDFa",
-                        "raw": {"@type": type_name}
+                        "properties": {"@type": type_name, **props},
+                        "raw": {"@type": type_name, **props}
                     })
 
         for ent in raw_entities:
@@ -347,6 +508,7 @@ class SchemaIntelligenceEngine:
 
         return {
             "json_ld_schemas": json_ld_schemas,
+            "raw_script_blocks": raw_script_blocks,
             "schema_entities": raw_entities,
             "schema_types": schema_types,
             "schema_formats": list(formats_detected),
@@ -355,25 +517,41 @@ class SchemaIntelligenceEngine:
         }
 
     @classmethod
-    def _flatten_entities(cls, obj: Any, out_list: List[Dict[str, Any]], source: str = "JSON-LD"):
+    def _flatten_entities(
+        cls,
+        obj: Any,
+        out_list: List[Dict[str, Any]],
+        source: str = "JSON-LD",
+        raw_script: Optional[str] = None
+    ):
         if isinstance(obj, dict):
             if "@graph" in obj and isinstance(obj["@graph"], list):
                 for g_item in obj["@graph"]:
-                    cls._flatten_entities(g_item, out_list, source=source)
+                    cls._flatten_entities(g_item, out_list, source=source, raw_script=raw_script)
             elif "@type" in obj:
+                st = obj["@type"]
+                clean_props = {k: v for k, v in obj.items() if k not in ["@context"]}
                 out_list.append({
-                    "@type": obj["@type"],
+                    "@type": st,
                     "@id": obj.get("@id"),
+                    "name": obj.get("name") or obj.get("headline") or obj.get("title"),
                     "source": source,
-                    "raw": obj
+                    "properties": clean_props,
+                    "raw": obj,
+                    "raw_script": raw_script
                 })
                 # Check nested children
                 for k, v in obj.items():
-                    if k not in ["@type", "@id", "@context"] and isinstance(v, (dict, list)):
-                        cls._flatten_entities(v, out_list, source=source)
+                    if k not in ["@type", "@id", "@context"]:
+                        if isinstance(v, dict) and "@type" in v:
+                            cls._flatten_entities(v, out_list, source=source, raw_script=raw_script)
+                        elif isinstance(v, list):
+                            for item in v:
+                                if isinstance(item, dict) and "@type" in item:
+                                    cls._flatten_entities(item, out_list, source=source, raw_script=raw_script)
         elif isinstance(obj, list):
             for item in obj:
-                cls._flatten_entities(item, out_list, source=source)
+                cls._flatten_entities(item, out_list, source=source, raw_script=raw_script)
 
     # -------------------------------------------------------------------------
     # 4. Applicability Engine
@@ -647,6 +825,11 @@ class SchemaIntelligenceEngine:
         canonical_phone = (project_context or {}).get("phone")
         canonical_name = (project_context or {}).get("name")
         canonical_domain = (project_context or {}).get("domain")
+        canonical_address = (project_context or {}).get("address")
+        canonical_lat = (project_context or {}).get("latitude")
+        canonical_lng = (project_context or {}).get("longitude")
+        canonical_category = (project_context or {}).get("primary_category")
+        canonical_source = (project_context or {}).get("canonical_source", "PROJECT_USER_INPUT")
 
         # ---------------------------------------------------------------------
         # LocalBusiness / Specialized Subtypes
@@ -656,81 +839,192 @@ class SchemaIntelligenceEngine:
             any(sub in st_str for sub in ["Electrician", "Plumber", "HVAC", "Dentist", "Medical", "Clinic", "Restaurant", "Store", "Legal", "Automotive", "Contractor", "Service"])
         )
 
+        comparison_details: Dict[str, Dict[str, Any]] = {}
+
         if is_local_biz:
-            # Name
+            # 1. Name Comparison
             name = raw.get("name")
             if not name:
                 errors.append("Missing critical property: 'name'")
                 missing_properties.append("name (Critical)")
-            else:
+                name_status = "MISSING"
+            elif not canonical_name:
+                name_status = "NOT_VERIFIED"
                 property_results.append({"property": "name", "value": name, "status": "Verified", "confidence": 98})
-                if canonical_name and canonical_name.lower() not in name.lower() and name.lower() not in canonical_name.lower():
-                    warnings.append(f"Business name '{name}' differs from project name '{canonical_name}'")
+            elif canonical_name.strip().lower() == str(name).strip().lower() or canonical_name.strip().lower() in str(name).strip().lower() or str(name).strip().lower() in canonical_name.strip().lower():
+                name_status = "MATCH"
+                property_results.append({"property": "name", "value": name, "status": "Verified", "confidence": 98})
+            else:
+                name_status = "MISMATCH"
+                property_results.append({"property": "name", "value": name, "status": "Verified", "confidence": 98})
+                warnings.append(f"Business name '{name}' differs from canonical '{canonical_name}' ({canonical_source})")
 
-            # URL
+            comparison_details["name"] = {
+                "expected": canonical_name,
+                "found": name,
+                "status": name_status,
+                "source": canonical_source
+            }
+
+            # 2. URL / Website Comparison
             url = raw.get("url")
             if not url:
                 warnings.append("Missing recommended property: 'url'")
                 missing_properties.append("url (Recommended)")
+                web_status = "MISSING"
+            elif not canonical_domain:
+                web_status = "NOT_VERIFIED"
+                property_results.append({"property": "url", "value": url, "status": "Verified", "confidence": 98})
+            elif canonical_domain.replace("https://", "").replace("http://", "").rstrip("/").lower() in str(url).lower():
+                web_status = "MATCH"
+                property_results.append({"property": "url", "value": url, "status": "Verified", "confidence": 98})
             else:
+                web_status = "MISMATCH"
                 property_results.append({"property": "url", "value": url, "status": "Verified", "confidence": 98})
 
-            # Telephone & NAP Check
+            comparison_details["website"] = {
+                "expected": canonical_domain,
+                "found": url,
+                "status": web_status,
+                "source": canonical_source
+            }
+
+            # 3. Telephone & Phone Comparison
             tel = raw.get("telephone")
             if not tel:
                 warnings.append("Missing recommended property: 'telephone'")
                 missing_properties.append("telephone (Recommended)")
-            else:
+                phone_status = "MISSING"
+            elif not canonical_phone:
+                phone_status = "NOT_VERIFIED"
                 property_results.append({"property": "telephone", "value": tel, "status": "Verified", "confidence": 98})
+            else:
                 norm_schema_phone = _normalize_phone(tel)
                 norm_canon_phone = _normalize_phone(canonical_phone)
-                if norm_canon_phone:
-                    if norm_canon_phone in norm_schema_phone or norm_schema_phone in norm_canon_phone:
-                        nap_match_status = "Consistent"
-                    else:
-                        nap_match_status = "Mismatch"
-                        errors.append(f"NAP Phone Mismatch: Schema phone '{tel}' differs from canonical '{canonical_phone}'")
+                if norm_canon_phone and (norm_canon_phone in norm_schema_phone or norm_schema_phone in norm_canon_phone):
+                    phone_status = "MATCH"
+                    nap_match_status = "Consistent"
+                else:
+                    phone_status = "MISMATCH"
+                    nap_match_status = "Mismatch"
+                    errors.append(f"NAP Phone Mismatch: Schema phone '{tel}' differs from canonical '{canonical_phone}' ({canonical_source})")
+                property_results.append({"property": "telephone", "value": tel, "status": "Verified", "confidence": 98})
 
-            # PostalAddress
+            comparison_details["phone"] = {
+                "expected": canonical_phone,
+                "found": tel,
+                "status": phone_status,
+                "source": canonical_source
+            }
+
+            # 4. PostalAddress & Address Comparison
             addr = raw.get("address")
+            found_addr_str = None
             if not addr:
                 warnings.append("Missing recommended property: 'address' (PostalAddress)")
                 missing_properties.append("address (Recommended)")
+                addr_status = "MISSING"
             elif isinstance(addr, dict):
                 has_street = bool(addr.get("streetAddress"))
                 has_locality = bool(addr.get("addressLocality"))
-                has_country = bool(addr.get("addressCountry"))
                 if not (has_street or has_locality):
                     errors.append("PostalAddress must include streetAddress or addressLocality")
+                found_addr_str = f"{addr.get('streetAddress', '')}, {addr.get('addressLocality', '')} {addr.get('postalCode', '')} {addr.get('addressCountry', '')}".strip(" ,")
                 property_results.append({
                     "property": "address",
-                    "value": f"{addr.get('streetAddress', '')}, {addr.get('addressLocality', '')} {addr.get('postalCode', '')} {addr.get('addressCountry', '')}".strip(" ,"),
+                    "value": found_addr_str,
                     "status": "Verified",
                     "confidence": 95
                 })
+                if not canonical_address:
+                    addr_status = "NOT_VERIFIED"
+                elif addr.get("streetAddress", "").lower() in canonical_address.lower() or canonical_address.lower() in found_addr_str.lower():
+                    addr_status = "MATCH"
+                else:
+                    addr_status = "MISMATCH"
             else:
+                found_addr_str = str(addr)
                 warnings.append("Property 'address' should be a structured PostalAddress object")
+                addr_status = "MATCH" if (canonical_address and canonical_address.lower() in found_addr_str.lower()) else "MISMATCH"
 
-            # Geo Coordinates (Lat/Long)
+            comparison_details["address"] = {
+                "expected": canonical_address,
+                "found": found_addr_str,
+                "status": addr_status,
+                "source": canonical_source
+            }
+
+            # 5. Geo Coordinates (Latitude & Longitude Comparison)
             geo = raw.get("geo")
+            found_lat = None
+            found_lng = None
             if not geo:
                 missing_properties.append("geo (Optional / Context)")
+                lat_status = "MISSING"
+                lng_status = "MISSING"
             elif isinstance(geo, dict):
                 lat = geo.get("latitude")
                 lng = geo.get("longitude")
                 if lat is None or lng is None:
                     warnings.append("GeoCoordinates object missing latitude or longitude")
+                    lat_status = "MISSING" if lat is None else "NOT_VERIFIED"
+                    lng_status = "MISSING" if lng is None else "NOT_VERIFIED"
                 else:
                     try:
-                        f_lat, f_lng = float(lat), float(lng)
-                        if not (-90.0 <= f_lat <= 90.0 and -180.0 <= f_lng <= 180.0):
-                            errors.append(f"Invalid GeoCoordinates: lat {f_lat}, lng {f_lng} out of range")
-                        elif f_lat == 0.0 and f_lng == 0.0:
+                        found_lat, found_lng = float(lat), float(lng)
+                        if not (-90.0 <= found_lat <= 90.0 and -180.0 <= found_lng <= 180.0):
+                            errors.append(f"Invalid GeoCoordinates: lat {found_lat}, lng {found_lng} out of range")
+                            lat_status = "MISMATCH"
+                            lng_status = "MISMATCH"
+                        elif found_lat == 0.0 and found_lng == 0.0:
                             warnings.append("Suspicious GeoCoordinates: lat/lng is (0, 0)")
+                            lat_status = "MISMATCH"
+                            lng_status = "MISMATCH"
                         else:
-                            property_results.append({"property": "geo", "value": f"({f_lat}, {f_lng})", "status": "Verified", "confidence": 98})
+                            property_results.append({"property": "geo", "value": f"({found_lat}, {found_lng})", "status": "Verified", "confidence": 98})
+                            if canonical_lat is not None and canonical_lng is not None:
+                                lat_diff = abs(float(canonical_lat) - found_lat)
+                                lng_diff = abs(float(canonical_lng) - found_lng)
+                                lat_status = "MATCH" if lat_diff <= 0.01 else "MISMATCH"
+                                lng_status = "MATCH" if lng_diff <= 0.01 else "MISMATCH"
+                            else:
+                                lat_status = "NOT_VERIFIED"
+                                lng_status = "NOT_VERIFIED"
                     except (ValueError, TypeError):
                         errors.append("GeoCoordinates latitude and longitude must be valid numeric values")
+                        lat_status = "MISMATCH"
+                        lng_status = "MISMATCH"
+            else:
+                lat_status = "NOT_VERIFIED"
+                lng_status = "NOT_VERIFIED"
+
+            comparison_details["latitude"] = {
+                "expected": canonical_lat,
+                "found": found_lat,
+                "status": lat_status,
+                "source": canonical_source
+            }
+            comparison_details["longitude"] = {
+                "expected": canonical_lng,
+                "found": found_lng,
+                "status": lng_status,
+                "source": canonical_source
+            }
+
+            # 6. Category Comparison
+            if not canonical_category or canonical_category in ["Local Business", "LocalBusiness"]:
+                cat_status = "NOT_VERIFIED"
+            elif st_str.lower() in canonical_category.lower() or canonical_category.lower() in st_str.lower():
+                cat_status = "MATCH"
+            else:
+                cat_status = "MISMATCH"
+
+            comparison_details["category"] = {
+                "expected": canonical_category,
+                "found": st_str,
+                "status": cat_status,
+                "source": canonical_source
+            }
 
             # Opening Hours
             hours = raw.get("openingHoursSpecification") or raw.get("openingHours")
@@ -798,7 +1092,8 @@ class SchemaIntelligenceEngine:
             "warnings": warnings,
             "missing_properties": missing_properties,
             "property_results": property_results,
-            "nap_match_status": nap_match_status
+            "nap_match_status": nap_match_status,
+            "comparison_details": comparison_details
         }
 
     # -------------------------------------------------------------------------

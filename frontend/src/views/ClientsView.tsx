@@ -3,6 +3,7 @@ import { Users2, Plus, Building2, ExternalLink, Mail, Phone, Sparkles } from 'lu
 import { Link } from 'react-router-dom';
 import { useProject } from '../context/ProjectContext';
 import { EmptyState } from '../components/ui/EmptyState';
+import { Modal } from '../components/ui/Modal';
 import api from '../api/client';
 
 export const ClientsView: React.FC = () => {
@@ -142,75 +143,76 @@ export const ClientsView: React.FC = () => {
       )}
 
       {/* Add Client Modal */}
-      {isModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
-          <div className="bg-white rounded-2xl p-6 max-w-md w-full space-y-4 shadow-2xl border border-slate-200">
-            <h3 className="text-base font-black text-slate-900">Add Agency Client</h3>
-            <form onSubmit={handleCreateClient} className="space-y-3 text-xs">
-              <div>
-                <label className="text-slate-700 block mb-1 font-bold">Client / Company Name</label>
-                <input
-                  type="text"
-                  required
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  placeholder="e.g. Acme Dental Group"
-                  className="w-full bg-slate-50 border border-slate-200 rounded-lg p-2.5 text-slate-900 focus:outline-none focus:border-purple-500 font-medium"
-                />
-              </div>
-
-              <div>
-                <label className="text-slate-700 block mb-1 font-bold">Contact Email</label>
-                <input
-                  type="email"
-                  value={contactEmail}
-                  onChange={(e) => setContactEmail(e.target.value)}
-                  placeholder="e.g. contact@acmedental.com"
-                  className="w-full bg-slate-50 border border-slate-200 rounded-lg p-2.5 text-slate-900 focus:outline-none focus:border-purple-500 font-medium"
-                />
-              </div>
-
-              <div>
-                <label className="text-slate-700 block mb-1 font-bold">Phone Number</label>
-                <input
-                  type="tel"
-                  value={phone}
-                  onChange={(e) => setPhone(e.target.value)}
-                  placeholder="e.g. +1 555-0199"
-                  className="w-full bg-slate-50 border border-slate-200 rounded-lg p-2.5 text-slate-900 focus:outline-none focus:border-purple-500 font-medium"
-                />
-              </div>
-
-              <div>
-                <label className="text-slate-700 block mb-1 font-bold">Internal Notes</label>
-                <textarea
-                  rows={2}
-                  value={notes}
-                  onChange={(e) => setNotes(e.target.value)}
-                  placeholder="e.g. Multi-location practice onboarding in Q3"
-                  className="w-full bg-slate-50 border border-slate-200 rounded-lg p-2.5 text-slate-900 focus:outline-none focus:border-purple-500 font-medium"
-                />
-              </div>
-
-              <div className="flex items-center justify-end space-x-2 pt-3 border-t border-slate-100">
-                <button
-                  type="button"
-                  onClick={() => setIsModalOpen(false)}
-                  className="px-4 py-2 rounded-lg bg-slate-100 text-slate-700 hover:bg-slate-200 font-bold"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  className="px-4 py-2 rounded-lg btn-vibrant-primary text-white font-bold"
-                >
-                  Save Client
-                </button>
-              </div>
-            </form>
+      <Modal
+        isOpen={isModalOpen}
+        onClose={() => setIsModalOpen(false)}
+        maxWidth="md"
+        title="Add Agency Client"
+        description="Create client account to manage permissions"
+      >
+        <form onSubmit={handleCreateClient} className="space-y-3 text-xs">
+          <div>
+            <label className="text-slate-700 block mb-1 font-bold">Client / Company Name *</label>
+            <input
+              type="text"
+              required
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="e.g. Acme Dental Group"
+              className="w-full bg-slate-50 border border-slate-200 rounded-lg p-2.5 text-slate-900 focus:outline-none focus:border-emerald-500 font-medium"
+            />
           </div>
-        </div>
-      )}
+
+          <div>
+            <label className="text-slate-700 block mb-1 font-bold">Contact Email</label>
+            <input
+              type="email"
+              value={contactEmail}
+              onChange={(e) => setContactEmail(e.target.value)}
+              placeholder="e.g. contact@acmedental.com"
+              className="w-full bg-slate-50 border border-slate-200 rounded-lg p-2.5 text-slate-900 focus:outline-none focus:border-emerald-500 font-medium"
+            />
+          </div>
+
+          <div>
+            <label className="text-slate-700 block mb-1 font-bold">Phone Number</label>
+            <input
+              type="tel"
+              value={phone}
+              onChange={(e) => setPhone(e.target.value)}
+              placeholder="e.g. +1 555-0199"
+              className="w-full bg-slate-50 border border-slate-200 rounded-lg p-2.5 text-slate-900 focus:outline-none focus:border-emerald-500 font-medium"
+            />
+          </div>
+
+          <div>
+            <label className="text-slate-700 block mb-1 font-bold">Internal Notes</label>
+            <textarea
+              rows={2}
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              placeholder="e.g. Multi-location practice onboarding in Q3"
+              className="w-full bg-slate-50 border border-slate-200 rounded-lg p-2.5 text-slate-900 focus:outline-none focus:border-emerald-500 font-medium"
+            />
+          </div>
+
+          <div className="flex items-center justify-end space-x-2 pt-3 border-t border-slate-100">
+            <button
+              type="button"
+              onClick={() => setIsModalOpen(false)}
+              className="px-4 py-2 rounded-lg bg-slate-100 text-slate-700 hover:bg-slate-200 font-bold"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              className="px-4 py-2 rounded-lg bg-emerald-700 hover:bg-emerald-800 text-white font-bold shadow-xs"
+            >
+              Save Client
+            </button>
+          </div>
+        </form>
+      </Modal>
     </div>
   );
 };

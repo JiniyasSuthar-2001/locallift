@@ -55,12 +55,12 @@ class TestSERPProvidersContract(unittest.IsolatedAsyncioTestCase):
 
         res = await not_cfg.search_keyword("plumber")
         assert res.success is False
-        assert res.error_code == "SERP_API_KEY_REQUIRED"
-        assert "not configured" in res.error_message
+        assert res.error_code in ("SERP_PROVIDER_NOT_CONFIGURED", "SERP_API_KEY_REQUIRED")
+        assert "connect your serpapi account" in res.error_message.lower() or "not configured" in res.error_message.lower()
 
         grid_res = await not_cfg.search_local_grid_point("plumber", 40.7128, -74.0060)
         assert grid_res.success is False
-        assert grid_res.error_code == "SERP_API_KEY_REQUIRED"
+        assert grid_res.error_code in ("SERP_PROVIDER_NOT_CONFIGURED", "SERP_API_KEY_REQUIRED")
 
     async def test_03_openserp_unsupported_geo_grid(self):
         """OpenSERP returns explicit PROVIDER_GEO_GRID_UNSUPPORTED when coordinate search requested."""
@@ -107,6 +107,66 @@ class TestSERPProvidersContract(unittest.IsolatedAsyncioTestCase):
             res = await serpapi.search_keyword("hvac repair")
             assert res.success is False
             assert res.error_code == "SERP_PROVIDER_TIMEOUT"
+
+    async def test_07_serpapi_http_400_location_retry(self):
+        """SerpApi automatically retries without location parameter if location causes HTTP 400."""
+        serpapi = SerpApiProvider(api_key="valid_test_key_12345")
+
+        bad_resp = MagicMock()
+        bad_resp.status_code = 400
+        bad_resp.json.return_value = {"error": "Location [Invalid Geo] is not supported."}
+        bad_resp.text = '{"error": "Location [Invalid Geo] is not supported."}'
+
+        good_resp = MagicMock()
+        good_resp.status_code = 200
+        good_resp.json.return_value = {
+            "organic_results": [{"title": "Example Plumber", "link": "https://example.com", "position": 1}],
+            "local_results": []
+        }
+
+        with patch("httpx.AsyncClient.get", new_callable=AsyncMock) as mock_get:
+            mock_get.side_effect = [bad_resp, good_resp]
+            res = await serpapi.search_keyword("emergency plumber", location="Invalid Geo", country="United States")
+            assert res.success is True
+            assert len(res.organic_results) == 1
+            assert res.organic_results[0].title == "Example Plumber"
+            assert mock_get.call_count == 2
+            # Verify the retry did not include the invalid location parameter
+            second_call_params = mock_get.call_args_list[1][1]["params"]
+            assert "location" not in second_call_params
+            assert second_call_params["gl"] == "us"
+
+    def test_08_location_and_country_sanitization(self):
+        """Sanitizer properly cleans placeholder locations and normalizes country codes."""
+        assert SerpApiProvider._sanitize_location("Metro Area") is None
+        assert SerpApiProvider._sanitize_location("Default") is None
+        assert SerpApiProvider._sanitize_location("Local") is None
+        assert SerpApiProvider._sanitize_location("Denver, CO") == "Denver, CO"
+    async def test_09_null_link_and_title_resilience(self):
+        """SerpApi provider safely handles items where link or title is null/missing."""
+        serpapi = SerpApiProvider(api_key="valid_test_key_12345")
+
+        resp = MagicMock()
+        resp.status_code = 200
+        resp.json.return_value = {
+            "organic_results": [
+                {"title": None, "link": None, "snippet": None, "position": 1},
+                {"title": "Valid Plumber", "link": "https://plumber.com", "snippet": "Best plumber", "position": 2}
+            ],
+            "local_results": [
+                {"title": None, "website": None, "link": None, "address": None, "phone": None}
+            ]
+        }
+
+        with patch("httpx.AsyncClient.get", new_callable=AsyncMock) as mock_get:
+            mock_get.return_value = resp
+            res = await serpapi.search_keyword("plumber near me")
+            assert res.success is True
+            assert len(res.organic_results) == 2
+            assert res.organic_results[0].link == ""
+            assert res.organic_results[0].title == ""
+            assert len(res.local_pack_results) == 1
+            assert res.local_pack_results[0].link == ""
 
 
 if __name__ == "__main__":

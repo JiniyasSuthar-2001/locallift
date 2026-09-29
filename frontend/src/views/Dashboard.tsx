@@ -11,12 +11,7 @@ import {
   CheckSquare,
   ChevronRight,
   BarChart3,
-  Target,
-  Eye,
-  XCircle,
   Sparkles,
-  Globe,
-  HelpCircle,
   Activity
 } from 'lucide-react';
 import { useProject } from '../context/ProjectContext';
@@ -25,7 +20,7 @@ import { Link } from 'react-router-dom';
 import { EmptyState } from '../components/ui/EmptyState';
 import { FindingCard } from '../components/audit/FindingCard';
 import api from '../api/client';
-import type { LocalIntelligenceSummary, LocalAuditFinding } from '../types';
+import type { LocalIntelligenceSummary } from '../types';
 
 export const Dashboard: React.FC = () => {
   const { activeProject } = useProject();
@@ -357,12 +352,6 @@ interface SmallMetricCardProps {
 }
 
 const SmallMetricCard: React.FC<SmallMetricCardProps> = ({ icon: Icon, label, value, status, linkTo }) => {
-  const statusColors = {
-    good: 'text-emerald-700 bg-emerald-50 border-emerald-200',
-    warning: 'text-amber-700 bg-amber-50 border-amber-200',
-    neutral: 'text-slate-600 bg-slate-50 border-slate-200',
-  };
-
   return (
     <Link
       to={linkTo}

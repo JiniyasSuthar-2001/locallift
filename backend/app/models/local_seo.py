@@ -1,6 +1,6 @@
 import enum
 from datetime import datetime, timezone
-from sqlalchemy import Column, Integer, String, Boolean, Float, DateTime, ForeignKey, Text, JSON
+from sqlalchemy import Column, Integer, String, Boolean, Float, DateTime, ForeignKey, Text, JSON, Index
 from sqlalchemy.orm import relationship
 from app.database import Base
 
@@ -74,30 +74,43 @@ class BusinessProfile(Base):
 
 class Review(Base):
     __tablename__ = "reviews"
+    __table_args__ = (
+        Index("uq_reviews_proj_src_ext_id", "project_id", "source", "external_review_id"),
+    )
 
     id = Column(Integer, primary_key=True, index=True)
     project_id = Column(Integer, ForeignKey("projects.id", ondelete="CASCADE"), nullable=False)
     
-    source = Column(String(50), default="Google")  # Google, Facebook, Yelp
+    external_review_id = Column(String(255), nullable=True, index=True)
+    source = Column(String(50), default="Google", index=True)  # Google Places API, Google Business Profile, Facebook, Yelp
     author_name = Column(String(255), nullable=False)
     author_photo_url = Column(String(500), nullable=True)
-    rating = Column(Integer, default=5)
+    rating = Column(Integer, nullable=True, default=None)
     review_text = Column(Text, nullable=True)
     review_date = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    update_time = Column(DateTime, nullable=True)
+    provider_url = Column(String(1000), nullable=True)
+    provider_metadata = Column(JSON, default=dict)
+    collected_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    raw_provider_reference = Column(String(500), nullable=True)
+    collection_status = Column(String(50), default="active")  # active, NO_LONGER_RETURNED_BY_PROVIDER
+    access_mode = Column(String(50), default="PUBLIC")  # PUBLIC, OWNER_AUTHORIZED
+    verification_status = Column(String(50), default="OBSERVED")  # OBSERVED, VERIFIED, NOT_VERIFIED
     
     # AI Response drafting with human approval
     response_text = Column(Text, nullable=True)
     response_status = Column(String(50), default="unanswered")  # unanswered, drafted, approved, published
     response_date = Column(DateTime, nullable=True)
     
-    # Sentiment & NLP Topics
-    sentiment = Column(String(50), default="positive")  # positive, neutral, negative
-    sentiment_score = Column(Float, default=0.9)
+    # Sentiment & NLP Topics (None if not analyzed)
+    sentiment = Column(String(50), nullable=True, default=None)  # positive, neutral, negative, or None
+    sentiment_score = Column(Float, nullable=True, default=None)
     topics = Column(JSON, default=list)  # ["Service Quality", "Staff", "Pricing"]
     
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
     project = relationship("Project", back_populates="reviews")
+
 
 
 class Citation(Base):
@@ -112,8 +125,8 @@ class Citation(Base):
     domain_authority = Column(Integer, nullable=True, default=None)  # Truth in data: None if unknown, never fake 50
     category = Column(String(100), default="General Directory")
     
-    status = Column(String(50), default="listed")  # listed, missing, incorrect, pending
-    nap_status = Column(String(50), default="consistent")  # consistent, mismatch, missing
+    status = Column(String(50), default="NOT_VERIFIED")  # listed, missing, incorrect, pending, NOT_VERIFIED
+    nap_status = Column(String(50), default="not_checked")  # consistent, mismatch, missing, not_checked
     
     # Provenance & evidence tracking
     citation_type = Column(String(50), default="USER_PROVIDED")  # CitationType values
@@ -180,6 +193,19 @@ class Competitor(Base):
     
     comparison_data = Column(JSON, default=dict)
     opportunities_found = Column(JSON, default=list)
+    
+    # Benchmarking & Discovery Provenance
+    source = Column(String(50), default="manual")  # "manual", "geogrid", "manual_and_geogrid"
+    website = Column(String(500), nullable=True)
+    address = Column(String(500), nullable=True)
+    phone = Column(String(50), nullable=True)
+    best_rank = Column(Integer, nullable=True)
+    worst_rank = Column(Integer, nullable=True)
+    grid_appearances = Column(Integer, default=0)
+    keywords_found = Column(JSON, default=list)
+    scans_data = Column(JSON, default=list)
+    last_seen_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
     project = relationship("Project", back_populates="competitors")

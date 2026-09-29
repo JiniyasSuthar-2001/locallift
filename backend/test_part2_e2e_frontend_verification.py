@@ -60,9 +60,20 @@ async def test_e2e_geogrid_25_point_contract_and_canonical_keyword():
             },
             headers=auth_headers
         )
-        assert loc_resp.status_code == 200
-        location_data = loc_resp.json()
-        loc_id = location_data["id"]
+        assert loc_resp.status_code in [200, 201], f"Location creation failed: {loc_resp.text}"
+        loc_id = loc_resp.json()["id"]
+        # 2b. Configure Tenant SERP Provider
+        from app.models.connections import OrganizationSERPConfig
+        from app.core.security import encrypt_token
+        async with AsyncSessionLocal() as session:
+            serp_cfg = OrganizationSERPConfig(
+                organization_id=org.id,
+                provider="serpapi",
+                api_key=encrypt_token("test_serpapi_key_valid"),
+                connection_status="connected"
+            )
+            session.add(serp_cfg)
+            await session.commit()
 
         # 3. Trigger 5x5 Geo-Grid Rescan via API (identical to Frontend request)
         rescan_resp = await client.post(

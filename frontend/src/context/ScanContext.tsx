@@ -8,10 +8,12 @@ export interface ScanStageInfo {
   status: 'WAITING' | 'RUNNING' | 'SUCCESS' | 'PARTIAL' | 'FAILED' | 'NOT_CONFIGURED' | 'SKIPPED';
   started_at: string | null;
   completed_at: string | null;
+  execution_time_ms?: number | null;
   records_found: number | null;
   records_saved: number | null;
   message: string;
   error: string | null;
+  action?: string | null;
 }
 
 export interface IntelligenceScanState {
@@ -36,6 +38,7 @@ export interface ScanContextType {
   isProgressModalOpen: boolean;
   isCompleteModalOpen: boolean;
   startScan: () => Promise<void>;
+  cancelScan: () => Promise<void>;
   closeProgressModal: () => void;
   openProgressModal: () => void;
   closeCompleteModal: () => void;
@@ -55,6 +58,7 @@ export const ScanProvider: React.FC<{ children: React.ReactNode }> = ({ children
   activeProjectRef.current = activeProject?.id || null;
 
   const pollIntervalRef = useRef<any>(null);
+  const consecutiveErrorsRef = useRef<number>(0);
 
   const stopPolling = useCallback(() => {
     if (pollIntervalRef.current) {
@@ -78,6 +82,7 @@ export const ScanProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const pollScanStatus = useCallback(async (projectId: number, scanId: number) => {
     try {
       const resp = await api.get(`/projects/${projectId}/intelligence-scan/${scanId}`);
+      consecutiveErrorsRef.current = 0;
       const scanData: IntelligenceScanState = resp.data;
 
       // Ensure response matches currently active project
@@ -93,17 +98,22 @@ export const ScanProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (isTerminal) {
         setIsScanning(false);
         stopPolling();
+        // Transition from progress modal to completion modal on terminal state
         setIsProgressModalOpen(false);
         setIsCompleteModalOpen(true);
-        // Invalidate project data across LocalLift
+        // Refresh project data across LocalLift automatically
         await refreshAllProjectData();
       } else {
         setIsScanning(true);
       }
     } catch (e) {
-      console.error(`Failed to poll scan #${scanId}:`, e);
-      stopPolling();
-      setIsScanning(false);
+      consecutiveErrorsRef.current += 1;
+      console.warn(`Polling error #${consecutiveErrorsRef.current} for scan #${scanId}:`, e);
+      if (consecutiveErrorsRef.current >= 8) {
+        console.error(`Aborting scan polling due to persistent network errors for scan #${scanId}`);
+        stopPolling();
+        setIsScanning(false);
+      }
     }
   }, [refreshAllProjectData, stopPolling]);
 
@@ -135,6 +145,36 @@ export const ScanProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   }, [activeProject, pollScanStatus, stopPolling]);
 
+  const cancelScan = useCallback(async () => {
+    if (!activeProject || !activeScan) return;
+    const projId = activeProject.id;
+    const scanId = activeScan.scan_id;
+
+    // Immediately stop frontend polling to prevent race conditions
+    stopPolling();
+    setIsScanning(false);
+
+    try {
+      const resp = await api.post(`/projects/${projId}/intelligence-scan/${scanId}/cancel`);
+      const scanData: IntelligenceScanState = resp.data;
+      setActiveScan(scanData);
+      setIsProgressModalOpen(false);
+      setIsCompleteModalOpen(true);
+      await refreshAllProjectData();
+    } catch (e) {
+      console.error('Failed to cancel intelligence scan:', e);
+      // Fallback local update if network error
+      setActiveScan(prev => prev ? {
+        ...prev,
+        status: 'CANCELLED',
+        current_stage: 'cancelled',
+        current_stage_label: 'Local SEO Scan Cancelled'
+      } : null);
+      setIsProgressModalOpen(false);
+      setIsCompleteModalOpen(true);
+    }
+  }, [activeProject, activeScan, stopPolling, refreshAllProjectData]);
+
   // Check latest scan when project changes
   useEffect(() => {
     stopPolling();
@@ -162,6 +202,10 @@ export const ScanProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 stopPolling();
               }
             }, 1500);
+          } else {
+            // Completed scan remains available for views, but do not pop open progress modal on load
+            setIsScanning(false);
+            setIsProgressModalOpen(false);
           }
         }
       })
@@ -182,6 +226,7 @@ export const ScanProvider: React.FC<{ children: React.ReactNode }> = ({ children
         isProgressModalOpen,
         isCompleteModalOpen,
         startScan,
+        cancelScan,
         closeProgressModal: () => setIsProgressModalOpen(false),
         openProgressModal: () => setIsProgressModalOpen(true),
         closeCompleteModal: () => setIsCompleteModalOpen(false),

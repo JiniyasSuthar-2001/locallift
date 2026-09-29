@@ -73,11 +73,18 @@ async def analyze_project_query(
     gbp_context = {
         "connected": gbp is not None,
         "business_name": gbp.business_name if gbp else None,
-        "completeness_score": gbp.completeness_score if gbp else 0,
-        "search_impressions": gbp.search_impressions if gbp else 0,
-        "maps_impressions": gbp.maps_impressions if gbp else 0,
+        "completeness_score": gbp.completeness_score if gbp else None,
+        "search_impressions": gbp.search_impressions if gbp else None,
+        "maps_impressions": gbp.maps_impressions if gbp else None,
         "is_verified": gbp.is_verified if gbp else False
-    } if gbp else {"connected": False}
+    } if gbp else {
+        "connected": False,
+        "business_name": None,
+        "completeness_score": None,
+        "search_impressions": None,
+        "maps_impressions": None,
+        "is_verified": False
+    }
 
     citations_list = cit_res.scalars().all()
 
@@ -166,56 +173,35 @@ async def get_content_opportunities(
     db: AsyncSession = Depends(get_db)
 ):
     """
-    Generates content opportunity recommendations gated by central AI access controls.
+    Generates high-value content opportunity recommendations derived from real project signals:
+    GSC queries, tracked keywords, crawled page gaps, and suburban location landing pages.
     """
-    proj = await verify_project_access(project_id, current_user, db)
-    loc_res = await db.execute(select(Location).where(Location.project_id == project_id))
-    loc = loc_res.scalars().first()
-    city = (loc.city if loc and loc.city else "Local Area").strip()
-    category = (proj.primary_category or "Local Business").strip()
+    await verify_project_access(project_id, current_user, db)
+    from app.services.local_seo.content_opportunity_service import ContentOpportunityEngine
 
-    kw_res = await db.execute(select(Keyword).where(Keyword.project_id == project_id).limit(10))
-    keywords = [k.keyword for k in kw_res.scalars().all()]
-
-    page_res = await db.execute(select(WebsitePage).where(WebsitePage.website_id == proj.id).limit(5))
-    pages = [{"title": p.title, "url": p.url} for p in page_res.scalars().all()]
-
-    project_context = {
-        "project_id": proj.id,
-        "business_name": proj.name,
-        "domain": proj.domain,
-        "category": category,
-        "city": city,
-        "keywords": keywords,
-        "crawled_pages": pages
-    }
-
-    async def _call_provider():
-        return await AIAssistantService.generate_content_opportunities(project_context)
-
-    raw_opps = await AIConsumptionService.execute_gated_request(
-        db=db,
-        user=current_user,
-        project_id=project_id,
-        task_type="content_opportunities",
-        provider_fn=_call_provider,
-        requested_cost=1.0
-    )
-
+    opps = await ContentOpportunityEngine.generate_opportunities(project_id, db)
+    
     out = []
-    if isinstance(raw_opps, list):
-        for o in raw_opps:
-            if isinstance(o, dict) and o.get("topic") and o.get("primary_keyword"):
-                out.append(ContentOpportunityOut(
-                    topic=o.get("topic"),
-                    page_type=o.get("page_type", "Content Page"),
-                    primary_keyword=o.get("primary_keyword"),
-                    secondary_keywords=o.get("secondary_keywords", []),
-                    search_intent=o.get("search_intent", "Informational"),
-                    search_volume=o.get("search_volume"),
-                    search_volume_status=o.get("search_volume_status", "Volume data not connected"),
-                    business_value=o.get("business_value", "Medium"),
-                    competition_level=o.get("competition_level", "Medium"),
-                    target_slug=o.get("target_slug", "")
-                ))
+    for o in opps:
+        out.append(ContentOpportunityOut(
+            topic=o.get("topic") or o.get("title") or "Content Opportunity",
+            title=o.get("title") or o.get("topic"),
+            page_type=o.get("page_type", "Suburban Landing Page"),
+            recommended_page_type=o.get("recommended_page_type") or o.get("page_type"),
+            primary_keyword=o.get("primary_keyword") or o.get("target_keyword") or "",
+            target_keyword=o.get("target_keyword") or o.get("primary_keyword"),
+            location=o.get("location"),
+            secondary_keywords=o.get("secondary_keywords", []),
+            search_intent=o.get("search_intent", "Commercial"),
+            search_volume=o.get("search_volume"),
+            search_volume_status=o.get("search_volume_status", "Calculated from project signals"),
+            business_value=o.get("business_value", "High"),
+            priority=o.get("priority", "High"),
+            opportunity_score=o.get("opportunity_score"),
+            competition_level=o.get("competition_level", "Medium"),
+            target_slug=o.get("target_slug", ""),
+            ai_recommendation=o.get("ai_recommendation"),
+            content_brief=o.get("content_brief")
+        ))
     return out
+

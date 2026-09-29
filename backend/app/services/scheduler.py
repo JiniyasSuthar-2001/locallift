@@ -96,7 +96,15 @@ class JobSchedulerService:
             if job.job_type == "crawl":
                 from app.api.v1.audits import run_crawler_and_audit_task
                 from app.models.audit import AuditJob, AuditJobStatus
-                start_url = f"https://{proj.domain}" if proj.domain and not proj.domain.startswith("http") else (proj.domain or "https://example.com")
+                domain_clean = (proj.domain or "").strip()
+                if not domain_clean or domain_clean.lower() in ("example.com", "https://example.com", "http://example.com"):
+                    summary_msg = "Project domain is not configured; crawl skipped."
+                    job.status = "completed"
+                    job.last_run_summary = summary_msg
+                    await db.commit()
+                    return {"job_id": job.id, "status": "completed", "summary": summary_msg}
+
+                start_url = f"https://{domain_clean}" if not domain_clean.startswith("http") else domain_clean
                 crawl_options = {
                     "url": start_url,
                     "max_pages": 15,
@@ -131,44 +139,39 @@ class JobSchedulerService:
                 success = True
 
             elif job.job_type == "rank_check":
-                from app.models.ranking import Keyword
-                from app.services.serp import get_organization_serp_provider, DomainMatcher
-                kw_res = await db.execute(select(Keyword).where(Keyword.project_id == job.project_id))
-                kws = kw_res.scalars().all()
-                if not kws:
-                    summary_msg = "No keywords configured for rank tracking."
-                else:
-                    provider = await get_organization_serp_provider(db, proj.organization_id)
-                    checked = 0
-                    for k in kws[:10]:
-                        try:
-                            serp_res = await provider.search_keyword(
-                                keyword=k.keyword,
-                                location=k.target_location
-                            )
-                            if serp_res and serp_res.success:
-                                rank = DomainMatcher.find_domain_rank(serp_res.organic_results, proj.domain)
-                                if rank is not None:
-                                    k.previous_rank = k.current_rank
-                                    k.current_rank = rank
-                                k.last_checked_at = datetime.now(timezone.utc)
-                                checked += 1
-                        except Exception as serp_err:
-                            logger.warning(f"[SCHEDULER_SERP] Keyword '{k.keyword}' check: {serp_err}")
-                    summary_msg = f"Checked rankings for {checked} of {len(kws)} tracked keywords via {provider.__class__.__name__}."
+                from app.services.serp.ranking_service import KeywordRankingService
+                ranking_res = await KeywordRankingService.check_all_project_keywords(
+                    db=db,
+                    project_id=job.project_id,
+                    organization_id=proj.organization_id
+                )
+                total_kws = len(ranking_res.get("results", []))
+                checked_c = ranking_res.get("checked_count", 0)
+                err_c = ranking_res.get("error_count", 0)
+                prov = ranking_res.get("provider", "SERP")
+                summary_msg = f"Checked rankings for {total_kws} tracked keywords via {prov}: {checked_c} ranked/verified, {err_c} errors."
                 success = True
 
             elif job.job_type == "gbp_sync":
-                from app.models.gbp import GoogleAccount
                 from app.services.google.sync import GBPSyncService
                 acc_res = await db.execute(select(GoogleAccount).where(GoogleAccount.project_id == job.project_id))
                 g_acc = acc_res.scalars().first()
                 if not g_acc:
                     summary_msg = "Google Business Profile is not connected for this project."
+                    success = True
                 else:
-                    sync_res = await GBPSyncService.sync_google_account(g_acc, db)
-                    summary_msg = f"GBP sync completed: {sync_res.get('profiles_synced', 0)} profiles, {sync_res.get('changes_detected', 0)} changes."
-                success = True
+                    try:
+                        sync_res = await GBPSyncService.sync_google_account(g_acc, db)
+                        summary_msg = f"GBP sync completed: {sync_res.get('profiles_synced', 0)} profiles, {sync_res.get('changes_detected', 0)} changes."
+                        success = True
+                    except Exception as gbp_err:
+                        err_str = str(gbp_err)
+                        if "429" in err_str or "RESOURCE_EXHAUSTED" in err_str or "RATE_LIMIT_EXCEEDED" in err_str:
+                            summary_msg = "GBP API access not granted (quota=0) for GCP project. Please request GBP API access in Google Cloud Console."
+                        else:
+                            summary_msg = f"GBP sync failed: {err_str[:120]}"
+                        logger.warning(f"[SCHEDULER_GBP] Project {job.project_id} sync notice: {summary_msg}")
+                        success = False
 
             elif job.job_type == "review_sync":
                 from app.models.local_seo import Review
@@ -183,53 +186,76 @@ class JobSchedulerService:
 
                 if not gbp_conn and not g_acc:
                     summary_msg = "GBP account not connected. Review sync skipped."
+                    success = True
                 else:
-                    if gbp_conn and gbp_conn.status in ("connected", "expired") and gbp_conn.access_token:
-                        token = await GoogleConnectionsService.get_valid_access_token(gbp_conn, db)
-                        ref_tok = decrypt_token(gbp_conn.refresh_token) if gbp_conn.refresh_token else None
-                        exp = gbp_conn.token_expiry
-                    else:
-                        token = decrypt_token(g_acc.access_token)
-                        ref_tok = decrypt_token(g_acc.refresh_token) if g_acc.refresh_token else None
-                        exp = g_acc.token_expiry
+                    try:
+                        if gbp_conn and gbp_conn.status in ("connected", "expired") and gbp_conn.access_token:
+                            token = await GoogleConnectionsService.get_valid_access_token(gbp_conn, db)
+                            ref_tok = decrypt_token(gbp_conn.refresh_token) if gbp_conn.refresh_token else None
+                            exp = gbp_conn.token_expiry
+                        else:
+                            token = decrypt_token(g_acc.access_token)
+                            ref_tok = decrypt_token(g_acc.refresh_token) if g_acc.refresh_token else None
+                            exp = g_acc.token_expiry
 
-                    client = GoogleBusinessProfileClient(token, ref_tok, exp)
-                    prof_res = await db.execute(
-                        select(GoogleBusinessProfile).where(
-                            (GoogleBusinessProfile.google_account_id == (g_acc.id if g_acc else -1)) |
-                            (GoogleBusinessProfile.business_name.ilike(f"%{proj.name}%"))
-                        )
-                    )
-                    profile = prof_res.scalars().first()
-                    account_id = profile.account_id if profile and profile.account_id else "accounts/default"
-                    location_name = profile.location_name if profile and profile.location_name else "locations/default"
-
-                    reviews_data = await client.fetch_location_reviews(account_id, location_name)
-                    new_c = 0
-                    for rev in reviews_data:
-                        existing_res = await db.execute(
-                            select(Review).where(
-                                Review.project_id == job.project_id,
-                                Review.author_name == rev["author_name"],
-                                Review.source == "Google"
+                        client = GoogleBusinessProfileClient(token, ref_tok, exp)
+                        prof_res = await db.execute(
+                            select(GoogleBusinessProfile).where(
+                                (GoogleBusinessProfile.google_account_id == (g_acc.id if g_acc else -1)) |
+                                (GoogleBusinessProfile.business_name.ilike(f"%{proj.name}%"))
                             )
                         )
-                        if not existing_res.scalars().first():
-                            db.add(Review(
-                                project_id=job.project_id,
-                                source="Google",
-                                author_name=rev["author_name"],
-                                author_photo_url=rev.get("author_photo_url"),
-                                rating=rev["rating"],
-                                review_text=rev.get("review_text"),
-                                review_date=rev.get("review_date", datetime.now(timezone.utc)),
-                                response_text=rev.get("response_text"),
-                                response_status=rev.get("response_status", "unanswered"),
-                                sentiment="positive" if rev["rating"] >= 4 else ("neutral" if rev["rating"] == 3 else "negative")
-                            ))
-                            new_c += 1
-                    summary_msg = f"Synced {len(reviews_data)} Google reviews ({new_c} new)."
-                success = True
+                        profile = prof_res.scalars().first()
+                        account_id = profile.account_id if profile and profile.account_id else "accounts/default"
+                        location_name = profile.location_name if profile and profile.location_name else "locations/default"
+
+                        reviews_data = await client.fetch_location_reviews(account_id, location_name)
+                        new_c = 0
+                        for rev in reviews_data:
+                            ext_id = rev.get("review_id") or rev.get("external_review_id") or rev.get("name")
+                            stmt = select(Review).where(Review.project_id == job.project_id, Review.source == "Google")
+                            if ext_id:
+                                stmt = stmt.where((Review.external_review_id == ext_id) | (Review.author_name == rev["author_name"]))
+                            else:
+                                stmt = stmt.where(Review.author_name == rev["author_name"])
+
+                            existing_res = await db.execute(stmt)
+                            existing_rev = existing_res.scalars().first()
+                            rating_val = rev.get("rating")
+                            sentiment_val = None
+                            if rating_val is not None:
+                                sentiment_val = "positive" if rating_val >= 4 else ("neutral" if rating_val == 3 else "negative")
+
+                            if not existing_rev:
+                                db.add(Review(
+                                    project_id=job.project_id,
+                                    external_review_id=ext_id,
+                                    source="Google",
+                                    author_name=rev["author_name"],
+                                    author_photo_url=rev.get("author_photo_url"),
+                                    rating=rating_val,
+                                    review_text=rev.get("review_text"),
+                                    review_date=rev.get("review_date", datetime.now(timezone.utc)),
+                                    response_text=rev.get("response_text"),
+                                    response_status=rev.get("response_status", "unanswered"),
+                                    sentiment=sentiment_val
+                                ))
+                                new_c += 1
+                            else:
+                                if ext_id and not existing_rev.external_review_id:
+                                    existing_rev.external_review_id = ext_id
+                                existing_rev.rating = rating_val
+                                existing_rev.review_text = rev.get("review_text")
+                        summary_msg = f"Synced {len(reviews_data)} Google reviews ({new_c} new)."
+                        success = True
+                    except Exception as rev_err:
+                        err_str = str(rev_err)
+                        if "429" in err_str or "RESOURCE_EXHAUSTED" in err_str or "RATE_LIMIT_EXCEEDED" in err_str:
+                            summary_msg = "GBP API access not granted (quota=0) for GCP project. Review sync paused."
+                        else:
+                            summary_msg = f"Review sync notice: {err_str[:120]}"
+                        logger.warning(f"[SCHEDULER_REVIEWS] Project {job.project_id} review sync notice: {summary_msg}")
+                        success = False
 
             elif job.job_type == "gsc_sync":
                 from app.models.connections import GoogleConnection, GoogleSearchConsoleProperty

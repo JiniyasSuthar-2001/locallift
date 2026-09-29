@@ -47,18 +47,38 @@ interface PublicProfileData {
 interface OwnerProfileData {
   is_connected: boolean;
   status: string;
+  sync_status?: string;
   account_email: string | null;
   last_synced_at: string | null;
+  provenance?: string;
+  provenance_label?: string;
   profile: {
     business_name: string | null;
     primary_category: string | null;
+    additional_categories?: string[];
     address: string | null;
+    city?: string | null;
+    state?: string | null;
+    postal_code?: string | null;
+    country?: string | null;
     phone: string | null;
     website_url: string | null;
+    latitude?: number | null;
+    longitude?: number | null;
+    photos_count?: number;
+    posts_count?: number;
+    completeness_score?: number;
+    location_resource_name?: string | null;
+    account_resource_name?: string | null;
+    place_id?: string | null;
+    maps_uri?: string | null;
     search_impressions: number | null;
     maps_impressions: number | null;
     call_clicks: number | null;
     website_clicks: number | null;
+    direction_requests?: number | null;
+    is_verified?: boolean;
+    source_provenance?: string;
   } | null;
 }
 
@@ -500,20 +520,104 @@ export const GBPView: React.FC = () => {
         )}
 
         {/* Owner Account Details & Authorized Performance Metrics */}
-        {ownerData?.is_connected ? (
+        {ownerData?.is_connected && ownerData?.profile ? (
           <div className="space-y-4">
-            <div className="p-4 bg-[#F7FAF7] border border-[#DCE8DC] rounded-xl flex items-center justify-between text-xs">
-              <div>
-                <span className="text-[10px] font-bold uppercase text-[#587568] block">Google Account Email</span>
-                <span className="font-bold text-[#142820]">
-                  {ownerData.account_email || 'Google account identity unavailable'}
-                </span>
+            <div className="p-4 bg-[#F7FAF7] border border-[#DCE8DC] rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
+              <div className="space-y-1">
+                <div className="flex items-center space-x-2">
+                  <span className="text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded bg-emerald-100 text-emerald-800 border border-emerald-300">
+                    {ownerData.provenance_label || "SYNCED GOOGLE DATA"}
+                  </span>
+                  {ownerData.profile.is_verified ? (
+                    <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
+                      ✓ Verified Google Listing
+                    </span>
+                  ) : (
+                    <span className="text-[10px] font-bold text-amber-700 bg-amber-50 px-2 py-0.5 rounded border border-amber-200">
+                      ⚠ Unverified / Unclaimed
+                    </span>
+                  )}
+                </div>
+                <div>
+                  <span className="text-[10px] font-bold uppercase text-[#587568]">Google Account: </span>
+                  <span className="font-bold text-[#142820]">
+                    {ownerData.account_email || 'Google account authenticated'}
+                  </span>
+                </div>
               </div>
-              <div className="text-right">
+              <div className="sm:text-right">
                 <span className="text-[10px] font-bold uppercase text-[#587568] block">Last Synchronized</span>
                 <span className="font-mono text-[#587568]">
                   {ownerData.last_synced_at ? new Date(ownerData.last_synced_at).toLocaleString() : 'Never'}
                 </span>
+              </div>
+            </div>
+
+            {/* Exact Bound GBP Details */}
+            <div className="p-4 bg-white border border-[#B8DFC9] rounded-xl space-y-3">
+              <div className="flex items-center justify-between border-b border-[#EBF2EB] pb-2.5">
+                <h4 className="text-xs font-black text-[#142820] uppercase tracking-wider">
+                  Bound Google Business Listing Attributes
+                </h4>
+                <span className="text-[10px] font-mono text-slate-500 truncate max-w-xs">
+                  {ownerData.profile.location_resource_name || 'locations/default'}
+                </span>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 text-xs">
+                <div>
+                  <span className="text-[10px] font-bold uppercase text-[#587568] block">Business Name</span>
+                  <span className="font-extrabold text-[#142820]">{ownerData.profile.business_name || 'Not available'}</span>
+                </div>
+
+                <div>
+                  <span className="text-[10px] font-bold uppercase text-[#587568] block">Primary Category</span>
+                  <span className="font-semibold text-[#142820]">{ownerData.profile.primary_category || 'Not available'}</span>
+                </div>
+
+                {ownerData.profile.additional_categories && ownerData.profile.additional_categories.length > 0 && (
+                  <div>
+                    <span className="text-[10px] font-bold uppercase text-[#587568] block">Additional Categories</span>
+                    <span className="font-medium text-[#142820]">{ownerData.profile.additional_categories.join(', ')}</span>
+                  </div>
+                )}
+
+                <div>
+                  <span className="text-[10px] font-bold uppercase text-[#587568] block">Address</span>
+                  <span className="font-medium text-[#142820]">{ownerData.profile.address || 'Not available'}</span>
+                </div>
+
+                <div>
+                  <span className="text-[10px] font-bold uppercase text-[#587568] block">Phone</span>
+                  <span className="font-medium text-[#142820]">{ownerData.profile.phone || 'Not available'}</span>
+                </div>
+
+                <div>
+                  <span className="text-[10px] font-bold uppercase text-[#587568] block">Website</span>
+                  {ownerData.profile.website_url ? (
+                    <a href={ownerData.profile.website_url} target="_blank" rel="noopener noreferrer" className="font-medium text-[#236B4F] hover:underline flex items-center space-x-1 truncate">
+                      <span className="truncate">{ownerData.profile.website_url}</span>
+                      <ExternalLink className="w-3 h-3 shrink-0 inline" />
+                    </a>
+                  ) : (
+                    <span className="font-medium text-[#587568]">Not available</span>
+                  )}
+                </div>
+
+                <div>
+                  <span className="text-[10px] font-bold uppercase text-[#587568] block">GBP Photos</span>
+                  <span className="font-bold text-[#142820]">{ownerData.profile.photos_count || 0} photos uploaded</span>
+                </div>
+
+                <div>
+                  <span className="text-[10px] font-bold uppercase text-[#587568] block">GBP Posts</span>
+                  <span className="font-bold text-[#142820]">{ownerData.profile.posts_count || 0} updates published</span>
+                </div>
+
+                <div>
+                  <span className="text-[10px] font-bold uppercase text-[#587568] block">Profile Completeness</span>
+                  <span className="font-bold text-[#142820]">{ownerData.profile.completeness_score || 0}% complete</span>
+                </div>
               </div>
             </div>
 
@@ -522,7 +626,7 @@ export const GBPView: React.FC = () => {
               <div className="p-3.5 rounded-xl bg-white border border-[#B8DFC9]">
                 <span className="text-[10px] font-bold uppercase text-[#587568] block">GBP Search Impressions</span>
                 <span className="text-xl font-black text-[#142820] mt-0.5 block">
-                  {ownerData.profile?.search_impressions !== null && ownerData.profile?.search_impressions !== undefined
+                  {ownerData.profile.search_impressions !== null && ownerData.profile.search_impressions !== undefined
                     ? ownerData.profile.search_impressions.toLocaleString()
                     : 'Not available'}
                 </span>
@@ -532,7 +636,7 @@ export const GBPView: React.FC = () => {
               <div className="p-3.5 rounded-xl bg-white border border-[#B8DFC9]">
                 <span className="text-[10px] font-bold uppercase text-[#587568] block">GBP Maps Impressions</span>
                 <span className="text-xl font-black text-[#142820] mt-0.5 block">
-                  {ownerData.profile?.maps_impressions !== null && ownerData.profile?.maps_impressions !== undefined
+                  {ownerData.profile.maps_impressions !== null && ownerData.profile.maps_impressions !== undefined
                     ? ownerData.profile.maps_impressions.toLocaleString()
                     : 'Not available'}
                 </span>
@@ -542,7 +646,7 @@ export const GBPView: React.FC = () => {
               <div className="p-3.5 rounded-xl bg-white border border-[#B8DFC9]">
                 <span className="text-[10px] font-bold uppercase text-[#587568] block">Phone Call Clicks</span>
                 <span className="text-xl font-black text-[#142820] mt-0.5 block">
-                  {ownerData.profile?.call_clicks !== null && ownerData.profile?.call_clicks !== undefined
+                  {ownerData.profile.call_clicks !== null && ownerData.profile.call_clicks !== undefined
                     ? ownerData.profile.call_clicks.toLocaleString()
                     : 'Not available'}
                 </span>
@@ -552,7 +656,7 @@ export const GBPView: React.FC = () => {
               <div className="p-3.5 rounded-xl bg-white border border-[#B8DFC9]">
                 <span className="text-[10px] font-bold uppercase text-[#587568] block">Website Clicks</span>
                 <span className="text-xl font-black text-[#142820] mt-0.5 block">
-                  {ownerData.profile?.website_clicks !== null && ownerData.profile?.website_clicks !== undefined
+                  {ownerData.profile.website_clicks !== null && ownerData.profile.website_clicks !== undefined
                     ? ownerData.profile.website_clicks.toLocaleString()
                     : 'Not available'}
                 </span>
@@ -562,9 +666,9 @@ export const GBPView: React.FC = () => {
           </div>
         ) : (
           <div className="p-4 bg-[#F7FAF7] border border-[#DCE8DC] rounded-xl text-xs text-[#587568] space-y-1">
-            <div className="font-bold text-[#142820]">Not connected</div>
+            <div className="font-bold text-[#142820]">NOT CONNECTED</div>
             <p className="text-[11px]">
-              Public Google information is still available above. Click <strong>Connect Google Business Profile</strong> to initiate Google OAuth 2.0 authorization and access private performance insights.
+              Public Google information is still available above. Click <strong>Connect Google Business Profile</strong> in Connections to initiate Google OAuth 2.0 authorization and bind your specific GBP location.
             </p>
           </div>
         )}

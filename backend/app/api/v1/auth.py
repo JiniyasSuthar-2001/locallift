@@ -10,12 +10,29 @@ from app.core.audit_logger import log_user_action
 from app.models.user import User, Organization, OrganizationMember, OrgRole
 from app.schemas.auth import Token, UserRegister, UserOut, UserLogin
 
+from app.core.auth_rate_limiter import auth_rate_limiter
+
 router = APIRouter(prefix="/auth", tags=["Authentication"])
+
+def _get_client_ip(request: Request) -> str:
+    forwarded = request.headers.get("X-Forwarded-For")
+    if forwarded:
+        return forwarded.split(",")[0].strip()
+    return request.client.host if request.client else "127.0.0.1"
 
 @router.post("/register", response_model=Token)
 async def register(request: Request, user_in: UserRegister, db: AsyncSession = Depends(get_db)):
+    client_ip = _get_client_ip(request)
+    allowed, retry_after = auth_rate_limiter.check_rate_limit(user_in.email, client_ip)
+    if not allowed:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail=f"Too many registration attempts. Please try again in {retry_after} seconds."
+        )
+
     result = await db.execute(select(User).where(User.email == user_in.email))
     if result.scalars().first():
+        auth_rate_limiter.record_failure(user_in.email, client_ip)
         log_user_action(request, "REGISTER", status="failed", error="EMAIL_EXISTS", email=user_in.email)
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -54,6 +71,7 @@ async def register(request: Request, user_in: UserRegister, db: AsyncSession = D
     await db.commit()
     await db.refresh(user)
 
+    auth_rate_limiter.record_success(user_in.email, client_ip)
     log_user_action(request, "REGISTER", user_id=user.id, organization_id=org.id, status="success", email=user.email)
 
     access_token = create_access_token(subject=user.id)
@@ -63,6 +81,7 @@ async def register(request: Request, user_in: UserRegister, db: AsyncSession = D
         full_name=user.full_name,
         is_active=user.is_active,
         is_superuser=user.is_superuser,
+        platform_role=user.platform_role or ("super_admin" if user.is_superuser else None),
         created_at=user.created_at,
         organization_id=org.id,
         role=OrgRole.OWNER.value
@@ -71,10 +90,19 @@ async def register(request: Request, user_in: UserRegister, db: AsyncSession = D
 
 @router.post("/login", response_model=Token)
 async def login(request: Request, form_data: OAuth2PasswordRequestForm = Depends(), db: AsyncSession = Depends(get_db)):
+    client_ip = _get_client_ip(request)
+    allowed, retry_after = auth_rate_limiter.check_rate_limit(form_data.username, client_ip)
+    if not allowed:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail=f"Too many failed login attempts. Please try again in {retry_after} seconds."
+        )
+
     result = await db.execute(select(User).where(User.email == form_data.username))
     user = result.scalars().first()
     if not user or not verify_password(form_data.password, user.hashed_password):
-        log_user_action(request, "LOGIN", status="failed", username=form_data.username)
+        fails = auth_rate_limiter.record_failure(form_data.username, client_ip)
+        log_user_action(request, "LOGIN", status="failed", username=form_data.username, failures_count=fails)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect email or password",
@@ -82,11 +110,14 @@ async def login(request: Request, form_data: OAuth2PasswordRequestForm = Depends
         )
 
     if not user.is_active:
+        auth_rate_limiter.record_failure(form_data.username, client_ip)
         log_user_action(request, "LOGIN", user_id=user.id, status="failed", error="ACCOUNT_INACTIVE")
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Account is inactive. Please contact administrator.",
         )
+    
+    auth_rate_limiter.record_success(form_data.username, client_ip)
     
     # Get user org membership
     mem_result = await db.execute(
@@ -105,6 +136,7 @@ async def login(request: Request, form_data: OAuth2PasswordRequestForm = Depends
         full_name=user.full_name,
         is_active=user.is_active,
         is_superuser=user.is_superuser,
+        platform_role=user.platform_role or ("super_admin" if user.is_superuser else None),
         created_at=user.created_at,
         organization_id=org_id,
         role=role
@@ -123,6 +155,7 @@ async def get_me(current_user: User = Depends(get_current_user), db: AsyncSessio
         full_name=current_user.full_name,
         is_active=current_user.is_active,
         is_superuser=current_user.is_superuser,
+        platform_role=current_user.platform_role or ("super_admin" if current_user.is_superuser else None),
         created_at=current_user.created_at,
         organization_id=mem.organization_id if mem else None,
         role=mem.role.value if mem else "owner"

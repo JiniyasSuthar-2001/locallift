@@ -4,6 +4,7 @@ export interface User {
   full_name: string | null;
   is_active: boolean;
   is_superuser: boolean;
+  platform_role?: string | null;
   created_at: string;
   organization_id: number | null;
   role: string | null;
@@ -173,6 +174,8 @@ export interface WebsitePage {
   external_links_count: number;
   broken_links: string[];
   issues_detected: string[];
+  crawled_at?: string;
+  created_at?: string;
 }
 
 export interface Keyword {
@@ -180,17 +183,96 @@ export interface Keyword {
   project_id: number;
   keyword: string;
   search_intent: string;
-  search_volume: number;
+  search_volume?: number | null;
   difficulty?: number;
   target_location?: string;
   current_rank?: number | null;
   previous_rank?: number | null;
+  organic_rank?: number | null;
+  local_pack_rank?: number | null;
+  maps_rank?: number | null;
+  rank_status?: 'NOT_CHECKED' | 'CHECKING' | 'RANKED' | 'NOT_IN_TOP_100' | 'PROVIDER_ERROR' | 'NOT_CONFIGURED' | 'TIMEOUT' | string | null;
+  rank_movement?: number | null;
+  movement_label?: string | null;
   target_rank?: number;
-  ranking_url?: string;
+  ranking_url?: string | null;
+  ranking_title?: string | null;
   serp_type?: string;
   opportunity_score?: string;
   business_relevance?: string;
-  last_checked_at?: string;
+  last_checked_at?: string | null;
+  last_attempted_at?: string | null;
+  last_successful_check_at?: string | null;
+  last_failed_at?: string | null;
+}
+
+export interface LocalAuditFinding {
+  id: number;
+  run_id?: number;
+  audit_run_id?: number;
+  project_id?: number;
+  category: string;
+  rule_id?: string;
+  check_key?: string;
+  title: string;
+  status: 'PASS' | 'PARTIAL' | 'FAIL' | 'NOT_VERIFIED' | 'NOT_APPLICABLE' | 'ERROR';
+  severity: 'critical' | 'warning' | 'opportunity' | 'info' | 'CRITICAL' | 'HIGH' | 'MEDIUM' | 'LOW' | 'INFO' | string;
+  score_impact: number;
+  evidence?: string | Record<string, any> | null;
+  rule_definition?: string | null;
+  what_was_checked?: string | null;
+  observed_value?: string | null;
+  expected_value?: string | null;
+  why_it_matters?: string | null;
+  affected_urls?: string[] | null;
+  technical_evidence?: Record<string, any> | null;
+  recommendation?: string | null;
+  remediation_steps?: string[] | null;
+  verification_steps?: string[] | null;
+  verification_status?: 'VERIFIED' | 'OBSERVED' | 'USER_PROVIDED' | 'DETECTED' | 'INFERRED' | 'NOT_VERIFIED' | 'FAILED' | 'NOT_APPLICABLE' | string | null;
+  source?: string | null;
+  source_url?: string | null;
+  crawl_id?: number | null;
+  source_timestamp?: string | null;
+  confidence?: string | null;
+  created_at?: string;
+}
+
+export interface LocalAuditRun {
+  id: number;
+  project_id: number;
+  framework_version: string;
+  status?: 'COMPLETED' | 'RUNNING' | 'FAILED' | string;
+  overall_score: number | null;
+  grade?: string;
+  categories_evaluated?: number;
+  findings_summary?: {
+    total?: number;
+    pass?: number;
+    passed?: number;
+    fail?: number;
+    failed?: number;
+    partial?: number;
+    not_verified?: number;
+    not_applicable?: number;
+    error?: number;
+    critical?: number;
+    warning?: number;
+    opportunity?: number;
+    [key: string]: any;
+  };
+  category_scores?: Record<string, any>;
+  total_checks?: number;
+  passed_checks?: number;
+  failed_checks?: number;
+  not_verified_checks?: number;
+  crawl_id?: number | null;
+  is_current?: boolean;
+  findings: LocalAuditFinding[];
+  started_at?: string | null;
+  completed_at?: string | null;
+  created_at?: string;
+  executed_at?: string;
 }
 
 export interface GridPoint {
@@ -201,8 +283,12 @@ export interface GridPoint {
   lng: number;
   latitude?: number;
   longitude?: number;
+  area_name?: string;
+  distance_km?: number;
+  direction?: string;
+  is_center?: boolean;
   rank: number | null;
-  status: 'SUCCESS' | 'NOT_FOUND' | 'PROVIDER_ERROR' | 'TIMEOUT' | 'green' | 'yellow' | 'red' | string;
+  status: 'SUCCESS' | 'NOT_FOUND' | 'PROVIDER_ERROR' | 'TIMEOUT' | 'RANKED' | 'green' | 'yellow' | 'red' | string;
   pin_status?: 'found' | 'not_found' | 'failed' | string;
   keyword?: string;
   provider?: string;
@@ -211,8 +297,73 @@ export interface GridPoint {
   matched_domain?: string | null;
   ranking_url?: string;
   competitor_ahead?: string;
+  competitors?: any[];
   searched_at?: string;
   error?: string | null;
+}
+
+export interface PointCompetitor {
+  position: number;
+  title: string;
+  link?: string;
+  domain?: string;
+  rating?: number;
+  reviews_count?: number;
+  category?: string;
+  address?: string;
+  phone?: string;
+  place_id?: string;
+  snippet?: string;
+  is_target?: boolean;
+}
+
+export interface PointAnalysisData {
+  point_number: number;
+  scan_id: number;
+  project_id: number;
+  location: {
+    point_number: number;
+    row: number;
+    col: number;
+    latitude: number;
+    longitude: number;
+    area_name?: string;
+    distance_km: number;
+    direction: string;
+    center_name?: string;
+    keyword: string;
+    searched_at?: string;
+  };
+  ranking: {
+    business_name: string;
+    rank: number | null;
+    status: string;
+    result_depth: number;
+    ranking_url?: string;
+    place_id?: string;
+    matched_place_id?: string;
+    matched_domain?: string;
+    provider?: string;
+    error?: string;
+  };
+  competitors_hierarchy: {
+    competitors_above: PointCompetitor[];
+    target_business: PointCompetitor | null;
+    competitors_below: PointCompetitor[];
+    total_competitors_evaluated: number;
+    result_depth: number;
+    not_found_in_depth: boolean;
+  };
+  diagnostics: {
+    what: string;
+    where: string;
+    how: Array<{
+      field: string;
+      value: string;
+      provider_observed: boolean;
+    }>;
+    why: string[];
+  };
 }
 
 export interface GeoGridProviderInfo {
@@ -231,6 +382,10 @@ export interface GeoGridScan {
   center_name: string;
   center_lat: number;
   center_lng: number;
+  location_precision?: 'EXACT' | 'ADDRESS_RESOLVED' | 'CITY_LEVEL' | 'UNKNOWN' | string;
+  center_source?: 'USER_PROVIDED_COORDINATES' | 'STORED_BUSINESS_COORDINATES' | 'GOOGLE_PLACES' | 'PLACE_ID_RESOLVED' | 'GEOCODED_ADDRESS' | 'CITY_FALLBACK' | string;
+  center_address?: string | null;
+  warning_message?: string | null;
   center?: {
     lat: number;
     lng: number;
@@ -260,18 +415,61 @@ export interface Review {
   project_id: number;
   source?: string;
   author_name: string;
-  author_photo_url?: string;
+  author_photo_url?: string | null;
+  author_uri?: string | null;
   rating: number;
-  review_text?: string;
-  review_date?: string;
-  published_at?: string;
-  response_text?: string;
-  final_response_text?: string;
-  ai_draft_response?: string;
+  review_text?: string | null;
+  review_date?: string | null;
+  published_at?: string | null;
+  relative_publish_time_description?: string | null;
+  google_maps_uri?: string | null;
+  category?: string;
+  category_confidence?: number;
+  response_text?: string | null;
+  final_response_text?: string | null;
+  ai_draft_response?: string | null;
   response_status?: 'unanswered' | 'drafted' | 'approved' | 'published' | string;
+  response_date?: string | null;
   sentiment?: 'positive' | 'neutral' | 'negative' | string;
   sentiment_score?: number;
-  topics?: string[];
+  topics?: any;
+  topic_list?: string[];
+  created_at?: string;
+}
+
+export interface PublicPlaceInfo {
+  place_id: string;
+  name: string;
+  formatted_address?: string | null;
+  rating?: number | null;
+  user_rating_count?: number | null;
+  maps_url?: string | null;
+  website_url?: string | null;
+  last_synced_at?: string | null;
+  connected_google_account?: string | null;
+}
+
+export interface PublicReviewSummary {
+  total_google_reviews: number;
+  reviews_available: number;
+  average_rating?: number | null;
+  positive_count: number;
+  neutral_count: number;
+  negative_count: number;
+  categories_breakdown: Record<string, number>;
+  reviews_ordering: string;
+  last_synced_at?: string | null;
+  connected_google_account?: string | null;
+  places_api_configured?: boolean;
+  has_place_id?: boolean;
+}
+
+export interface PublicReviewsResponse {
+  status: 'found' | 'no_place_id' | 'not_configured' | 'invalid_credentials' | 'not_found' | 'quota_exceeded' | 'timeout' | 'provider_error' | 'error' | string;
+  error?: string | null;
+  place?: PublicPlaceInfo | null;
+  reviews: Review[];
+  summary?: PublicReviewSummary | null;
 }
 
 export interface BusinessProfile {
@@ -322,6 +520,28 @@ export interface Citation {
   last_checked_at: string;
 }
 
+export interface CitationDistribution {
+  health_score: number;
+  total_directories: number;
+  total_citations?: number;
+  submitted_count: number;
+  approved_count: number;
+  verified_count?: number;
+  observed_count?: number;
+  mismatch_count?: number;
+  unable_to_verify_count?: number;
+  pending_count: number;
+  rejected_count: number;
+  failed_count: number;
+  nap_consistency_pct: number;
+  missing_count: number;
+  completion_pct: number;
+  last_scanned_at?: string | null;
+  canonical_profile?: Record<string, any> | null;
+  nap_comparisons?: Array<any>;
+  citations: Citation[];
+}
+
 export interface NAPRecord {
   id: number;
   project_id: number;
@@ -354,15 +574,35 @@ export interface Competitor {
   project_id: number;
   name: string;
   domain?: string;
+  website?: string;
   gbp_name?: string;
   rating?: number;
   reviews_count?: number;
   total_reviews?: number;
   avg_maps_rank?: number;
+  best_rank?: number;
+  worst_rank?: number;
+  grid_appearances?: number;
+  source?: 'manual' | 'geogrid' | 'manual_and_geogrid' | string;
+  address?: string;
+  phone?: string;
+  keywords_found?: string[];
+  scans_data?: Array<{
+    scan_id?: number;
+    keyword?: string;
+    scanned_at?: string;
+    appearances?: number;
+    best_rank?: number;
+    worst_rank?: number;
+    avg_rank?: number;
+  }>;
+  last_seen_at?: string;
+  created_at?: string;
   local_visibility_score?: number;
   top_keywords_count?: number;
   place_id?: string;
   categories?: string[];
+  category?: string;
   gbp_status?: string;
   citations_count?: number;
   backlinks_count?: number;
@@ -372,50 +612,27 @@ export interface Competitor {
   opportunities_found?: string[];
 }
 
-export interface LocalAuditFinding {
-  id: number;
-  project_id: number;
-  audit_run_id: number;
-  category: string;
-  check_key: string;
+export interface CompetitorCandidate {
   title: string;
-  status: 'PASS' | 'PARTIAL' | 'FAIL' | 'NOT_VERIFIED' | 'NOT_APPLICABLE' | 'ERROR';
-  severity: 'CRITICAL' | 'HIGH' | 'MEDIUM' | 'LOW' | 'INFO';
-  score_impact: number;
-  evidence?: Record<string, any>;
-  source?: string;
-  source_url?: string;
-  verification_status: 'VERIFIED' | 'OBSERVED' | 'USER_PROVIDED' | 'DETECTED' | 'INFERRED' | 'NOT_VERIFIED' | 'FAILED' | 'NOT_APPLICABLE';
-  recommendation?: string;
-  created_at: string;
+  domain?: string;
+  rating?: number;
+  reviews_count?: number;
+  address?: string;
+  phone?: string;
+  place_id?: string;
+  source: string;
+  position?: number;
+  category?: string;
+  is_already_tracked: boolean;
 }
 
-export interface LocalAuditRun {
-  id: number;
-  project_id: number;
-  framework_version: string;
-  status: 'COMPLETED' | 'RUNNING' | 'FAILED' | string;
-  overall_score?: number | null;
-  category_scores: Record<string, any>;
-  findings_summary?: {
-    total?: number;
-    pass?: number;
-    fail?: number;
-    partial?: number;
-    not_verified?: number;
-    not_applicable?: number;
-    [key: string]: any;
-  };
-  total_checks?: number;
-  passed_checks?: number;
-  failed_checks?: number;
-  not_verified_checks?: number;
-  started_at?: string | null;
-  completed_at?: string | null;
-  created_at?: string;
-  executed_at?: string;
-  findings: LocalAuditFinding[];
+export interface CompetitorSearchResponse {
+  query: string;
+  location?: string;
+  total_found: number;
+  results: CompetitorCandidate[];
 }
+
 
 export interface LocalVisibilityStats {
   total_points: number;
@@ -475,15 +692,30 @@ export interface AIAnalysisResponse {
 
 export interface ContentOpportunity {
   topic: string;
+  title?: string;
   page_type: string;
+  recommended_page_type?: string;
   primary_keyword: string;
+  target_keyword?: string;
+  location?: string;
   secondary_keywords: string[];
   search_intent: string;
   search_volume?: number | null;
   search_volume_status?: string;
   business_value: string;
+  priority?: string;
+  opportunity_score?: number;
   competition_level?: string;
   target_slug: string;
+  ai_recommendation?: string;
+  content_brief?: {
+    suggested_h1?: string;
+    meta_description?: string;
+    recommended_word_count?: number;
+    key_sections?: string[];
+    schema_type?: string;
+    cta?: string;
+  };
 }
 
 export interface TemplateVariable {
@@ -549,10 +781,44 @@ export interface SchemaRecommendation {
   action_label?: string;
 }
 
+export interface SchemaInstanceData {
+  instance_id?: string;
+  name?: string;
+  page_url?: string;
+  source_format?: string;
+  properties?: Record<string, any>;
+  raw_entity?: any;
+  raw_markup?: string;
+  validation_errors?: string[];
+  validation_warnings?: string[];
+  missing_properties?: string[];
+  scanned_at?: string;
+}
+
 export interface Tier1SchemaInfo {
-  status: 'Detected' | 'Missing' | 'Invalid' | 'Not Applicable';
-  applicability: 'Highly Applicable' | 'Applicable' | 'Potentially Applicable' | 'Not Applicable';
+  status: 'Detected' | 'Missing' | 'Invalid' | 'Not Applicable' | 'Not Scanned' | 'Scan Failed' | string;
+  applicability: 'Highly Applicable' | 'Applicable' | 'Potentially Applicable' | 'Not Applicable' | string;
   reason: string;
+  detected_count?: number;
+  definition?: string;
+  why_it_matters?: string;
+  recommended_page_types?: string[];
+  required_properties?: string[];
+  recommended_properties?: string[];
+
+  detected_data?: {
+    page_url?: string;
+    source_format?: string;
+    properties?: Record<string, any>;
+    raw_entity?: any;
+    raw_markup?: string;
+    all_instances?: SchemaInstanceData[];
+    validation_errors?: string[];
+    validation_warnings?: string[];
+    missing_properties?: string[];
+    scanned_at?: string;
+  } | null;
+  generator_prefill?: Record<string, any>;
 }
 
 export interface SchemaRecord {
@@ -652,6 +918,24 @@ export interface GoogleConnectionSummary {
   };
 }
 
+export interface FieldMatchInfo {
+  status: 'MATCH' | 'PARTIAL_MATCH' | 'NO_MATCH' | 'MISSING';
+  candidate_value?: string | null;
+  project_value?: string | null;
+  score: number;
+  reason?: string | null;
+}
+
+export interface NAPMatchBreakdown {
+  state: 'MATCH' | 'PARTIAL_MATCH' | 'NO_MATCH' | 'AMBIGUOUS';
+  score: number;
+  business_name: FieldMatchInfo;
+  address: FieldMatchInfo;
+  phone: FieldMatchInfo;
+  website: FieldMatchInfo;
+  reasons: string[];
+}
+
 export interface DiscoveredGBPLocation {
   account_id: string;
   location_id: string;
@@ -667,7 +951,15 @@ export interface DiscoveredGBPLocation {
   maps_uri?: string;
   latitude?: number;
   longitude?: number;
+  storefront_address?: Record<string, any>;
+  regular_hours?: Record<string, any>;
+  special_hours?: Record<string, any>;
+  description?: string;
+  verification_state?: string;
   already_imported?: boolean;
+  already_linked_to_project_id?: number | null;
+  already_linked_project_name?: string | null;
+  nap_match?: NAPMatchBreakdown | null;
 }
 
 export interface GoogleAdsAccountItem {
@@ -967,3 +1259,36 @@ export const AUDIT_CATEGORY_LABELS: Record<AuditCategoryKey, string> = {
   user_engagement: 'User Engagement',
   competitor_market_analysis: 'Competitor Analysis',
 };
+
+
+export interface ProductOrServiceItem {
+  id: string | number;
+  type: 'product' | 'service';
+  name: string;
+  description?: string | null;
+  category?: string | null;
+  price?: string | null;
+  price_range?: string | null;
+  image_url?: string | null;
+  photo_urls?: string[];
+  action_url?: string | null;
+  action_type?: 'VIEW' | 'ORDER' | 'BOOK' | string | null;
+  source: 'GOOGLE_BUSINESS_PROFILE' | 'PUBLIC_SEARCH' | string;
+  created_at?: string | null;
+  updated_at?: string | null;
+}
+
+export interface ProductsServicesResponse {
+  business_name: string;
+  place_id?: string | null;
+  is_connected: boolean;
+  connected_account?: string | null;
+  total_products: number;
+  total_services: number;
+  last_synced_at?: string | null;
+  sync_status?: 'SYNCED' | 'PARTIAL' | 'FAILED' | 'NOT_AVAILABLE' | 'CACHED' | 'NOT_SYNCED' | string | null;
+  sync_message?: string | null;
+  can_sync?: boolean;
+  items: ProductOrServiceItem[];
+}
+

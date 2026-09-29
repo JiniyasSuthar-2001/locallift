@@ -1,6 +1,7 @@
 import re
 import logging
 import httpx
+import uuid
 
 from typing import List, Dict, Any, Optional
 from datetime import datetime, timezone, timedelta
@@ -9,7 +10,7 @@ from sqlalchemy.future import select
 from sqlalchemy.orm import selectinload
 
 from app.config import settings
-from app.core.security import encrypt_token, decrypt_token
+from app.core.security import encrypt_token, decrypt_token, is_plaintext_token
 from app.models.connections import (
     GoogleConnection,
     GoogleAdsAccount,
@@ -21,6 +22,8 @@ from app.models.gbp import GoogleAccount, GoogleBusinessProfile
 from app.services.google.oauth import GoogleOAuthCore
 from app.services.google.gbp_client import GoogleBusinessProfileClient
 from app.services.category_taxonomy import CategoryTaxonomy
+
+from app.services.google.nap_matcher import NAPMatcher
 
 logger = logging.getLogger("locallift.google.connections")
 
@@ -109,7 +112,7 @@ class GoogleConnectionsService:
             raise ValueError(f"Invalid service '{service}' for connection persistence.")
 
         existing = await cls.get_connection_for_service(organization_id, service, db)
-        email = token_data.get("email") or "connected-user@gmail.com"
+        email = token_data.get("account_email") or token_data.get("email") or "connected-user@gmail.com"
         scopes = token_data.get("scopes", [])
         raw_access_token = token_data.get("access_token")
         raw_refresh_token = token_data.get("refresh_token")
@@ -229,13 +232,24 @@ class GoogleConnectionsService:
         Persists newly encrypted access tokens and returns the active plaintext access token.
         Raises ValueError with user-friendly error message if token cannot be refreshed or connection is invalid.
         """
-        if not connection or not connection.access_token:
-            raise ValueError("Google connection has no access token.")
+        if not connection:
+            raise ValueError("Google connection not found.")
 
-        plain_access = decrypt_token(connection.access_token)
-        plain_refresh = decrypt_token(connection.refresh_token) if connection.refresh_token else None
+        plain_access = None
+        if connection.access_token:
+            try:
+                plain_access = decrypt_token(connection.access_token)
+            except Exception:
+                plain_access = None
+
+        plain_refresh = None
+        if connection.refresh_token:
+            try:
+                plain_refresh = decrypt_token(connection.refresh_token)
+            except Exception:
+                plain_refresh = None
+
         now = datetime.now(timezone.utc)
-
         is_expired = False
         if connection.token_expiry:
             expiry_dt = connection.token_expiry
@@ -244,12 +258,17 @@ class GoogleConnectionsService:
             if expiry_dt <= now + timedelta(minutes=3):
                 is_expired = True
 
+        # If access token is valid and unexpired, return it (and re-encrypt in DB if stored unencrypted)
         if not is_expired and plain_access:
+            if is_plaintext_token(connection.access_token):
+                connection.access_token = encrypt_token(plain_access)
+                await db.commit()
             return plain_access
 
+        # Access token is expired, corrupted, or missing; attempt refresh if refresh token is available
         if not plain_refresh:
             connection.status = "expired"
-            connection.sync_error = "Google access token has expired and no refresh token is available. Please reconnect Google."
+            connection.sync_error = "Your saved Google connection could not be securely read or has expired. Reconnect your Google account to restore access."
             await db.commit()
             raise ValueError(connection.sync_error)
 
@@ -262,6 +281,8 @@ class GoogleConnectionsService:
                 raise ValueError("Token refresh endpoint returned no access token.")
 
             connection.access_token = encrypt_token(new_access_token)
+            if is_plaintext_token(connection.refresh_token):
+                connection.refresh_token = encrypt_token(plain_refresh)
             connection.token_expiry = new_expiry
             connection.status = "connected"
             connection.sync_error = None
@@ -269,7 +290,7 @@ class GoogleConnectionsService:
             logger.info(f"[OAUTH_REFRESH] Successfully refreshed access token for service={connection.service} connection_id={connection.id}")
             return new_access_token
         except Exception as e:
-            logger.error(f"[OAUTH_REFRESH] Failed to refresh Google token for connection {connection.id}: {e}")
+            logger.warning(f"[OAUTH_REFRESH] Failed to refresh Google token for connection {connection.id}: {e}")
             connection.status = "expired"
             connection.sync_error = f"Google connection expired or revoked ({str(e)}). Reconnect Google to continue syncing."
             await db.commit()
@@ -297,7 +318,12 @@ class GoogleConnectionsService:
             logger.warning(f"[SERVICE_DISCOVERY] Token resolution failed: {e}")
             return {"error": str(e), "status": connection.status}
 
-        plain_refresh_token = decrypt_token(connection.refresh_token) if connection.refresh_token else None
+        plain_refresh_token = None
+        if connection.refresh_token:
+            try:
+                plain_refresh_token = decrypt_token(connection.refresh_token)
+            except Exception:
+                plain_refresh_token = None
         expiry = connection.token_expiry
         granted_scopes = connection.scopes or []
         service = connection.service
@@ -312,31 +338,51 @@ class GoogleConnectionsService:
         if service == "business_profile" or any("business.manage" in s for s in granted_scopes):
             gbp_client = GoogleBusinessProfileClient(plain_access_token, plain_refresh_token, expiry)
             try:
-                accounts = await gbp_client.list_accounts()
+                acc_res = await gbp_client.list_accounts()
+                accounts = acc_res.get("accounts", []) if isinstance(acc_res, dict) else acc_res
                 for acc in accounts:
                     acc_name = acc.get("name")
                     if not acc_name:
                         continue
-                    locs = await gbp_client.list_locations(acc_name)
+                    locs_res = await gbp_client.list_locations(acc_name)
+                    locs = locs_res.get("locations", []) if isinstance(locs_res, dict) else locs_res
                     for l in locs:
                         raw_addr = l.get("storefrontAddress", {})
                         addr_lines = raw_addr.get("addressLines", [])
                         city = raw_addr.get("locality", "")
                         state = raw_addr.get("administrativeArea", "")
+                        postal_code = raw_addr.get("postalCode", "")
+                        country = raw_addr.get("regionCode", "")
                         full_addr = ", ".join(addr_lines + ([city] if city else []) + ([state] if state else []))
                         
                         cat = l.get("categories", {}).get("primaryCategory", {}).get("displayName", "Local Business")
                         web = l.get("websiteUri")
                         phone = l.get("phoneNumbers", {}).get("primaryPhone")
+                        lat_lng = l.get("latlng", {})
+                        meta = l.get("metadata", {})
                         
                         discovered_gbp.append({
                             "account_id": acc_name,
+                            "account_resource_name": acc_name,
                             "location_id": l.get("name", ""),
+                            "location_resource_name": l.get("name", ""),
                             "business_name": l.get("title") or "Unnamed Location",
                             "primary_category": CategoryTaxonomy.normalize_category_name(cat),
+                            "additional_categories": [c.get("displayName") for c in l.get("categories", {}).get("additionalCategories", []) if c.get("displayName")],
                             "address": full_addr or None,
+                            "address_lines": addr_lines,
+                            "city": city or None,
+                            "state": state or None,
+                            "postal_code": postal_code or None,
+                            "country": country or None,
                             "phone": phone or None,
                             "website_url": web or None,
+                            "latitude": lat_lng.get("latitude"),
+                            "longitude": lat_lng.get("longitude"),
+                            "place_id": meta.get("placeId"),
+                            "maps_uri": meta.get("mapsUri"),
+                            "regular_hours": l.get("regularHours", {}),
+                            "special_hours": l.get("specialHours", {}).get("specialHourPeriods", []),
                             "is_verified": l.get("profile", {}).get("isVerified", True)
                         })
             except Exception as e:
@@ -491,6 +537,512 @@ class GoogleConnectionsService:
         }
 
     @classmethod
+    async def discover_gbp_locations_with_linkage(
+        cls,
+        organization_id: int,
+        db: AsyncSession,
+        project_id: Optional[int] = None
+    ) -> Dict[str, Any]:
+        """
+        Discovers all accessible GBP locations for the organization across all accounts and pages.
+        Annotates existing project bindings and performs NAP match evaluation if project_id is provided.
+        """
+        conn = await cls.get_connection_for_service(organization_id, "business_profile", db)
+        if not conn or not conn.access_token or conn.status not in ("connected", "expired"):
+            return {
+                "status": "DISCONNECTED" if not conn else conn.status.upper(),
+                "connected": False,
+                "error": "Google Business Profile is not connected.",
+                "locations": [],
+                "nap_match_summary": "NO_MATCH"
+            }
+
+        try:
+            plain_access_token = await cls.get_valid_access_token(conn, db)
+        except Exception as e:
+            return {
+                "status": "AUTH_EXPIRED",
+                "connected": False,
+                "error": str(e),
+                "locations": [],
+                "nap_match_summary": "NO_MATCH"
+            }
+
+        plain_refresh_token = None
+        if conn.refresh_token:
+            try:
+                plain_refresh_token = decrypt_token(conn.refresh_token)
+            except Exception:
+                plain_refresh_token = None
+
+        gbp_client = GoogleBusinessProfileClient(plain_access_token, plain_refresh_token, conn.token_expiry)
+
+        # 1. List all accounts with pagination
+        acc_res = await gbp_client.list_accounts()
+        if acc_res.get("status") not in ("CONNECTED", None):
+            return {
+                "status": acc_res.get("status", "ERROR"),
+                "connected": True,
+                "error": acc_res.get("error"),
+                "locations": [],
+                "nap_match_summary": "NO_MATCH"
+            }
+
+        accounts = acc_res.get("accounts", [])
+        if not accounts:
+            return {
+                "status": "NO_BUSINESS_PROFILES",
+                "connected": True,
+                "error": "No Google Business Profile accounts found for this authorized Google account.",
+                "locations": [],
+                "nap_match_summary": "NO_MATCH"
+            }
+
+        # 2. Query all existing GBP bindings in DB across this org to determine linkage status
+        all_gbp_bindings_res = await db.execute(
+            select(GoogleBusinessProfile, Project)
+            .join(Project, GoogleBusinessProfile.project_id == Project.id, isouter=True)
+            .where(Project.organization_id == organization_id)
+        )
+        existing_bindings = {}
+        for row in all_gbp_bindings_res.all():
+            gbp_p, prj = row[0], row[1]
+            if gbp_p.location_resource_name:
+                existing_bindings[gbp_p.location_resource_name] = prj
+            if gbp_p.location_name:
+                existing_bindings[gbp_p.location_name] = prj
+            if gbp_p.place_id:
+                existing_bindings[gbp_p.place_id] = prj
+
+        # 3. Discover all locations across accounts
+        all_discovered: List[Dict[str, Any]] = []
+        location_errors: List[Dict[str, Any]] = []
+        for acc in accounts:
+            acc_name = acc.get("name")
+            if not acc_name:
+                continue
+            locs_res = await gbp_client.list_locations(acc_name)
+            if isinstance(locs_res, dict) and locs_res.get("status") not in ("CONNECTED", "NO_LOCATIONS", None):
+                location_errors.append(locs_res)
+            locs = locs_res.get("locations", []) if isinstance(locs_res, dict) else locs_res
+            for l in locs:
+                loc_res_name = l.get("name", "")
+                raw_addr = l.get("storefrontAddress", {})
+                addr_lines = raw_addr.get("addressLines", [])
+                city = raw_addr.get("locality", "")
+                state = raw_addr.get("administrativeArea", "")
+                postal_code = raw_addr.get("postalCode", "")
+                country = raw_addr.get("regionCode", "")
+                full_addr = ", ".join(addr_lines + ([city] if city else []) + ([state] if state else []))
+                
+                cat = l.get("categories", {}).get("primaryCategory", {}).get("displayName", "Local Business")
+                web = l.get("websiteUri")
+                phone = l.get("phoneNumbers", {}).get("primaryPhone")
+                lat_lng = l.get("latlng", {})
+                meta = l.get("metadata", {})
+                place_id = meta.get("placeId")
+                maps_uri = meta.get("mapsUri")
+                
+                # Check linkage status
+                linked_proj = existing_bindings.get(loc_res_name) or (existing_bindings.get(place_id) if place_id else None)
+                already_linked_id = linked_proj.id if linked_proj else None
+                already_linked_name = linked_proj.name if linked_proj else None
+                is_linked_to_current = bool(project_id and already_linked_id == project_id)
+
+                all_discovered.append({
+                    "account_id": acc_name,
+                    "account_resource_name": acc_name,
+                    "location_id": loc_res_name,
+                    "location_resource_name": loc_res_name,
+                    "business_name": l.get("title") or "Unnamed Location",
+                    "primary_category": CategoryTaxonomy.normalize_category_name(cat),
+                    "additional_categories": [c.get("displayName") for c in l.get("categories", {}).get("additionalCategories", []) if c.get("displayName")],
+                    "address": full_addr or None,
+                    "address_lines": addr_lines,
+                    "city": city or None,
+                    "state": state or None,
+                    "postal_code": postal_code or None,
+                    "country": country or None,
+                    "phone": phone or None,
+                    "website_url": web or None,
+                    "latitude": lat_lng.get("latitude"),
+                    "longitude": lat_lng.get("longitude"),
+                    "place_id": place_id,
+                    "maps_uri": maps_uri,
+                    "regular_hours": l.get("regularHours", {}),
+                    "special_hours": l.get("specialHours", {}).get("specialHourPeriods", []),
+                    "service_areas": l.get("serviceArea", {}),
+                    "is_verified": l.get("profile", {}).get("isVerified", True),
+                    "already_linked_to_project_id": already_linked_id,
+                    "already_linked_project_name": already_linked_name,
+                    "already_linked_to_current_project": is_linked_to_current
+                })
+
+        if not all_discovered:
+            if location_errors:
+                first_err = location_errors[0]
+                return {
+                    "status": first_err.get("status", "API_ACCESS_NOT_GRANTED"),
+                    "connected": True,
+                    "error": first_err.get("error", "Google Business Profile location discovery failed."),
+                    "locations": [],
+                    "nap_match_summary": "NO_MATCH"
+                }
+            return {
+                "status": "NO_LOCATIONS",
+                "connected": True,
+                "error": "No business locations found under your Google Business Profile accounts.",
+                "locations": [],
+                "nap_match_summary": "NO_MATCH"
+            }
+
+        # 4. If project_id is provided (Workflow A), evaluate NAP matching
+        nap_summary = "NO_MATCH"
+        if project_id:
+            proj_res = await db.execute(select(Project).where(Project.id == project_id))
+            target_proj = proj_res.scalars().first()
+            if target_proj:
+                loc_res = await db.execute(select(Location).where(Location.project_id == target_proj.id))
+                p_loc = loc_res.scalars().first()
+                proj_data = {
+                    "name": target_proj.name,
+                    "domain": target_proj.domain,
+                    "address": p_loc.address if p_loc else None,
+                    "phone": p_loc.phone if p_loc else None
+                }
+                nap_summary, all_discovered = NAPMatcher.classify_candidates(proj_data, all_discovered)
+
+        return {
+            "status": "CONNECTED",
+            "connected": True,
+            "error": None,
+            "locations_count": len(all_discovered),
+            "locations": all_discovered,
+            "nap_match_summary": nap_summary
+        }
+
+    @classmethod
+    async def bind_gbp_location_to_project(
+        cls,
+        project_id: int,
+        organization_id: Optional[int] = None,
+        location_payload: Optional[Any] = None,
+        db: Optional[AsyncSession] = None,
+        force_relink: bool = False,
+        org_id: Optional[int] = None,
+        **kwargs
+    ) -> Dict[str, Any]:
+        """
+        Workflow A: Binds an existing LocalLift project directly to a specific GBP location.
+        Enforces 1:1 binding and duplicate protection.
+        """
+        eff_org_id = organization_id or org_id or kwargs.get("org_id")
+        proj_res = await db.execute(select(Project).where(Project.id == project_id, Project.organization_id == eff_org_id))
+        proj = proj_res.scalars().first()
+        if not proj:
+            raise ValueError("Target project not found or access denied.")
+
+        loc_data = location_payload.model_dump() if hasattr(location_payload, "model_dump") else (location_payload.dict() if hasattr(location_payload, "dict") else dict(location_payload or {}))
+        loc_res_name = loc_data.get("location_resource_name") or loc_data.get("location_id")
+        if not loc_res_name:
+            raise ValueError("Location resource name is required for binding.")
+
+        # Check if already bound to another project
+        existing_binding_res = await db.execute(
+            select(GoogleBusinessProfile, Project)
+            .join(Project, GoogleBusinessProfile.project_id == Project.id)
+            .where(
+                (GoogleBusinessProfile.location_resource_name == loc_res_name) |
+                (GoogleBusinessProfile.location_name == loc_res_name)
+            )
+        )
+        existing_row = existing_binding_res.first()
+        if existing_row:
+            existing_gbp, existing_proj = existing_row[0], existing_row[1]
+            if existing_proj.id != project_id:
+                if not force_relink:
+                    raise ValueError(f"This GBP location is already linked to Project '{existing_proj.name}' (ID: {existing_proj.id}). Relinking requires explicit confirmation.")
+                else:
+                    # Unbind from old project
+                    existing_gbp.project_id = None
+                    await db.flush()
+
+        gbp_conn = await cls.get_connection_for_service(organization_id, "business_profile", db)
+        conn_id = gbp_conn.id if gbp_conn else None
+
+        # Fetch or create GoogleBusinessProfile for target project
+        prof_res = await db.execute(select(GoogleBusinessProfile).where(GoogleBusinessProfile.project_id == project_id))
+        profile = prof_res.scalars().first()
+
+        biz_name = loc_data.get("business_name") or loc_data.get("location_name") or proj.name
+        primary_cat = CategoryTaxonomy.normalize_category_name(loc_data.get("primary_category") or loc_data.get("category"))
+        addr = loc_data.get("address")
+        city = loc_data.get("city")
+        state = loc_data.get("state")
+        postal_code = loc_data.get("postal_code")
+        country = loc_data.get("country") or proj.country
+        phone = loc_data.get("phone")
+        web = loc_data.get("website_url") or f"https://{proj.domain}"
+        lat = loc_data.get("latitude")
+        lng = loc_data.get("longitude")
+        place_id = loc_data.get("place_id")
+        maps_uri = loc_data.get("maps_uri")
+        hours = loc_data.get("regular_hours") or {}
+        special_hours = loc_data.get("special_hours") or []
+
+        if not profile:
+            profile = GoogleBusinessProfile(
+                project_id=project_id,
+                google_connection_id=conn_id,
+                account_resource_name=loc_data.get("account_resource_name") or loc_data.get("account_id"),
+                location_resource_name=loc_res_name,
+                location_name=loc_res_name,
+                business_name=biz_name,
+                primary_category=primary_cat,
+                additional_categories=loc_data.get("additional_categories") or [],
+                address=addr,
+                address_lines=loc_data.get("address_lines") or [],
+                city=city,
+                state=state,
+                postal_code=postal_code,
+                country=country,
+                phone=phone,
+                website_url=web,
+                latitude=lat,
+                longitude=lng,
+                place_id=place_id,
+                maps_uri=maps_uri,
+                regular_hours=hours,
+                opening_hours=hours,
+                special_hours=special_hours,
+                completeness_score=90,
+                is_verified=loc_data.get("is_verified", True),
+                status="CONNECTED",
+                sync_status="idle",
+                last_synced_at=datetime.now(timezone.utc)
+            )
+            db.add(profile)
+        else:
+            profile.google_connection_id = conn_id
+            profile.account_resource_name = loc_data.get("account_resource_name") or loc_data.get("account_id")
+            profile.location_resource_name = loc_res_name
+            profile.location_name = loc_res_name
+            profile.business_name = biz_name
+            profile.primary_category = primary_cat
+            profile.additional_categories = loc_data.get("additional_categories") or profile.additional_categories
+            profile.address = addr or profile.address
+            profile.address_lines = loc_data.get("address_lines") or profile.address_lines
+            profile.city = city or profile.city
+            profile.state = state or profile.state
+            profile.postal_code = postal_code or profile.postal_code
+            profile.country = country or profile.country
+            profile.phone = phone or profile.phone
+            profile.website_url = web or profile.website_url
+            profile.latitude = lat if lat is not None else profile.latitude
+            profile.longitude = lng if lng is not None else profile.longitude
+            profile.place_id = place_id or profile.place_id
+            profile.maps_uri = maps_uri or profile.maps_uri
+            profile.regular_hours = hours or profile.regular_hours
+            profile.opening_hours = hours or profile.opening_hours
+            profile.special_hours = special_hours or profile.special_hours
+            profile.is_verified = loc_data.get("is_verified", True)
+            profile.status = "CONNECTED"
+            profile.sync_status = "idle"
+            profile.last_synced_at = datetime.now(timezone.utc)
+
+        # Update Project Location with exact GBP address details
+        loc_res = await db.execute(select(Location).where(Location.project_id == project_id))
+        loc = loc_res.scalars().first()
+        if loc:
+            if addr: loc.address = addr
+            if city: loc.city = city
+            if state: loc.state = state
+            if postal_code: loc.postal_code = postal_code
+            if country: loc.country = country
+            if phone: loc.phone = phone
+            if lat is not None: loc.latitude = lat
+            if lng is not None: loc.longitude = lng
+            if place_id: loc.place_id = place_id
+        else:
+            loc = Location(
+                project_id=project_id,
+                name=biz_name,
+                address=addr,
+                city=city,
+                state=state,
+                postal_code=postal_code,
+                country=country,
+                phone=phone,
+                latitude=lat,
+                longitude=lng,
+                place_id=place_id
+            )
+            db.add(loc)
+
+        if country:
+            proj.country = country
+
+        await db.commit()
+        await db.refresh(profile)
+        logger.info(f"[GBP_BIND] Successfully bound Project {project_id} to GBP Location {loc_res_name}")
+
+        return {
+            "success": True,
+            "project_id": project_id,
+            "location_resource_name": loc_res_name,
+            "business_name": biz_name,
+            "message": f"Successfully bound Google Business Profile '{biz_name}' to {proj.name}."
+        }
+
+    @classmethod
+    async def create_projects_from_gbp_locations(
+        cls,
+        organization_id: Optional[int] = None,
+        user_id: Optional[int] = None,
+        locations_payload: Optional[List[Any]] = None,
+        db: Optional[AsyncSession] = None,
+        org_id: Optional[int] = None,
+        **kwargs
+    ) -> Dict[str, Any]:
+        """
+        Workflow B: Creates 1 LocalLift project per selected GBP location without requiring existing NAP match.
+        Populates complete business info, hours, coordinates, and strong GBP binding.
+        """
+        eff_org_id = organization_id or org_id or kwargs.get("org_id")
+        if not eff_org_id:
+            raise ValueError("organization_id is required.")
+        if not locations_payload:
+            raise ValueError("No GBP locations provided for project creation.")
+
+        gbp_conn = await cls.get_connection_for_service(eff_org_id, "business_profile", db)
+        conn_id = gbp_conn.id if gbp_conn else None
+
+        created_projects: List[Dict[str, Any]] = []
+        skipped_locations: List[Dict[str, Any]] = []
+
+        for item in locations_payload:
+            loc_data = item.model_dump() if hasattr(item, "model_dump") else (item.dict() if hasattr(item, "dict") else dict(item))
+            loc_res_name = loc_data.get("location_resource_name") or loc_data.get("location_id")
+            biz_name = loc_data.get("business_name") or loc_data.get("location_name") or loc_data.get("title") or "Imported Business"
+
+            # Duplicate protection: verify this GBP location isn't already bound to a project in the org
+            if loc_res_name:
+                existing_res = await db.execute(
+                    select(GoogleBusinessProfile, Project)
+                    .join(Project, GoogleBusinessProfile.project_id == Project.id)
+                    .where(
+                        (GoogleBusinessProfile.location_resource_name == loc_res_name) |
+                        (GoogleBusinessProfile.location_name == loc_res_name)
+                    )
+                )
+                existing_row = existing_res.first()
+                if existing_row:
+                    skipped_locations.append({
+                        "location_id": loc_res_name,
+                        "business_name": biz_name,
+                        "reason": f"Already linked to Project '{existing_row[1].name}' (ID: {existing_row[1].id})"
+                    })
+                    continue
+
+            # Generate domain
+            raw_url = loc_data.get("website_url") or loc_data.get("websiteUri") or ""
+            domain = raw_url.replace("https://", "").replace("http://", "").rstrip("/").split("/")[0]
+            if not domain:
+                clean_slug = re.sub(r'[^a-zA-Z0-9-]', '', biz_name.lower().replace(' ', '-'))
+                domain = f"{clean_slug[:35] or 'biz'}-{uuid.uuid4().hex[:4]}.local"
+
+            cat = CategoryTaxonomy.normalize_category_name(loc_data.get("primary_category"))
+            country = loc_data.get("country") or None
+
+            # Create Project
+            new_proj = Project(
+                organization_id=eff_org_id,
+                name=biz_name,
+                domain=domain,
+                primary_category=cat,
+                additional_categories=loc_data.get("additional_categories") or [],
+                country=country,
+                health_score=None
+            )
+            db.add(new_proj)
+            await db.flush()
+
+            # Create Website
+            db.add(Website(
+                project_id=new_proj.id,
+                url=raw_url if raw_url.startswith("http") else (f"https://{domain}" if domain else "https://example.com"),
+                status="ready"
+            ))
+
+            # Create Location
+            db.add(Location(
+                project_id=new_proj.id,
+                name=biz_name,
+                address=loc_data.get("address"),
+                city=loc_data.get("city"),
+                state=loc_data.get("state"),
+                postal_code=loc_data.get("postal_code"),
+                country=country,
+                phone=loc_data.get("phone"),
+                latitude=loc_data.get("latitude"),
+                longitude=loc_data.get("longitude"),
+                place_id=loc_data.get("place_id")
+            ))
+
+            # Create GoogleBusinessProfile with strong explicit binding
+            hours = loc_data.get("regular_hours") or loc_data.get("regularHours") or {}
+            special_hours = loc_data.get("special_hours") or []
+
+            gbp_profile = GoogleBusinessProfile(
+                project_id=new_proj.id,
+                google_connection_id=conn_id,
+                account_resource_name=loc_data.get("account_resource_name") or loc_data.get("account_id"),
+                location_resource_name=loc_res_name,
+                location_name=loc_res_name,
+                business_name=biz_name,
+                primary_category=cat,
+                additional_categories=loc_data.get("additional_categories") or [],
+                address=loc_data.get("address"),
+                address_lines=loc_data.get("address_lines") or [],
+                city=loc_data.get("city"),
+                state=loc_data.get("state"),
+                postal_code=loc_data.get("postal_code"),
+                country=country,
+                phone=loc_data.get("phone"),
+                website_url=raw_url or None,
+                latitude=loc_data.get("latitude"),
+                longitude=loc_data.get("longitude"),
+                place_id=loc_data.get("place_id"),
+                maps_uri=loc_data.get("maps_uri"),
+                regular_hours=hours,
+                opening_hours=hours,
+                special_hours=special_hours,
+                completeness_score=90,
+                is_verified=loc_data.get("is_verified", True),
+                status="CONNECTED",
+                sync_status="idle",
+                last_synced_at=datetime.now(timezone.utc)
+            )
+            db.add(gbp_profile)
+
+            created_projects.append({
+                "project_id": new_proj.id,
+                "project_name": new_proj.name,
+                "domain": new_proj.domain,
+                "location_resource_name": loc_res_name
+            })
+
+        await db.commit()
+        return {
+            "success": True,
+            "created_projects_count": len(created_projects),
+            "created_projects": created_projects,
+            "skipped_locations_count": len(skipped_locations),
+            "skipped_locations": skipped_locations,
+            "message": f"Successfully created {len(created_projects)} LocalLift project(s) from selected Google Business Profiles."
+        }
+
+    @classmethod
     async def import_resources_to_locallift(
         cls,
         organization_id: int,
@@ -501,113 +1053,22 @@ class GoogleConnectionsService:
     ) -> Dict[str, Any]:
         """
         Auto-creates LocalLift projects, locations, and websites from discovered Google resources.
-        Prevents duplicate records using domain and name deduplication.
+        Maintains backward compatibility with older import payloads while using strong GBP bindings.
         """
         created_projects = 0
         imported_locations = 0
         imported_websites = 0
 
         # Import GBP Locations
-        for loc_data in selected_gbp:
-            biz_name = loc_data.get("business_name") or "Imported Business"
-            raw_url = loc_data.get("website_url") or ""
-            domain = raw_url.replace("https://", "").replace("http://", "").rstrip("/").split("/")[0]
-            if not domain:
-                clean_slug = re.sub(r'[^a-zA-Z0-9-]', '', biz_name.lower().replace(' ', '-'))
-                domain = f"{clean_slug[:40]}.local"
-
-            cat = CategoryTaxonomy.normalize_category_name(loc_data.get("primary_category"))
-
-            # Check if project already exists for this domain in org
-            proj_res = await db.execute(
-                select(Project).where(
-                    Project.organization_id == organization_id,
-                    Project.domain == domain
-                )
+        if selected_gbp:
+            res = await cls.create_projects_from_gbp_locations(
+                organization_id=organization_id,
+                user_id=1,
+                locations_payload=selected_gbp,
+                db=db
             )
-            proj = proj_res.scalars().first()
-
-            if not proj:
-                proj = Project(
-                    organization_id=organization_id,
-                    name=biz_name,
-                    domain=domain,
-                    primary_category=cat,
-                    additional_categories=[],
-                    country="United States",
-                    health_score=None
-                )
-                db.add(proj)
-                await db.flush()
-                created_projects += 1
-
-                # Create website
-                db.add(Website(
-                    project_id=proj.id,
-                    url=f"https://{domain}" if not raw_url else raw_url,
-                    status="ready"
-                ))
-                imported_websites += 1
-
-            # Check if location already exists
-            existing_locs_res = await db.execute(
-                select(Location).where(Location.project_id == proj.id)
-            )
-            existing_locs = existing_locs_res.scalars().all()
-            loc_name = loc_data.get("business_name") or "Main Location"
-
-            if not any(l.name == loc_name for l in existing_locs):
-                loc = Location(
-                    project_id=proj.id,
-                    name=loc_name,
-                    address=loc_data.get("address"),
-                    phone=loc_data.get("phone"),
-                    country="United States"
-                )
-                db.add(loc)
-                await db.flush()
-                imported_locations += 1
-
-            # Sync project GoogleAccount & GoogleBusinessProfile relation from active GoogleConnection
-            gbp_conn = await cls.get_connection_for_service(organization_id, "business_profile", db)
-            if gbp_conn and gbp_conn.status in ("connected", "expired") and gbp_conn.access_token:
-                acc_res = await db.execute(
-                    select(GoogleAccount).where(GoogleAccount.project_id == proj.id)
-                )
-                g_acc = acc_res.scalars().first()
-                if not g_acc:
-                    g_acc = GoogleAccount(
-                        project_id=proj.id,
-                        account_email=gbp_conn.account_email or f"user-{proj.id}@google.com",
-                        access_token=gbp_conn.access_token,
-                        refresh_token=gbp_conn.refresh_token,
-                        token_expiry=gbp_conn.token_expiry,
-                        scopes=gbp_conn.scopes or [],
-                        is_connected=True
-                    )
-                    db.add(g_acc)
-                    await db.flush()
-                else:
-                    g_acc.access_token = gbp_conn.access_token
-                    g_acc.refresh_token = gbp_conn.refresh_token or g_acc.refresh_token
-                    g_acc.is_connected = True
-
-                # Ensure GoogleBusinessProfile profile record exists
-                prof_res = await db.execute(
-                    select(GoogleBusinessProfile).where(GoogleBusinessProfile.google_account_id == g_acc.id)
-                )
-                if not prof_res.scalars().first():
-                    db.add(GoogleBusinessProfile(
-                        google_account_id=g_acc.id,
-                        location_name=loc_data.get("location_name"),
-                        business_name=loc_data.get("business_name") or proj.name,
-                        primary_category=CategoryTaxonomy.normalize_category_name(loc_data.get("primary_category")),
-                        address=loc_data.get("address"),
-                        phone=loc_data.get("phone"),
-                        website_url=loc_data.get("website_url"),
-                        completeness_score=85,
-                        is_verified=True
-                    ))
+            created_projects += res.get("created_projects_count", 0)
+            imported_locations += res.get("created_projects_count", 0)
 
         # Import Search Console Websites
         for gsc_url in selected_gsc_urls:
@@ -631,7 +1092,7 @@ class GoogleConnectionsService:
                     domain=clean_dom,
                     primary_category="Local Business",
                     additional_categories=[],
-                    country="United States",
+                    country=None,
                     health_score=None
                 )
                 db.add(proj)

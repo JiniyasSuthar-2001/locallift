@@ -1,4 +1,5 @@
 import os
+import re
 import logging
 from sqlalchemy import create_engine, inspect, text
 from alembic.config import Config
@@ -40,90 +41,8 @@ def run_db_migrations() -> None:
         with engine.connect() as conn:
             inspector = inspect(conn)
             tables = inspector.get_table_names()
-            has_alembic = "alembic_version" in tables
             has_app_tables = "users" in tables or "projects" in tables
-            if "audit_jobs" in tables:
-                columns = [c["name"] for c in inspector.get_columns("audit_jobs")]
-                new_cols = {
-                    "crawler_status": "VARCHAR(100) DEFAULT 'queued'",
-                    "pages_crawled": "INTEGER DEFAULT 0",
-                    "pages_failed": "INTEGER DEFAULT 0",
-                    "pages_blocked": "INTEGER DEFAULT 0",
-                    "links_discovered": "INTEGER DEFAULT 0",
-                    "links_checked": "INTEGER DEFAULT 0",
-                    "broken_links_found": "INTEGER DEFAULT 0",
-                    "js_pages_rendered": "INTEGER DEFAULT 0",
-                    "sitemap_urls_discovered": "INTEGER DEFAULT 0",
-                    "robots_blocked_count": "INTEGER DEFAULT 0",
-                    "ssrf_blocked_count": "INTEGER DEFAULT 0",
-                    "options_snapshot": "JSON DEFAULT '{}'"
-                }
-                with engine.begin() as alter_conn:
-                    for col_name, col_type in new_cols.items():
-                        if col_name not in columns:
-                            logger.info(f"Adding missing column '{col_name}' to audit_jobs table")
-                            alter_conn.execute(text(f"ALTER TABLE audit_jobs ADD COLUMN {col_name} {col_type}"))
-
-            if "organization_serp_configs" in tables:
-                columns = [c["name"] for c in inspector.get_columns("organization_serp_configs")]
-                serp_cols = {
-                    "base_url": "VARCHAR(500) NULL",
-                    "auth_mode": "VARCHAR(50) DEFAULT 'api_key'",
-                    "capabilities": "JSON DEFAULT '{}'"
-                }
-                with engine.begin() as alter_conn:
-                    for col_name, col_type in serp_cols.items():
-                        if col_name not in columns:
-                            logger.info(f"Adding missing column '{col_name}' to organization_serp_configs table")
-                            alter_conn.execute(text(f"ALTER TABLE organization_serp_configs ADD COLUMN {col_name} {col_type}"))
-
-            if "geo_grid_scans" in tables:
-                columns = [c["name"] for c in inspector.get_columns("geo_grid_scans")]
-                grid_cols = {
-                    "completed_points": "INTEGER DEFAULT 0",
-                    "ranking_found_points": "INTEGER DEFAULT 0",
-                    "not_found_points": "INTEGER DEFAULT 0",
-                    "provider_error_points": "INTEGER DEFAULT 0",
-                    "timeout_points": "INTEGER DEFAULT 0"
-                }
-                with engine.begin() as alter_conn:
-                    for col_name, col_type in grid_cols.items():
-                        if col_name not in columns:
-                            logger.info(f"Adding missing column '{col_name}' to geo_grid_scans table")
-                            alter_conn.execute(text(f"ALTER TABLE geo_grid_scans ADD COLUMN {col_name} {col_type}"))
-
-            if "citations" in tables:
-                columns = [c["name"] for c in inspector.get_columns("citations")]
-                cit_cols = {
-                    "citation_type": "VARCHAR(50) DEFAULT 'USER_PROVIDED'",
-                    "verification_status": "VARCHAR(50) DEFAULT 'NOT_VERIFIED'",
-                    "confidence": "FLOAT NULL",
-                    "evidence": "JSON DEFAULT '{}'",
-                    "source_type": "VARCHAR(50) DEFAULT 'manual'"
-                }
-                with engine.begin() as alter_conn:
-                    for col_name, col_type in cit_cols.items():
-                        if col_name not in columns:
-                            logger.info(f"Adding missing column '{col_name}' to citations table")
-                            alter_conn.execute(text(f"ALTER TABLE citations ADD COLUMN {col_name} {col_type}"))
-
-            if "competitors" in tables:
-                columns = [c["name"] for c in inspector.get_columns("competitors")]
-                comp_cols = {
-                    "place_id": "VARCHAR(255) NULL",
-                    "categories": "JSON DEFAULT '[]'",
-                    "gbp_status": "VARCHAR(50) NULL",
-                    "citations_count": "INTEGER DEFAULT 0",
-                    "backlinks_count": "INTEGER DEFAULT 0",
-                    "geo_grid_share_pct": "FLOAT NULL",
-                    "tracked_keywords_overlap": "JSON DEFAULT '[]'"
-                }
-                with engine.begin() as alter_conn:
-                    for col_name, col_type in comp_cols.items():
-                        if col_name not in columns:
-                            logger.info(f"Adding missing column '{col_name}' to competitors table")
-                            alter_conn.execute(text(f"ALTER TABLE competitors ADD COLUMN {col_name} {col_type}"))
-
+            has_alembic = "alembic_version" in tables
             if has_app_tables and not has_alembic:
                 logger.info("Existing unversioned database detected. Stamping schema at 001_initial_schema.")
                 command.stamp(alembic_cfg, "001_initial_schema")
@@ -137,6 +56,90 @@ def run_db_migrations() -> None:
     logger.info("Executing Alembic database migrations (upgrade head)...")
     try:
         command.upgrade(alembic_cfg, "head")
+        logger.info("Alembic database migration completed successfully.")
     except Exception as exc:
-        logger.warning(f"Alembic upgrade warning: {exc}")
-    logger.info("Alembic database migration completed successfully.")
+        logger.warning(f"Alembic migration notice: {exc}")
+
+    # Ensure all newly registered models (ScanJob, ProviderUsageRecord, etc.) exist
+    try:
+        from app.database import Base
+        import app.models  # noqa: F401
+        sync_engine = create_engine(sync_db_url)
+        with sync_engine.connect() as conn:
+            inspector = inspect(conn)
+            if "users" in inspector.get_table_names():
+                user_cols = [c["name"] for c in inspector.get_columns("users")]
+                if "platform_role" not in user_cols:
+                    conn.execute(text("ALTER TABLE users ADD COLUMN platform_role VARCHAR(50);"))
+                    conn.commit()
+            if "organizations" in inspector.get_table_names():
+                org_cols = [c["name"] for c in inspector.get_columns("organizations")]
+                if "status" not in org_cols:
+                    conn.execute(text("ALTER TABLE organizations ADD COLUMN status VARCHAR(50) DEFAULT 'active';"))
+                    conn.commit()
+            if "geo_grid_scans" in inspector.get_table_names():
+                geo_cols = [c["name"] for c in inspector.get_columns("geo_grid_scans")]
+                geo_missing = [
+                    ("location_precision", "VARCHAR(50) DEFAULT 'EXACT'"),
+                    ("center_source", "VARCHAR(50)"),
+                    ("center_address", "VARCHAR(500)"),
+                    ("successful_points", "INTEGER DEFAULT 0"),
+                    ("failed_points", "INTEGER DEFAULT 0"),
+                    ("cancel_requested", "BOOLEAN DEFAULT 0"),
+                    ("cancelled_at", "DATETIME"),
+                    ("started_at", "DATETIME"),
+                    ("cancellation_reason", "VARCHAR(255)"),
+                    ("completed_at", "DATETIME")
+                ]
+                for col_name, col_type in geo_missing:
+                    if col_name not in geo_cols:
+                        conn.execute(text(f"ALTER TABLE geo_grid_scans ADD COLUMN {col_name} {col_type};"))
+                conn.commit()
+            if "reviews" in inspector.get_table_names():
+                rev_cols = [c["name"] for c in inspector.get_columns("reviews")]
+                rev_missing = [
+                    ("access_mode", "VARCHAR(50) DEFAULT 'PUBLIC'"),
+                    ("verification_status", "VARCHAR(50) DEFAULT 'OBSERVED'"),
+                    ("collection_status", "VARCHAR(50) DEFAULT 'active'"),
+                    ("raw_provider_reference", "VARCHAR(500)")
+                ]
+                for col_name, col_type in rev_missing:
+                    if col_name not in rev_cols:
+                        conn.execute(text(f"ALTER TABLE reviews ADD COLUMN {col_name} {col_type};"))
+                conn.commit()
+            if "citations" in inspector.get_table_names():
+                cit_cols = [c["name"] for c in inspector.get_columns("citations")]
+                cit_missing = [
+                    ("verification_status", "VARCHAR(50) DEFAULT 'NOT_VERIFIED'"),
+                    ("citation_type", "VARCHAR(50) DEFAULT 'USER_PROVIDED'"),
+                    ("source", "VARCHAR(50)"),
+                    ("platform_domain", "VARCHAR(255)")
+                ]
+                for col_name, col_type in cit_missing:
+                    if col_name not in cit_cols:
+                        conn.execute(text(f"ALTER TABLE citations ADD COLUMN {col_name} {col_type};"))
+                conn.commit()
+            if "organization_serp_configs" in inspector.get_table_names():
+                serp_cols = [c["name"] for c in inspector.get_columns("organization_serp_configs")]
+                serp_missing = [
+                    ("credentials_extra", "TEXT"),
+                    ("account_info", "JSON"),
+                    ("usage_info", "JSON"),
+                    ("last_synced_at", "DATETIME"),
+                    ("last_sync_error", "TEXT")
+                ]
+                for col_name, col_type in serp_missing:
+                    if col_name not in serp_cols:
+                        conn.execute(text(f"ALTER TABLE organization_serp_configs ADD COLUMN {col_name} {col_type};"))
+                conn.commit()
+        Base.metadata.create_all(bind=sync_engine)
+        sync_engine.dispose()
+    except Exception as e:
+        logger.warning(f"Table auto-creation notice: {e}")
+        err_msg = str(exc)
+        safe_err = re.sub(r"://([^:]+):([^@]+)@", "://***:***@", err_msg)
+        logger.error(
+            f"Alembic migration failed: command='upgrade head', revision='head', "
+            f"exception_class='{exc.__class__.__name__}', error='{safe_err}'"
+        )
+        raise RuntimeError(f"Database migration failed ({exc.__class__.__name__}): {safe_err}") from exc

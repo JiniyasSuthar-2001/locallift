@@ -82,9 +82,9 @@ async def test_geogrid_5x5_points_generation_and_execution():
     assert len(res["grid_points"]) == 25
     assert len(call_records) == 25
 
-    # 2. Every point has unique coordinates and point_number 0..24
+    # 2. Every point has unique coordinates and point_number 1..25
     point_nums = [p["point_number"] for p in res["grid_points"]]
-    assert sorted(point_nums) == list(range(25))
+    assert sorted(point_nums) == list(range(1, 26))
     coords = set((p["lat"], p["lng"]) for p in res["grid_points"])
     assert len(coords) == 25
 
@@ -225,7 +225,7 @@ async def test_geogrid_5x5_database_persistence(db_session):
         assert pt.scan_id == scan.id
         assert pt.project_id == project.id
         assert pt.keyword_id == kw.id
-        assert pt.point_number == idx
+        assert pt.point_number == idx + 1
         assert pt.rank == 1
         assert pt.status == "SUCCESS"
         assert pt.matched_domain == "myelectrician.com"
@@ -236,7 +236,7 @@ async def test_geogrid_5x5_database_persistence(db_session):
         scan_id=scan.id,
         project_id=project.id,
         keyword_id=kw.id,
-        point_number=0,  # duplicate of point 0
+        point_number=1,  # duplicate of point 1
         latitude=-37.8136,
         longitude=144.9631,
         status="SUCCESS"

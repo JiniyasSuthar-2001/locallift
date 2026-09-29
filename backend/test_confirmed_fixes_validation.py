@@ -90,12 +90,9 @@ async def test_local_grid_rescan_no_nameerror_on_zero_keywords_and_zero_location
             },
             headers=headers
         )
-        assert res.status_code == 200, f"Rescan failed with {res.status_code}: {res.text}"
-        data = res.json()
-        assert "scan_status" in data
-        assert data.get("keyword") == "emergency dentist los angeles"
-        assert data.get("center_lat") == 34.0522
-        assert data.get("center_lng") == -118.2437
+        assert res.status_code == 400
+        assert "SERP_PROVIDER_NOT_CONFIGURED" in res.text
+        assert "Connect your SerpApi account in Settings" in res.text
 
 
 def test_serp_default_is_serpapi():

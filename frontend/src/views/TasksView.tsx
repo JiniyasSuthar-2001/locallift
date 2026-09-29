@@ -13,6 +13,7 @@ import { useProject } from '../context/ProjectContext';
 import { SEOTask } from '../types';
 import { StatusBadge } from '../components/ui/StatusBadge';
 import { EmptyState } from '../components/ui/EmptyState';
+import { Modal } from '../components/ui/Modal';
 import api from '../api/client';
 
 export const TasksView: React.FC = () => {
@@ -255,80 +256,85 @@ export const TasksView: React.FC = () => {
 
       {/* Create Task Modal */}
       {isModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
-          <div className="bg-white rounded-2xl p-6 max-w-md w-full space-y-4 shadow-2xl border border-slate-200">
-            <h3 className="text-base font-black text-slate-900">Create New SEO Task</h3>
-            <form onSubmit={handleCreateTask} className="space-y-3 text-xs">
-              <div>
-                <label className="text-slate-700 block mb-1 font-bold">Task Title</label>
-                <input
-                  type="text"
-                  required
-                  value={title}
-                  onChange={(e) => setTitle(e.target.value)}
-                  placeholder="e.g. Implement LocalBusiness Schema on /locations"
-                  className="w-full bg-slate-50 border border-slate-200 rounded-lg p-2.5 text-slate-900 focus:outline-none focus:border-purple-500 font-medium"
-                />
-              </div>
+        <Modal
+          isOpen={isModalOpen}
+          onClose={() => setIsModalOpen(false)}
+          maxWidth="md"
+          icon={<CheckSquare className="w-5 h-5 text-[#236B4F]" />}
+          title="Create New SEO Task"
+          subtitle="Assign optimizations, audit actions, or schema tasks"
+          bodyClassName="space-y-4"
+        >
+          <form onSubmit={handleCreateTask} className="space-y-3 text-xs">
+            <div>
+              <label className="text-[#142820] block mb-1 font-bold">Task Title</label>
+              <input
+                type="text"
+                required
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+                placeholder="e.g. Implement LocalBusiness Schema on /locations"
+                className="w-full bg-[#F7FAF7] border border-[#DCE8DC] rounded-xl p-2.5 text-[#142820] focus:outline-none focus:border-[#236B4F] font-medium"
+              />
+            </div>
 
-              <div>
-                <label className="text-slate-700 block mb-1 font-bold">Category</label>
-                <select
-                  value={category}
-                  onChange={(e) => setCategory(e.target.value)}
-                  className="w-full bg-slate-50 border border-slate-200 rounded-lg p-2.5 text-slate-900 focus:outline-none focus:border-purple-500 font-medium cursor-pointer"
-                >
-                  <option>Technical SEO</option>
-                  <option>On-Page SEO</option>
-                  <option>Schema & Structured Data</option>
-                  <option>Citations & NAP</option>
-                  <option>Google Business Profile</option>
-                  <option>Content & Growth</option>
-                </select>
-              </div>
+            <div>
+              <label className="text-[#142820] block mb-1 font-bold">Category</label>
+              <select
+                value={category}
+                onChange={(e) => setCategory(e.target.value)}
+                className="w-full bg-[#F7FAF7] border border-[#DCE8DC] rounded-xl p-2.5 text-[#142820] focus:outline-none focus:border-[#236B4F] font-medium cursor-pointer"
+              >
+                <option>Technical SEO</option>
+                <option>On-Page SEO</option>
+                <option>Schema & Structured Data</option>
+                <option>Citations & NAP</option>
+                <option>Google Business Profile</option>
+                <option>Content & Growth</option>
+              </select>
+            </div>
 
-              <div>
-                <label className="text-slate-700 block mb-1 font-bold">Priority</label>
-                <select
-                  value={priority}
-                  onChange={(e) => setPriority(e.target.value)}
-                  className="w-full bg-slate-50 border border-slate-200 rounded-lg p-2.5 text-slate-900 focus:outline-none focus:border-purple-500 font-medium cursor-pointer"
-                >
-                  <option value="high">High Priority</option>
-                  <option value="medium">Medium Priority</option>
-                  <option value="low">Low Priority</option>
-                </select>
-              </div>
+            <div>
+              <label className="text-[#142820] block mb-1 font-bold">Priority</label>
+              <select
+                value={priority}
+                onChange={(e) => setPriority(e.target.value)}
+                className="w-full bg-[#F7FAF7] border border-[#DCE8DC] rounded-xl p-2.5 text-[#142820] focus:outline-none focus:border-[#236B4F] font-medium cursor-pointer"
+              >
+                <option value="high">High Priority</option>
+                <option value="medium">Medium Priority</option>
+                <option value="low">Low Priority</option>
+              </select>
+            </div>
 
-              <div>
-                <label className="text-slate-700 block mb-1 font-bold">Description / Notes</label>
-                <textarea
-                  rows={3}
-                  value={description}
-                  onChange={(e) => setDescription(e.target.value)}
-                  placeholder="Specific optimization instructions or code snippets..."
-                  className="w-full bg-slate-50 border border-slate-200 rounded-lg p-2.5 text-slate-900 focus:outline-none focus:border-purple-500 font-medium"
-                />
-              </div>
+            <div>
+              <label className="text-[#142820] block mb-1 font-bold">Description / Notes</label>
+              <textarea
+                rows={3}
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+                placeholder="Specific optimization instructions or code snippets..."
+                className="w-full bg-[#F7FAF7] border border-[#DCE8DC] rounded-xl p-2.5 text-[#142820] focus:outline-none focus:border-[#236B4F] font-medium"
+              />
+            </div>
 
-              <div className="flex items-center justify-end space-x-2 pt-3 border-t border-slate-100">
-                <button
-                  type="button"
-                  onClick={() => setIsModalOpen(false)}
-                  className="px-4 py-2 rounded-lg bg-slate-100 text-slate-700 hover:bg-slate-200 font-bold"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  className="px-4 py-2 rounded-lg btn-vibrant-primary text-white font-bold"
-                >
-                  Save Task
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
+            <div className="flex items-center justify-end space-x-2 pt-3 border-t border-[#DCE8DC]">
+              <button
+                type="button"
+                onClick={() => setIsModalOpen(false)}
+                className="px-4 py-2 rounded-xl bg-white border border-[#DCE8DC] text-[#2E4E40] hover:bg-[#F7FAF7] font-bold cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                className="px-5 py-2 rounded-xl btn-primary-gradient text-white font-bold cursor-pointer shadow-md"
+              >
+                Save Task
+              </button>
+            </div>
+          </form>
+        </Modal>
       )}
     </div>
   );

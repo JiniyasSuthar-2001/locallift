@@ -1,0 +1,185 @@
+{
+  "audit_metadata": {
+    "project_name": "LocalLift",
+    "project_description": "Local SEO Intelligence Platform",
+    "audit_type": "Full-Stack Forensic QA & Connection Integrity Audit",
+    "mode": "STRICT_AUDIT_ONLY",
+    "modifications_applied": 0,
+    "timestamp": "2026-09-25T15:20:00+05:30",
+    "version": "1.0.0"
+  },
+  "summary": {
+    "total_findings": 12,
+    "by_severity": {
+      "P0_Critical": 2,
+      "P1_High": 2,
+      "P2_Medium": 4,
+      "P3_Low": 2,
+      "Informational": 2
+    },
+    "architecture": {
+      "frontend_views": 27,
+      "backend_routers": 19,
+      "database_tables": 25,
+      "test_suites_analyzed": 75
+    }
+  },
+  "findings": [
+    {
+      "id": "QA-0001",
+      "severity": "P0",
+      "category": "Security / Google OAuth",
+      "title": "Token Decryption Failure on Legacy or Mismatched Ciphertext",
+      "file_path": "backend/app/core/security.py",
+      "line_range": "85-115",
+      "function_or_symbol": "SecurityService.decrypt_token",
+      "endpoint": "GET /api/v1/google/status/{project_id}",
+      "root_cause": "Single-key Fernet decrypt without rotation list causes uncaught InvalidToken exceptions on secret rotation or truncated ciphertext in database.",
+      "impact": "Triggers HTTP 500 error when resolving Google connection status for existing accounts.",
+      "remediation": "Implement multi-key candidate fallback list in decrypt_token and gracefully prompt for re-authentication."
+    },
+    {
+      "id": "QA-0002",
+      "severity": "P0",
+      "category": "Integration / Google Business Profile API",
+      "title": "Google Business Profile API Quota=0 Access Restriction",
+      "file_path": "backend/app/services/google/gbp_client.py",
+      "line_range": "85-110",
+      "function_or_symbol": "GBPClient.get_accounts",
+      "endpoint": "GET /api/v1/google/gbp/accounts",
+      "root_cause": "External Google Cloud Project OAuth client requires Google Partner approval for GBP Management API quota.",
+      "impact": "Unapproved developer accounts cannot list GBP locations directly from Google API.",
+      "remediation": "Catch quota=0 errors specifically, fall back to Google Places Public Maps data and Local SEO crawler, and display scope explanation banner."
+    },
+    {
+      "id": "QA-0003",
+      "severity": "P1",
+      "category": "Automated Testing / Test Collection",
+      "title": "Acceptance Test Import Error Halting Pytest Discovery",
+      "file_path": "backend/test_geogrid_restoration_and_local_seo_audit_acceptance.py",
+      "line_range": "18",
+      "function_or_symbol": "import FindingStatus",
+      "endpoint": "N/A",
+      "root_cause": "FindingStatus enum is located in app.models.audit, not app.models.local_seo.",
+      "impact": "Halts whole-repository automated test discovery when executing pytest.",
+      "remediation": "Change import to from app.models.audit import FindingStatus."
+    },
+    {
+      "id": "QA-0004",
+      "severity": "P1",
+      "category": "Backend API / Schema Validation",
+      "title": "AI Content Opportunities 500 Error on Float or Null Search Volumes",
+      "file_path": "backend/app/schemas/ai.py",
+      "line_range": "35",
+      "function_or_symbol": "ContentOpportunityOut",
+      "endpoint": "GET /api/v1/ai/content-opportunities/{project_id}",
+      "root_cause": "Strict int type annotation in Pydantic schema causes validation failure when upstream GSC metrics are float or null.",
+      "impact": "500 Internal Server Error when querying Content Gaps view.",
+      "remediation": "Update schema to Optional[int] = 0 with numeric pre-validation."
+    },
+    {
+      "id": "QA-0005",
+      "severity": "P2",
+      "category": "Frontend / Type Safety",
+      "title": "Missing Defensive Array Guard in ConnectionsView",
+      "file_path": "frontend/src/views/ConnectionsView.tsx",
+      "line_range": "421",
+      "function_or_symbol": "ConnectionsView",
+      "endpoint": "GET /api/v1/google/gbp/locations",
+      "root_cause": "Direct .filter() call on gbpLocations without Array.isArray guard.",
+      "impact": "Potential React render crash if backend returns wrapped dictionary or null.",
+      "remediation": "Add Array.isArray(gbpLocations) check before calling filter."
+    },
+    {
+      "id": "QA-0006",
+      "severity": "P2",
+      "category": "Integration / Local Citations",
+      "title": "Directory Distribution Aggregator Direct Sync Boundary",
+      "file_path": "backend/app/api/v1/local_seo.py",
+      "line_range": "340-390",
+      "function_or_symbol": "get_directory_distribution",
+      "endpoint": "GET /api/v1/local-seo/{project_id}/directory-distribution",
+      "root_cause": "Platform is structured for crawler verification and link discovery rather than paid direct publishing API sync.",
+      "impact": "User expectation of direct one-click publishing without aggregator API connection.",
+      "remediation": "Annotate verification vs direct publishing in UI."
+    },
+    {
+      "id": "QA-0007",
+      "severity": "P2",
+      "category": "Crawler / Website Audit",
+      "title": "Nested XML Sitemap Namespace Extraction Failure",
+      "file_path": "backend/app/services/crawler.py",
+      "line_range": "145-210",
+      "function_or_symbol": "CrawlerService._parse_sitemap",
+      "endpoint": "POST /api/v1/website-audit/{project_id}/crawl",
+      "root_cause": "Regex/XML parser fails to match loc tags with custom XML namespaces.",
+      "impact": "Incomplete URL discovery on sitemaps with custom XML extensions.",
+      "remediation": "Strip XML namespaces before loc node extraction."
+    },
+    {
+      "id": "QA-0008",
+      "severity": "P2",
+      "category": "SERP / Geo-Grid Parser",
+      "title": "OpenSERP Local Pack Selector Fragility",
+      "file_path": "backend/app/services/serp/openserp.py",
+      "line_range": "90-140",
+      "function_or_symbol": "OpenSERPProvider.search_local",
+      "endpoint": "POST /api/v1/geogrid/scan",
+      "root_cause": "Single CSS selector path for Google local 3-pack cards.",
+      "impact": "Rank 0 results if Google modifies localized search markup.",
+      "remediation": "Implement multi-selector fallback chain and auto-failover to SerpApi/ValueSERP."
+    },
+    {
+      "id": "QA-0009",
+      "severity": "P3",
+      "category": "Data Integrity / NAP Monitor",
+      "title": "NAP Address Abbreviation Normalization Discrepancy",
+      "file_path": "backend/app/services/local_seo/nap_monitor.py",
+      "line_range": "75-110",
+      "function_or_symbol": "NAPMonitorService._compare_address",
+      "endpoint": "GET /api/v1/local-seo/{project_id}/nap-discrepancies",
+      "root_cause": "String comparison without standard USPS abbreviation dictionary.",
+      "impact": "Minor formatting variations flagged as NAP inconsistencies.",
+      "remediation": "Apply standardized USPS abbreviation normalization before diffing."
+    },
+    {
+      "id": "QA-0010",
+      "severity": "P3",
+      "category": "Geo-Grid / Metrics",
+      "title": "Geo-Grid Rescan Metric Delta on Differing Matrix Dimensions",
+      "file_path": "backend/app/services/geogrid/service.py",
+      "line_range": "320-360",
+      "function_or_symbol": "GeoGridService.compare_scans",
+      "endpoint": "GET /api/v1/geogrid/{scan_id}/compare/{prev_scan_id}",
+      "root_cause": "Delta algorithm assumes identical point count between compared scans.",
+      "impact": "Returns 0.0 delta when comparing different matrix sizes.",
+      "remediation": "Compute macro Average Grid Rank (AGR) delta across scans of varying sizes."
+    },
+    {
+      "id": "QA-0011",
+      "severity": "Informational",
+      "category": "Configuration / Frontend Maps",
+      "title": "Google Maps JavaScript API Key Requirement",
+      "file_path": "frontend/src/views/LocalGridRankingsView.tsx",
+      "line_range": "580-610",
+      "function_or_symbol": "SatelliteMapCanvas",
+      "endpoint": "N/A",
+      "root_cause": "Standard third-party requirement for Google Maps JS API.",
+      "impact": "Shows development notice if VITE_GOOGLE_MAPS_API_KEY is not set.",
+      "remediation": "Maintain satellite canvas fallback."
+    },
+    {
+      "id": "QA-0012",
+      "severity": "Informational",
+      "category": "Database / Persistence",
+      "title": "SQLite Foreign Key Enforcement Pragma",
+      "file_path": "backend/app/core/database.py",
+      "line_range": "20-40",
+      "function_or_symbol": "init_db",
+      "endpoint": "N/A",
+      "root_cause": "SQLite requires explicit foreign keys pragma on connection.",
+      "impact": "Ensures cascade deletes function properly.",
+      "remediation": "Verified active in database configuration."
+    }
+  ]
+}

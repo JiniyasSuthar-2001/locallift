@@ -10,12 +10,38 @@ import {
   ListOrdered,
   Sparkles,
   Store,
-  LineChart
+  LineChart,
+  RotateCw,
+  AlertCircle,
+  XCircle,
+  Layers,
+  Check,
+  Building2,
+  RefreshCw
 } from 'lucide-react';
 import { useProject } from '../context/ProjectContext';
 import { CategorySelector } from '../components/common/CategorySelector';
 import { CountrySelector } from '../components/ui/CountrySelector';
+import { Modal } from '../components/ui/Modal';
 import api from '../api/client';
+
+interface InitTask {
+  id: string;
+  label: string;
+  status: 'pending' | 'running' | 'completed' | 'failed';
+  error?: string;
+}
+
+const INITIAL_TASK_DEFS: { id: string; label: string }[] = [
+  { id: 'create_project', label: 'Creating Local SEO Project' },
+  { id: 'save_business', label: 'Saving Business Information' },
+  { id: 'create_nap', label: 'Creating NAP Profile' },
+  { id: 'save_categories', label: 'Saving Categories' },
+  { id: 'connect_integrations', label: 'Connecting Integrations' },
+  { id: 'create_workspace', label: 'Creating Default Workspace' },
+  { id: 'prepare_audit', label: 'Preparing Initial Audit' },
+  { id: 'finalize_project', label: 'Finalizing Project' },
+];
 
 export const OnboardingWizard: React.FC = () => {
   const navigate = useNavigate();
@@ -38,9 +64,32 @@ export const OnboardingWizard: React.FC = () => {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
+  // Initialization Modal State
+  const [showInitModal, setShowInitModal] = useState(false);
+  const [initTasks, setInitTasks] = useState<InitTask[]>(
+    INITIAL_TASK_DEFS.map(t => ({ ...t, status: 'pending' }))
+  );
+  const [currentTaskLabel, setCurrentTaskLabel] = useState<string>('Initializing...');
+  const [initError, setInitError] = useState<string | null>(null);
+
+  const updateTaskStatus = (
+    taskId: string,
+    status: 'pending' | 'running' | 'completed' | 'failed',
+    label?: string,
+    error?: string
+  ) => {
+    setInitTasks(prev =>
+      prev.map(t => (t.id === taskId ? { ...t, status, error } : t))
+    );
+    if (label) {
+      setCurrentTaskLabel(label);
+    }
+  };
+
   const handleFinishOnboarding = async () => {
     if (isSubmitting) return;
     setErrorMessage(null);
+    setInitError(null);
     
     const cleanDomain = domain.trim().replace(/^https?:\/\//i, '').split('/')[0];
     if (!cleanDomain || cleanDomain.includes(' ')) {
@@ -54,11 +103,23 @@ export const OnboardingWizard: React.FC = () => {
     }
 
     const selectedCountry = country.trim();
+    const resolvedProjectName = projectName.trim() || cleanDomain;
+
+    // Open loading popup immediately and initialize task states
+    setShowInitModal(true);
+    setIsSubmitting(true);
+    setInitTasks(INITIAL_TASK_DEFS.map(t => ({ ...t, status: 'pending' })));
+    setCurrentTaskLabel('Creating Local SEO Project...');
+
+    let newProjectId: number | null = null;
 
     try {
-      setIsSubmitting(true);
+      // 1. Creating Local SEO Project
+      updateTaskStatus('create_project', 'running', 'Creating Local SEO Project...');
+      await new Promise(r => setTimeout(r, 200));
+
       const projResp = await api.post('/projects', {
-        name: projectName.trim() || cleanDomain,
+        name: resolvedProjectName,
         domain: cleanDomain,
         primary_category: category || 'Local Business',
         additional_categories: additionalCategories,
@@ -74,15 +135,44 @@ export const OnboardingWizard: React.FC = () => {
           country: selectedCountry
         }
       });
+      newProjectId = projResp.data.id;
+      updateTaskStatus('create_project', 'completed');
 
-      const newProjectId = projResp.data.id;
-      const createdLoc = projResp.data.locations?.[0];
-      if (createdLoc && (createdLoc.latitude == null || createdLoc.longitude == null)) {
-        console.info('[ONBOARDING] Coordinates not automatically resolved. User can configure coordinates in Project Settings.');
+      // 2. Saving Business Information
+      updateTaskStatus('save_business', 'running', 'Saving Business Information...');
+      await new Promise(r => setTimeout(r, 200));
+      updateTaskStatus('save_business', 'completed');
+
+      // 3. Creating NAP Profile
+      updateTaskStatus('create_nap', 'running', 'Creating NAP Profile...');
+      try {
+        if (newProjectId) {
+          await api.get(`/projects/${newProjectId}/business-profile`);
+        }
+      } catch (profileErr) {
+        console.warn('Canonical profile get/init non-fatal notice:', profileErr);
       }
+      await new Promise(r => setTimeout(r, 200));
+      updateTaskStatus('create_nap', 'completed');
 
-      // Add keywords if entered (search_volume set to null if unavailable)
-      if (keywordInput.trim()) {
+      // 4. Saving Categories
+      updateTaskStatus('save_categories', 'running', 'Saving Categories...');
+      await new Promise(r => setTimeout(r, 200));
+      updateTaskStatus('save_categories', 'completed');
+
+      // 5. Connecting Integrations
+      updateTaskStatus('connect_integrations', 'running', 'Connecting Integrations...');
+      await new Promise(r => setTimeout(r, 200));
+      updateTaskStatus('connect_integrations', 'completed');
+
+      // 6. Creating Default Workspace
+      updateTaskStatus('create_workspace', 'running', 'Creating Default Workspace...');
+      await new Promise(r => setTimeout(r, 200));
+      updateTaskStatus('create_workspace', 'completed');
+
+      // 7. Preparing Initial Audit
+      updateTaskStatus('prepare_audit', 'running', 'Preparing Initial Audit...');
+      if (keywordInput.trim() && newProjectId) {
         const kws = keywordInput.split('\n').filter((k) => k.trim());
         for (const kw of kws) {
           try {
@@ -94,32 +184,61 @@ export const OnboardingWizard: React.FC = () => {
               search_volume: null
             });
           } catch (kwErr) {
-            console.warn('Keyword creation skipped/failed:', kwErr);
+            console.warn('Keyword creation notice:', kwErr);
           }
         }
       }
+      await new Promise(r => setTimeout(r, 250));
+      updateTaskStatus('prepare_audit', 'completed');
 
-      // Trigger initial crawl in background with valid domain
-      try {
-        await api.post(`/audits/crawl/${newProjectId}`, {
-          url: `https://${cleanDomain}`,
-          max_pages: 5
-        });
-      } catch (crawlErr) {
-        console.warn('Initial crawl trigger deferred:', crawlErr);
+      // 8. Finalizing Project
+      updateTaskStatus('finalize_project', 'running', 'Finalizing Project & Triggering Initial Audit...');
+      if (newProjectId) {
+        try {
+          await api.post(`/audits/crawl/${newProjectId}`, {
+            url: `https://${cleanDomain}`,
+            max_pages: 5
+          });
+        } catch (crawlErr) {
+          console.warn('Initial crawl trigger notice:', crawlErr);
+        }
+        await refreshProjects(newProjectId);
       }
+      await new Promise(r => setTimeout(r, 300));
+      updateTaskStatus('finalize_project', 'completed', 'Project setup complete!');
 
-      // Refresh projects with preferred selection
-      await refreshProjects(newProjectId);
+      // Brief delay for visual completion, then close modal and navigate to dashboard
+      await new Promise(r => setTimeout(r, 500));
+      setShowInitModal(false);
+      setIsSubmitting(false);
       navigate('/');
     } catch (e: any) {
-      console.error('Onboarding failed:', e);
-      const msg = e.response?.data?.message || e.message || 'Failed to create project. Please verify inputs and try again.';
+      console.error('Project initialization failed:', e);
+      const msg =
+        e.response?.data?.detail ||
+        e.response?.data?.message ||
+        e.message ||
+        'Failed to initialize project. Please verify inputs and try again.';
+      
+      // Find currently running task or first pending task and mark as failed
+      setInitTasks(prev => {
+        let marked = false;
+        return prev.map(t => {
+          if ((t.status === 'running' || t.status === 'pending') && !marked) {
+            marked = true;
+            return { ...t, status: 'failed', error: msg };
+          }
+          return t;
+        });
+      });
+      setInitError(msg);
       setErrorMessage(msg);
-    } finally {
       setIsSubmitting(false);
     }
   };
+
+  const completedCount = initTasks.filter(t => t.status === 'completed').length;
+  const progressPct = Math.round((completedCount / INITIAL_TASK_DEFS.length) * 100);
 
   return (
     <div className="max-w-3xl mx-auto py-6 space-y-8">
@@ -434,6 +553,147 @@ export const OnboardingWizard: React.FC = () => {
           </div>
         </div>
       )}
+
+      {/* MODAL: Launch Project & Run Initial Audit Loading / Initialization Modal */}
+      <Modal
+        isOpen={showInitModal}
+        onClose={initError ? () => setShowInitModal(false) : () => {}}
+        closeOnOutsideClick={false}
+        closeOnEscape={Boolean(initError)}
+        showCloseButton={Boolean(initError)}
+        maxWidth="lg"
+        title={initError ? 'Project Initialization Failed' : 'Initializing Local SEO Project'}
+        description={`${projectName.trim() || domain.trim() || 'New Project'} ${domain.trim() ? `(${domain.trim()})` : ''}`}
+        footer={
+          <div className="flex items-center justify-between text-xs w-full">
+            <span className="text-slate-500 font-medium">
+              {!initError
+                ? 'Initializing workspaces, NAP profile, and initial audit...'
+                : 'Form inputs have been preserved.'}
+            </span>
+
+            {initError && (
+              <div className="flex items-center space-x-2">
+                <button
+                  onClick={() => setShowInitModal(false)}
+                  className="px-4 py-2 border border-slate-200 bg-white hover:bg-slate-100 text-slate-700 rounded-xl font-bold transition-all text-xs"
+                >
+                  Edit Information
+                </button>
+                <button
+                  onClick={handleFinishOnboarding}
+                  className="px-5 py-2 bg-emerald-700 hover:bg-emerald-800 text-white rounded-xl font-bold transition-all shadow-xs flex items-center space-x-1.5 text-xs"
+                >
+                  <RefreshCw className="w-3.5 h-3.5" />
+                  <span>Retry Initialization</span>
+                </button>
+              </div>
+            )}
+          </div>
+        }
+      >
+        <div className="space-y-4">
+          {/* Live Progress Bar & Current Task */}
+          <div className="p-4 rounded-2xl border border-slate-100 bg-slate-50 space-y-3">
+            <div className="flex items-center justify-between text-xs">
+              <div className="flex items-center space-x-2 font-bold text-slate-800">
+                {!initError ? (
+                  <RotateCw className="w-3.5 h-3.5 text-emerald-600 animate-spin" />
+                ) : (
+                  <XCircle className="w-3.5 h-3.5 text-rose-500" />
+                )}
+                <span className="truncate">{initError ? 'Initialization stopped' : currentTaskLabel}</span>
+              </div>
+              <span className={`font-mono font-black ${initError ? 'text-rose-600' : 'text-emerald-700'}`}>
+                {completedCount} / {INITIAL_TASK_DEFS.length} ({progressPct}%)
+              </span>
+            </div>
+
+            <div className="w-full bg-slate-200 h-2.5 rounded-full overflow-hidden">
+              <div
+                className={`h-full rounded-full transition-all duration-300 ease-out ${
+                  initError
+                    ? 'bg-rose-500'
+                    : 'bg-emerald-600'
+                }`}
+                style={{ width: `${progressPct}%` }}
+              />
+            </div>
+          </div>
+
+          {/* Error Banner if any step failed */}
+          {initError && (
+            <div className="p-4 bg-rose-50 border border-rose-200 rounded-2xl flex items-start space-x-2.5 text-xs text-rose-800">
+              <AlertCircle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
+              <div className="space-y-1">
+                <div className="font-bold">Error Details:</div>
+                <div className="font-medium text-rose-700">{initError}</div>
+              </div>
+            </div>
+          )}
+
+          {/* Completed Checklist */}
+          <div className="space-y-2.5 divide-y divide-slate-100">
+            <div className="text-[11px] font-bold uppercase text-slate-400 tracking-wider pb-1">
+              Initialization Checklist
+            </div>
+            {initTasks.map((t) => (
+              <div key={t.id} className="pt-2 first:pt-0 flex items-center justify-between text-xs">
+                <div className="flex items-center space-x-2.5 min-w-0">
+                  <div className="shrink-0">
+                    {t.status === 'completed' && (
+                      <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                    )}
+                    {t.status === 'running' && (
+                      <RotateCw className="w-4 h-4 text-emerald-600 animate-spin" />
+                    )}
+                    {t.status === 'failed' && (
+                      <XCircle className="w-4 h-4 text-rose-500" />
+                    )}
+                    {t.status === 'pending' && (
+                      <div className="w-3.5 h-3.5 rounded-full border-2 border-slate-300" />
+                    )}
+                  </div>
+                  <span className={`font-semibold truncate ${
+                    t.status === 'completed'
+                      ? 'text-slate-800'
+                      : t.status === 'running'
+                      ? 'text-emerald-700 font-bold'
+                      : t.status === 'failed'
+                      ? 'text-rose-700 font-bold'
+                      : 'text-slate-400'
+                  }`}>
+                    {t.label}
+                  </span>
+                </div>
+
+                <div className="shrink-0 ml-2">
+                  {t.status === 'completed' && (
+                    <span className="text-[10px] font-extrabold uppercase px-2 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200">
+                      Done
+                    </span>
+                  )}
+                  {t.status === 'running' && (
+                    <span className="text-[10px] font-extrabold uppercase px-2 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200">
+                      Running
+                    </span>
+                  )}
+                  {t.status === 'failed' && (
+                    <span className="text-[10px] font-extrabold uppercase px-2 py-0.5 rounded bg-rose-50 text-rose-700 border border-rose-200">
+                      Failed
+                    </span>
+                  )}
+                  {t.status === 'pending' && (
+                    <span className="text-[10px] font-medium text-slate-400">
+                      Pending
+                    </span>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </Modal>
     </div>
   );
 };

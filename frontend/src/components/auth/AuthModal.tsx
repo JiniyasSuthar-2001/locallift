@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Globe, Lock, Mail, User, Building, ArrowRight, Sparkles, ShieldCheck } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { getErrorMessage } from '../../utils/error';
+import { Portal } from '../ui/Portal';
 
 export const AuthModal: React.FC = () => {
   const { login, register } = useAuth();
@@ -42,41 +43,42 @@ export const AuthModal: React.FC = () => {
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/80 backdrop-blur-md p-4">
-      <div className="w-full max-w-md bg-white rounded-3xl shadow-2xl border border-slate-100 overflow-hidden animate-in fade-in zoom-in duration-200">
-        {/* Header */}
-        <div className="gradient-primary p-6 text-white text-center space-y-2">
-          <div className="w-12 h-12 rounded-2xl bg-white/15 backdrop-blur-sm mx-auto flex items-center justify-center border border-white/20 shadow-inner">
-            <Globe className="w-6 h-6 text-white" />
+    <Portal>
+      <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-slate-900/80 backdrop-blur-sm p-4">
+        <div className="w-full max-w-md bg-white rounded-3xl shadow-2xl border border-[#DCE8DC] overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+          {/* Header */}
+          <div className="gradient-forest-dark p-6 text-white text-center space-y-2">
+            <div className="w-12 h-12 rounded-2xl bg-white/15 backdrop-blur-sm mx-auto flex items-center justify-center border border-white/20 shadow-inner">
+              <Globe className="w-6 h-6 text-white" />
+            </div>
+            <h2 className="text-xl font-black tracking-tight text-white">LocalLift</h2>
+            <p className="text-xs text-[#DDEFE5] font-medium">
+              Local SEO Automation & Intelligence Platform
+            </p>
           </div>
-          <h2 className="text-xl font-black tracking-tight">LocalLift</h2>
-          <p className="text-xs text-purple-100 font-medium">
-            Local SEO Automation & Intelligence Platform
-          </p>
-        </div>
 
-        {/* Form */}
-        <div className="p-6 sm:p-8 space-y-6">
-          <div className="flex border-b border-slate-100 pb-2">
-            <button
-              type="button"
-              onClick={() => { setIsRegister(false); setError(null); }}
-              className={`flex-1 text-center py-2 text-xs font-bold transition-colors ${
-                !isRegister ? 'text-purple-700 border-b-2 border-purple-600 -mb-2.5' : 'text-slate-400 hover:text-slate-600'
-              }`}
-            >
-              Sign In
-            </button>
-            <button
-              type="button"
-              onClick={() => { setIsRegister(true); setError(null); }}
-              className={`flex-1 text-center py-2 text-xs font-bold transition-colors ${
-                isRegister ? 'text-purple-700 border-b-2 border-purple-600 -mb-2.5' : 'text-slate-400 hover:text-slate-600'
-              }`}
-            >
-              Create Account
-            </button>
-          </div>
+          {/* Form */}
+          <div className="p-6 sm:p-8 space-y-6">
+            <div className="flex border-b border-[#DCE8DC] pb-2">
+              <button
+                type="button"
+                onClick={() => { setIsRegister(false); setError(null); }}
+                className={`flex-1 text-center py-2 text-xs font-bold transition-colors cursor-pointer ${
+                  !isRegister ? 'text-[#236B4F] border-b-2 border-[#236B4F] -mb-2.5 font-black' : 'text-[#587568] hover:text-[#142820]'
+                }`}
+              >
+                Sign In
+              </button>
+              <button
+                type="button"
+                onClick={() => { setIsRegister(true); setError(null); }}
+                className={`flex-1 text-center py-2 text-xs font-bold transition-colors cursor-pointer ${
+                  isRegister ? 'text-[#236B4F] border-b-2 border-[#236B4F] -mb-2.5 font-black' : 'text-[#587568] hover:text-[#142820]'
+                }`}
+              >
+                Create Account
+              </button>
+            </div>
 
           {error && (
             <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl text-rose-700 text-xs font-semibold flex items-center space-x-2">
@@ -160,7 +162,7 @@ export const AuthModal: React.FC = () => {
             <button
               type="submit"
               disabled={loading}
-              className="w-full py-3 btn-vibrant-primary rounded-xl text-xs font-extrabold flex items-center justify-center space-x-2 shadow-lg shadow-purple-500/20 transition-all hover:scale-[1.01] active:scale-[0.99] disabled:opacity-50"
+              className="w-full py-3 btn-primary-gradient rounded-xl text-xs font-extrabold flex items-center justify-center space-x-2 shadow-lg transition-all hover:scale-[1.01] active:scale-[0.99] disabled:opacity-50 cursor-pointer text-white"
             >
               {loading ? (
                 <Sparkles className="w-4 h-4 animate-spin" />
@@ -175,5 +177,6 @@ export const AuthModal: React.FC = () => {
         </div>
       </div>
     </div>
+    </Portal>
   );
 };

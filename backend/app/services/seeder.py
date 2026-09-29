@@ -572,6 +572,15 @@ async def seed_initial_demo_data(force: bool = False):
         ]
 
         for p_url, s_type, pg_type, b_type, is_val, q_sc, det_t, errs, warns, miss_p, s_src, nap_st, raw_j in schema_records_data:
+            seeded_entities = []
+            if raw_j:
+                try:
+                    parsed_json = json.loads(raw_j)
+                    from app.services.schema_intelligence import SchemaIntelligenceEngine
+                    SchemaIntelligenceEngine._flatten_entities(parsed_json, seeded_entities, source="JSON-LD", raw_script=raw_j)
+                except Exception:
+                    pass
+
             session.add(SchemaRecord(
                 project_id=project.id,
                 page_url=p_url,
@@ -587,6 +596,7 @@ async def seed_initial_demo_data(force: bool = False):
                 property_results=[{"property": "name", "value": "Queenshine Electricals", "status": "Verified", "confidence": 98}],
                 recommendations=[{"priority": "MEDIUM", "title": "Add opening hours to LocalBusiness", "why": "Display operating schedule in SERP cards"}],
                 schema_source=s_src,
+                schema_entities=seeded_entities,
                 nap_status=nap_st,
                 raw_json_ld=raw_j,
                 generated_json_ld=raw_j

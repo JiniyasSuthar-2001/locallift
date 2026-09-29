@@ -153,3 +153,32 @@ async def test_intelligence_scan_api_endpoints_and_multitenancy():
 
         idor_latest = await client.get(f"/api/v1/projects/{proj1.id}/intelligence-scan/latest", headers=auth2)
         assert idor_latest.status_code in (403, 404)
+
+        # 5. Cancel Scan endpoint on an active running scan
+        async with AsyncSessionLocal() as db_sess:
+            running_scan = ProjectIntelligenceScan(
+                project_id=proj1.id,
+                organization_id=org1.id,
+                status=ScanStatus.RUNNING.value,
+                current_stage="website_crawl",
+                current_stage_label="Crawling domain pages...",
+                progress_pct=25.0,
+                completed_stages_count=3,
+                total_stages_count=13,
+                stages=LocalIntelligenceScanService.initialize_stages()
+            )
+            db_sess.add(running_scan)
+            await db_sess.commit()
+            await db_sess.refresh(running_scan)
+            active_scan_id = running_scan.id
+
+        cancel_resp = await client.post(f"/api/v1/projects/{proj1.id}/intelligence-scan/{active_scan_id}/cancel", headers=auth1)
+        assert cancel_resp.status_code == 200
+        cancelled_data = cancel_resp.json()
+        assert cancelled_data["scan_id"] == active_scan_id
+        assert cancelled_data["status"] == "CANCELLED"
+        assert cancelled_data["current_stage"] == "cancelled"
+
+        # Tenant 2 cannot cancel Tenant 1's scan
+        idor_cancel = await client.post(f"/api/v1/projects/{proj1.id}/intelligence-scan/{active_scan_id}/cancel", headers=auth2)
+        assert idor_cancel.status_code in (403, 404)

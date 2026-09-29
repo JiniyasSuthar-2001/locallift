@@ -165,7 +165,8 @@ async def test_production_cleanliness():
         # Check Reviews List
         rev_res = await client.get(f"/api/v1/local-seo/reviews/{proj_id}", headers=headers)
         assert rev_res.status_code == 200
-        assert rev_res.json() == []
+        rev_data = rev_res.json()
+        assert rev_data == [] or rev_data.get("reviews") == []
 
         # Check Citations List
         cit_res = await client.get(f"/api/v1/local-seo/citations/{proj_id}", headers=headers)

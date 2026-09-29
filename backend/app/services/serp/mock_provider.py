@@ -35,23 +35,16 @@ class MockSERPProvider(SERPProvider):
         device: str = "desktop",
         num_results: int = 100
     ) -> SERPResponse:
-        if self.simulate_error == "timeout":
+        if self.simulate_error:
+            err_msg = "Mock timeout." if self.simulate_error == "timeout" else ("Mock rate limit." if self.simulate_error == "rate_limit" else str(self.simulate_error))
+            err_code = "SERP_PROVIDER_TIMEOUT" if self.simulate_error == "timeout" else "SERP_PROVIDER_ERROR"
             return SERPResponse(
                 provider="mock",
                 keyword=keyword,
                 location=location,
                 success=False,
-                error_code="SERP_PROVIDER_TIMEOUT",
-                error_message="Mock timeout."
-            )
-        if self.simulate_error == "rate_limit":
-            return SERPResponse(
-                provider="mock",
-                keyword=keyword,
-                location=location,
-                success=False,
-                error_code="SERP_PROVIDER_RATE_LIMIT",
-                error_message="Mock rate limit."
+                error_code=err_code,
+                error_message=err_msg
             )
 
         organic_items: List[SERPItem] = []

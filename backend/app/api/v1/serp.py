@@ -1,9 +1,10 @@
+import json
 import logging
 import httpx
 from datetime import datetime, timezone
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 from fastapi import APIRouter, Depends, HTTPException, status, Request
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 
@@ -14,29 +15,35 @@ from app.core.security import encrypt_token, decrypt_token
 from app.models.user import User
 from app.models.connections import OrganizationSERPConfig
 from app.core.audit_logger import log_user_action
-from app.services.serp.serpapi import SerpApiProvider
-from app.services.serp.openserp import OpenSERPProvider
+from app.services.serp.registry import SERPProviderRegistry
+from app.services.serp.adapters.base import (
+    SERPProviderAdapter,
+    SERPNormalizedAccountInfo,
+    SERPConnectionStatus,
+    SERPUsageModel
+)
 
 logger = logging.getLogger("locallift.api.serp")
 router = APIRouter(prefix="/serp", tags=["serp"])
 
 
+# --- Schemas ---
+
 class SERPConfigResponse(BaseModel):
     provider: str = "serpapi"
+    provider_name: str = "SerpApi"
     base_url: Optional[str] = None
     auth_mode: str = "api_key"
     has_key: bool = False
     masked_key: Optional[str] = None
+    masked_credentials: Dict[str, str] = Field(default_factory=dict)
     connection_status: str = "not_configured"
-    capabilities: Dict[str, bool] = {
-        "organic_search": False,
-        "local_search": False,
-        "maps_search": False,
-        "coordinate_search": False,
-        "geo_grid": False
-    }
     status_message: Optional[str] = None
+    capabilities: Dict[str, bool] = Field(default_factory=dict)
+    account_info: Dict[str, Any] = Field(default_factory=dict)
+    usage_info: Dict[str, Any] = Field(default_factory=dict)
     last_tested_at: Optional[datetime] = None
+    last_synced_at: Optional[datetime] = None
 
 
 class SERPSaveConfigRequest(BaseModel):
@@ -44,99 +51,132 @@ class SERPSaveConfigRequest(BaseModel):
     base_url: Optional[str] = None
     auth_mode: Optional[str] = "api_key"
     api_key: Optional[str] = None
+    credentials: Optional[Dict[str, Any]] = None  # Dynamic multi-field credentials e.g. {"login": "...", "password": "..."}
+    organization_id: Optional[int] = None
 
 
 class SERPTestConnectionRequest(BaseModel):
-    provider: Optional[str] = "serpapi"
+    provider: Optional[str] = None
     base_url: Optional[str] = None
     api_key: Optional[str] = None
+    credentials: Optional[Dict[str, Any]] = None
+    organization_id: Optional[int] = None
 
 
-def _mask_key(raw_key: str) -> str:
-    if not raw_key:
+async def _resolve_org_id(user: User, db: AsyncSession, requested_org_id: Optional[int] = None) -> int:
+    """
+    Resolves and validates the active organization for the authenticated user.
+    Strictly verifies organization membership to prevent cross-tenant access.
+    """
+    from app.models.user import OrganizationMember, Organization
+    if requested_org_id is not None:
+        if user.is_superuser:
+            return requested_org_id
+        mem_res = await db.execute(
+            select(OrganizationMember).where(
+                OrganizationMember.user_id == user.id,
+                OrganizationMember.organization_id == requested_org_id
+            )
+        )
+        if not mem_res.scalars().first():
+            raise HTTPException(status_code=403, detail="User does not have access to this organization.")
+        return requested_org_id
+
+    mem_res = await db.execute(
+        select(OrganizationMember).where(OrganizationMember.user_id == user.id)
+    )
+    mem = mem_res.scalars().first()
+    if not mem:
+        if user.is_superuser:
+            org_res = await db.execute(select(Organization).limit(1))
+            first_org = org_res.scalars().first()
+            if first_org:
+                return first_org.id
+        raise HTTPException(status_code=400, detail="User has no associated organization.")
+    return mem.organization_id
+
+
+def _mask_value(raw_val: str) -> str:
+    if not raw_val:
         return ""
-    clean = raw_key.strip()
+    clean = raw_val.strip()
     if len(clean) <= 6:
         return "••••••••"
     return f"••••••••{clean[-4:]}"
 
 
-def _get_provider_capabilities(provider_type: str, is_active: bool) -> Dict[str, bool]:
-    if not is_active:
-        return {
-            "organic_search": False,
-            "local_search": False,
-            "maps_search": False,
-            "coordinate_search": False,
-            "geo_grid": False
-        }
-    p_name = provider_type.lower()
-    if p_name == "serpapi":
-        prov = SerpApiProvider(api_key="valid_dummy_key")
-        caps = prov.capabilities
-        return caps.model_dump()
-    elif p_name == "openserp":
-        prov = OpenSERPProvider(base_url="http://localhost:7000")
-        caps = prov.capabilities
-        return caps.model_dump()
-    return {
-        "organic_search": False,
-        "local_search": False,
-        "maps_search": False,
-        "coordinate_search": False,
-        "geo_grid": False
-    }
+@router.get("/providers")
+async def list_available_serp_providers(
+    current_user: User = Depends(get_current_user)
+) -> List[Dict[str, Any]]:
+    """
+    Returns list of active, supported SERP providers and their credential schemas for dynamic form rendering.
+    """
+    return SERPProviderRegistry.list_available_providers()
 
 
 @router.get("/config", response_model=SERPConfigResponse)
 async def get_serp_configuration(
     request: Request,
+    org_id: Optional[int] = None,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ) -> SERPConfigResponse:
     """
-    Returns organization-specific SERP configuration without exposing raw API keys.
+    Returns organization-specific SERP configuration, masked credentials, capabilities,
+    and cached provider account & usage information. Never exposes raw secrets.
     """
-    org_ids = await get_user_organization_ids(current_user.id, db)
-    if not org_ids and not current_user.is_superuser:
-        raise HTTPException(status_code=400, detail="User has no associated organization")
-    org_id = org_ids[0] if org_ids else None
-    if not org_id:
-        raise HTTPException(status_code=400, detail="User has no associated organization")
+    active_org_id = await _resolve_org_id(current_user, db, org_id)
+    log_user_action(request, "OPEN_SERP_SETTINGS", user_id=current_user.id, organization_id=active_org_id)
 
-    log_user_action(request, "OPEN_SERP_SETTINGS", user_id=current_user.id, organization_id=org_id)
-
-    stmt = select(OrganizationSERPConfig).where(OrganizationSERPConfig.organization_id == org_id)
+    stmt = select(OrganizationSERPConfig).where(OrganizationSERPConfig.organization_id == active_org_id)
     res = await db.execute(stmt)
     serp_config = res.scalars().first()
 
     if not serp_config:
+        adapter = SERPProviderRegistry.get_adapter("serpapi")
         return SERPConfigResponse(
             provider="serpapi",
+            provider_name=adapter.display_name,
             base_url=None,
             auth_mode="api_key",
             has_key=False,
             masked_key=None,
+            masked_credentials={},
             connection_status="not_configured",
-            capabilities=_get_provider_capabilities("serpapi", is_active=False),
-            status_message="SERP API key not configured.",
-            last_tested_at=None
+            capabilities=adapter.capabilities.dict(),
+            account_info={},
+            usage_info={"model": "not_configured", "usage_available": False},
+            status_message="Connect your SERP provider account in Settings.",
+            last_tested_at=None,
+            last_synced_at=None
         )
 
-    raw_key = decrypt_token(serp_config.api_key) if serp_config.api_key else ""
-    is_active = serp_config.connection_status == "connected"
-    caps = _get_provider_capabilities(serp_config.provider or "serpapi", is_active=is_active)
+    provider_id = serp_config.provider or "serpapi"
+    adapter = SERPProviderRegistry.get_adapter(provider_id)
+    unpacked_creds = SERPProviderRegistry.unpack_credentials(serp_config)
+
+    raw_key = unpacked_creds.get("api_key", "")
+    masked_creds = {}
+    for k, v in unpacked_creds.items():
+        if isinstance(v, str):
+            masked_creds[k] = _mask_value(v) if k in ["api_key", "password", "secret", "token"] else v
 
     return SERPConfigResponse(
-        provider=serp_config.provider or "serpapi",
+        provider=provider_id,
+        provider_name=adapter.display_name,
         base_url=serp_config.base_url,
         auth_mode=serp_config.auth_mode or "api_key",
-        has_key=bool(raw_key),
-        masked_key=_mask_key(raw_key) if raw_key else None,
+        has_key=bool(raw_key or unpacked_creds),
+        masked_key=_mask_value(raw_key) if raw_key else None,
+        masked_credentials=masked_creds,
         connection_status=serp_config.connection_status or "not_configured",
-        capabilities=caps,
         status_message=serp_config.status_message,
-        last_tested_at=serp_config.last_tested_at
+        capabilities=serp_config.capabilities or adapter.capabilities.dict(),
+        account_info=serp_config.account_info or {},
+        usage_info=serp_config.usage_info or {"model": "not_configured", "usage_available": False},
+        last_tested_at=serp_config.last_tested_at,
+        last_synced_at=serp_config.last_synced_at
     )
 
 
@@ -148,68 +188,79 @@ async def save_serp_configuration(
     db: AsyncSession = Depends(get_db)
 ) -> SERPConfigResponse:
     """
-    Saves or updates organization SERP provider credentials.
-    API keys are encrypted at rest using AES-256 Fernet tokens.
+    Saves or updates organization SERP provider credentials (encrypted at rest).
+    Automatically inspects the external provider account to retrieve real plan & usage data.
+    Never returns raw credentials to the client.
     """
-    org_ids = await get_user_organization_ids(current_user.id, db)
-    if not org_ids and not current_user.is_superuser:
-        log_user_action(request, "SAVE_SERP_CONFIGURATION", user_id=current_user.id, status="failed", error="NO_ORG")
-        raise HTTPException(status_code=400, detail="User has no associated organization")
-    org_id = org_ids[0] if org_ids else None
-    if not org_id:
-        raise HTTPException(status_code=400, detail="User has no associated organization")
+    org_id = await _resolve_org_id(current_user, db, req.organization_id)
 
     stmt = select(OrganizationSERPConfig).where(OrganizationSERPConfig.organization_id == org_id)
     res = await db.execute(stmt)
     serp_config = res.scalars().first()
 
     provider_choice = (req.provider or "serpapi").lower()
-    clean_key = req.api_key.strip().strip("'\"").strip() if req.api_key else ""
+    adapter = SERPProviderRegistry.get_adapter(provider_choice)
 
-    # If submitted key is masked (contains '•' or '*'), preserve existing decrypted stored key
-    if clean_key and any(c in clean_key for c in ("•", "*")) and serp_config and serp_config.api_key:
-        decrypted_existing = decrypt_token(serp_config.api_key)
-        if decrypted_existing:
-            clean_key = decrypted_existing.strip().strip("'\"").strip()
+    # Build clean credentials dict from request or preserve existing if masked
+    existing_creds = SERPProviderRegistry.unpack_credentials(serp_config) if serp_config else {}
+    submitted_creds: Dict[str, Any] = dict(req.credentials or {})
 
-    enc_key = encrypt_token(clean_key) if clean_key else None
-    base_url_val = (req.base_url or "").strip() or None
+    if req.api_key:
+        submitted_creds["api_key"] = req.api_key.strip().strip("'\"")
+    if req.base_url:
+        submitted_creds["base_url"] = req.base_url.strip()
 
-    is_configured_state = False
-    if provider_choice == "openserp":
-        is_configured_state = bool(base_url_val or getattr(settings, "OPENSERP_BASE_URL", None))
-    else:
-        is_configured_state = bool(clean_key)
+    # Un-mask any preserved fields
+    for k, v in submitted_creds.items():
+        if isinstance(v, str) and any(c in v for c in ("•", "*")):
+            if k in existing_creds:
+                submitted_creds[k] = existing_creds[k]
 
+    # Clean empty values
+    clean_creds = {k: v.strip() if isinstance(v, str) else v for k, v in submitted_creds.items() if v is not None and v != ""}
+
+    # Encrypt primary api_key and any extra credentials
+    enc_api_key = encrypt_token(clean_creds.get("api_key", "")) if clean_creds.get("api_key") else None
+    extra_creds_to_save = {k: v for k, v in clean_creds.items() if k not in ["api_key", "base_url"]}
+    enc_extra = encrypt_token(json.dumps(extra_creds_to_save)) if extra_creds_to_save else None
+    base_url_val = clean_creds.get("base_url")
+
+    # Run live account inspection & validation
+    account_info_norm = await adapter.get_account_info(clean_creds)
+
+    now = datetime.now(timezone.utc)
     if not serp_config:
         serp_config = OrganizationSERPConfig(
             organization_id=org_id,
             provider=provider_choice,
             base_url=base_url_val,
-            auth_mode=req.auth_mode or ("none" if provider_choice == "openserp" else "api_key"),
-            api_key=enc_key,
-            connection_status="connected" if is_configured_state else "not_configured",
-            status_message="SERP settings saved successfully." if is_configured_state else "No API Key / Base URL provided.",
-            last_tested_at=datetime.now(timezone.utc) if is_configured_state else None
+            auth_mode=req.auth_mode or "api_key",
+            api_key=enc_api_key,
+            credentials_extra=enc_extra,
+            capabilities=adapter.capabilities.dict(),
+            account_info=account_info_norm.account.dict(),
+            usage_info=account_info_norm.usage.dict(),
+            connection_status=account_info_norm.connection_status,
+            status_message=account_info_norm.status_message,
+            last_tested_at=now,
+            last_synced_at=now,
+            last_sync_error=account_info_norm.sync_error
         )
         db.add(serp_config)
     else:
         serp_config.provider = provider_choice
         serp_config.base_url = base_url_val
-        serp_config.auth_mode = req.auth_mode or ("none" if provider_choice == "openserp" else "api_key")
-        if clean_key:
-            serp_config.api_key = enc_key
-            serp_config.connection_status = "connected"
-            serp_config.status_message = "API Key saved successfully."
-            serp_config.last_tested_at = datetime.now(timezone.utc)
-        elif provider_choice == "openserp" and is_configured_state:
-            serp_config.connection_status = "connected"
-            serp_config.status_message = "OpenSERP base URL configured."
-            serp_config.last_tested_at = datetime.now(timezone.utc)
-        elif req.api_key == "":
-            serp_config.api_key = None
-            serp_config.connection_status = "not_configured"
-            serp_config.status_message = "SERP API Key removed."
+        serp_config.auth_mode = req.auth_mode or "api_key"
+        serp_config.api_key = enc_api_key
+        serp_config.credentials_extra = enc_extra
+        serp_config.capabilities = adapter.capabilities.dict()
+        serp_config.account_info = account_info_norm.account.dict()
+        serp_config.usage_info = account_info_norm.usage.dict()
+        serp_config.connection_status = account_info_norm.connection_status
+        serp_config.status_message = account_info_norm.status_message
+        serp_config.last_tested_at = now
+        serp_config.last_synced_at = now
+        serp_config.last_sync_error = account_info_norm.sync_error
 
     await db.commit()
     await db.refresh(serp_config)
@@ -221,21 +272,28 @@ async def save_serp_configuration(
         organization_id=org_id,
         status="success",
         provider=serp_config.provider,
-        configured=is_configured_state
+        connection_status=serp_config.connection_status
     )
 
-    raw_key = decrypt_token(serp_config.api_key) if serp_config.api_key else ""
-    caps = _get_provider_capabilities(serp_config.provider, is_active=(serp_config.connection_status == "connected"))
+    unpacked_creds = SERPProviderRegistry.unpack_credentials(serp_config)
+    raw_key = unpacked_creds.get("api_key", "")
+    masked_creds = {k: _mask_value(v) if k in ["api_key", "password", "secret", "token"] else v for k, v in unpacked_creds.items() if isinstance(v, str)}
+
     return SERPConfigResponse(
         provider=serp_config.provider,
+        provider_name=adapter.display_name,
         base_url=serp_config.base_url,
         auth_mode=serp_config.auth_mode or "api_key",
-        has_key=bool(raw_key),
-        masked_key=_mask_key(raw_key) if raw_key else None,
+        has_key=bool(raw_key or unpacked_creds),
+        masked_key=_mask_value(raw_key) if raw_key else None,
+        masked_credentials=masked_creds,
         connection_status=serp_config.connection_status,
-        capabilities=caps,
         status_message=serp_config.status_message,
-        last_tested_at=serp_config.last_tested_at
+        capabilities=serp_config.capabilities or adapter.capabilities.dict(),
+        account_info=serp_config.account_info or {},
+        usage_info=serp_config.usage_info or {},
+        last_tested_at=serp_config.last_tested_at,
+        last_synced_at=serp_config.last_synced_at
     )
 
 
@@ -247,158 +305,120 @@ async def test_serp_connection(
     db: AsyncSession = Depends(get_db)
 ) -> Dict[str, Any]:
     """
-    Tests live connection to SerpApi or OpenSERP using organization credentials.
+    Tests live connection to the configured SERP provider, retrieves authoritative account info,
+    and updates database metadata without executing unnecessary search credits.
     """
-    org_ids = await get_user_organization_ids(current_user.id, db)
-    if not org_ids and not current_user.is_superuser:
-        raise HTTPException(status_code=400, detail="User has no associated organization")
-    org_id = org_ids[0] if org_ids else None
-    if not org_id:
-        raise HTTPException(status_code=400, detail="User has no associated organization")
+    org_id = await _resolve_org_id(current_user, db, req.organization_id)
     log_user_action(request, "TEST_SERP_CONNECTION", user_id=current_user.id, organization_id=org_id, status="started")
 
-    # Load existing config for default fallback
+    # Load existing configuration
     stmt = select(OrganizationSERPConfig).where(OrganizationSERPConfig.organization_id == org_id)
     res = await db.execute(stmt)
     serp_config = res.scalars().first()
 
-    provider_choice = (req.provider or (serp_config.provider if serp_config else "serpapi")).lower()
+    provider_id = (req.provider or (serp_config.provider if serp_config else "serpapi")).lower()
+    adapter = SERPProviderRegistry.get_adapter(provider_id)
 
-    if provider_choice == "openserp":
-        target_base_url = (req.base_url or (serp_config.base_url if serp_config else None) or getattr(settings, "OPENSERP_BASE_URL", "http://127.0.0.1:7000")).rstrip("/")
-        prov = OpenSERPProvider(base_url=target_base_url)
-        health = await prov.check_health()
-        is_conn = health.get("status") == "CONNECTED"
-        status_str = "connected" if is_conn else "error"
-        msg_str = health.get("message", "OpenSERP test completed.")
-        await _update_serp_status(db, org_id, status_str, msg_str)
-        return {
-            "status": status_str,
-            "success": is_conn,
-            "provider": "openserp",
-            "base_url": target_base_url,
-            "capabilities": prov.capabilities.model_dump(),
-            "message": msg_str
-        }
+    # Resolve credentials to test
+    existing_creds = SERPProviderRegistry.unpack_credentials(serp_config) if serp_config else {}
+    test_creds: Dict[str, Any] = dict(req.credentials or {})
+    if req.api_key:
+        test_creds["api_key"] = req.api_key.strip().strip("'\"")
+    if req.base_url:
+        test_creds["base_url"] = req.base_url.strip()
 
-    # SerpApi test logic
-    target_key = req.api_key.strip().strip("'\"").strip() if req.api_key else ""
-    if not target_key or any(c in target_key for c in ("•", "*")):
-        if serp_config and serp_config.api_key:
-            decrypted = decrypt_token(serp_config.api_key)
-            if decrypted:
-                target_key = decrypted.strip().strip("'\"").strip()
+    # Fill in unmasked stored values if testing existing masked key
+    for k, v in test_creds.items():
+        if isinstance(v, str) and any(c in v for c in ("•", "*")) and k in existing_creds:
+            test_creds[k] = existing_creds[k]
 
-    if not target_key:
-        global_key = getattr(settings, "SERPAPI_KEY", "")
-        if global_key:
-            target_key = global_key.strip().strip("'\"").strip()
+    if not test_creds:
+        test_creds = existing_creds
 
-    if not target_key:
-        logger.warning(f"[SERP] connection_test status=not_configured user={current_user.id} organization={org_id}")
+    if not test_creds and adapter.provider_id != "not_configured":
         return {
             "status": "not_configured",
             "success": False,
-            "provider": "serpapi",
-            "capabilities": _get_provider_capabilities("serpapi", is_active=False),
-            "error_code": "SERP_API_KEY_REQUIRED",
-            "message": "SERP provider not configured. Please enter your SerpApi API key."
+            "provider": adapter.provider_id,
+            "provider_name": adapter.display_name,
+            "message": f"Credentials required to test {adapter.display_name} connection."
         }
 
-    test_params = {
-        "engine": "google",
-        "q": "test",
-        "num": 1,
-        "api_key": target_key
+    # Fetch normalized account & usage info from provider
+    account_info_norm = await adapter.get_account_info(test_creds)
+    now = datetime.now(timezone.utc)
+
+    # Persist updated status and usage if config exists
+    if serp_config:
+        serp_config.connection_status = account_info_norm.connection_status
+        serp_config.status_message = account_info_norm.status_message
+        serp_config.account_info = account_info_norm.account.dict()
+        serp_config.usage_info = account_info_norm.usage.dict()
+        serp_config.capabilities = adapter.capabilities.dict()
+        serp_config.last_tested_at = now
+        serp_config.last_synced_at = now
+        serp_config.last_sync_error = account_info_norm.sync_error
+        await db.commit()
+
+    is_success = account_info_norm.connection_status == SERPConnectionStatus.CONNECTED.value
+
+    return {
+        "status": account_info_norm.connection_status,
+        "success": is_success,
+        "provider": adapter.provider_id,
+        "provider_name": adapter.display_name,
+        "message": account_info_norm.status_message or ("Connection verified successfully!" if is_success else "Connection test failed."),
+        "account": account_info_norm.account.dict(),
+        "usage": account_info_norm.usage.dict(),
+        "capabilities": adapter.capabilities.dict(),
+        "last_synced_at": now.isoformat()
     }
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
-    }
 
-    try:
-        async with httpx.AsyncClient(timeout=12.0) as client:
-            resp = await client.get("https://serpapi.com/search.json", params=test_params, headers=headers)
-            raw_json = {}
-            try:
-                raw_json = resp.json()
-            except Exception:
-                pass
 
-            api_error = raw_json.get("error") if isinstance(raw_json, dict) else None
+@router.post("/refresh-usage")
+async def refresh_serp_usage(
+    request: Request,
+    org_id: Optional[int] = None,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+) -> Dict[str, Any]:
+    """
+    Explicitly synchronizes external SERP provider account usage and plan details.
+    """
+    active_org_id = await _resolve_org_id(current_user, db, org_id)
 
-            if resp.status_code == 200:
-                if api_error:
-                    err_msg = str(api_error)
-                    status_code = "invalid_key" if ("api_key" in err_msg.lower() or "invalid" in err_msg.lower() or "key" in err_msg.lower()) else "error"
-                    await _update_serp_status(db, org_id, status_code, f"SerpApi error: {err_msg}")
-                    return {
-                        "status": status_code,
-                        "success": False,
-                        "provider": "serpapi",
-                        "capabilities": _get_provider_capabilities("serpapi", is_active=False),
-                        "message": f"SerpApi test failed: {err_msg}"
-                    }
+    stmt = select(OrganizationSERPConfig).where(OrganizationSERPConfig.organization_id == active_org_id)
+    res = await db.execute(stmt)
+    serp_config = res.scalars().first()
 
-                await _update_serp_status(db, org_id, "connected", "SerpApi account verified and active.")
-                return {
-                    "status": "connected",
-                    "success": True,
-                    "provider": "serpapi",
-                    "capabilities": _get_provider_capabilities("serpapi", is_active=True),
-                    "message": "SerpApi connection test passed successfully!"
-                }
-            elif resp.status_code in (401, 403):
-                detail_msg = str(api_error) if api_error else f"HTTP {resp.status_code}: Invalid API key or access forbidden."
-                await _update_serp_status(db, org_id, "invalid_key", f"SerpApi authentication failed: {detail_msg}")
-                return {
-                    "status": "invalid_key",
-                    "success": False,
-                    "provider": "serpapi",
-                    "capabilities": _get_provider_capabilities("serpapi", is_active=False),
-                    "error_code": "INVALID_API_KEY",
-                    "message": f"SerpApi authentication failed: {detail_msg}"
-                }
-            elif resp.status_code == 429:
-                detail_msg = str(api_error) if api_error else "SerpApi search quota exceeded."
-                await _update_serp_status(db, org_id, "quota_exceeded", detail_msg)
-                return {
-                    "status": "quota_exceeded",
-                    "success": False,
-                    "provider": "serpapi",
-                    "capabilities": _get_provider_capabilities("serpapi", is_active=False),
-                    "error_code": "QUOTA_EXCEEDED",
-                    "message": f"Your SerpApi account limit reached: {detail_msg}"
-                }
-            else:
-                msg = str(api_error) if api_error else f"SerpApi returned HTTP {resp.status_code}"
-                await _update_serp_status(db, org_id, "error", msg)
-                return {
-                    "status": "error",
-                    "success": False,
-                    "provider": "serpapi",
-                    "capabilities": _get_provider_capabilities("serpapi", is_active=False),
-                    "message": msg
-                }
-    except Exception as e:
-        logger.error(f"[SERP] connection_test status=error organization={org_id} error={e}")
+    if not serp_config or not serp_config.enabled:
         return {
-            "status": "error",
             "success": False,
-            "provider": "serpapi",
-            "capabilities": _get_provider_capabilities("serpapi", is_active=False),
-            "message": f"Unable to reach SerpApi: {str(e)}"
+            "status": "not_configured",
+            "message": "SERP provider not configured for this organization.",
+            "usage": {"model": "not_configured", "usage_available": False}
         }
 
+    adapter = SERPProviderRegistry.get_adapter(serp_config.provider)
+    creds = SERPProviderRegistry.unpack_credentials(serp_config)
 
-async def _update_serp_status(db: AsyncSession, org_id: int, status_str: str, message_str: str):
-    try:
-        stmt = select(OrganizationSERPConfig).where(OrganizationSERPConfig.organization_id == org_id)
-        res = await db.execute(stmt)
-        cfg = res.scalars().first()
-        if cfg:
-            cfg.connection_status = status_str
-            cfg.status_message = message_str
-            cfg.last_tested_at = datetime.now(timezone.utc)
-            await db.commit()
-    except Exception as e:
-        logger.error(f"Failed to update SERP status in DB: {e}")
+    account_info_norm = await adapter.get_account_info(creds)
+    now = datetime.now(timezone.utc)
+
+    serp_config.connection_status = account_info_norm.connection_status
+    serp_config.status_message = account_info_norm.status_message
+    serp_config.account_info = account_info_norm.account.dict()
+    serp_config.usage_info = account_info_norm.usage.dict()
+    serp_config.last_synced_at = now
+    serp_config.last_sync_error = account_info_norm.sync_error
+    await db.commit()
+
+    return {
+        "success": account_info_norm.connection_status == SERPConnectionStatus.CONNECTED.value,
+        "provider": adapter.provider_id,
+        "provider_name": adapter.display_name,
+        "account": serp_config.account_info,
+        "usage": serp_config.usage_info,
+        "last_synced_at": now.isoformat(),
+        "message": "Usage metrics refreshed from provider." if account_info_norm.connection_status == "connected" else account_info_norm.status_message
+    }

@@ -1,5 +1,5 @@
 import logging
-from typing import Optional
+from typing import Optional, Any
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 
@@ -138,41 +138,82 @@ class FallbackSERPProvider(SERPProvider):
         return res
 
 
+from app.services.serp.registry import SERPProviderRegistry
+from app.services.serp.adapters.base import SERPProviderAdapter
+
+
+class AdapterSERPProviderWrapper(SERPProvider):
+    """
+    Seamless bridge that exposes any registered SERPProviderAdapter as a standard SERPProvider.
+    """
+
+    def __init__(self, adapter: SERPProviderAdapter, credentials: dict):
+        self.adapter = adapter
+        self.credentials = credentials
+
+    @property
+    def capabilities(self):
+        return self.adapter.capabilities
+
+    @property
+    def is_configured(self) -> bool:
+        return bool(self.credentials) and self.adapter.provider_id != "not_configured"
+
+    async def search_keyword(
+        self,
+        keyword: str,
+        location: Optional[str] = None,
+        country: Optional[str] = "us",
+        language: Optional[str] = "en",
+        device: str = "desktop",
+        num_results: int = 100
+    ) -> SERPResponse:
+        return await self.adapter.search_keyword(
+            keyword=keyword,
+            credentials=self.credentials,
+            location=location,
+            country=country,
+            language=language,
+            device=device,
+            num_results=num_results
+        )
+
+    async def search_local_grid_point(
+        self,
+        keyword: str,
+        lat: float,
+        lng: float,
+        location_name: Optional[str] = None,
+        zoom: int = 14
+    ) -> SERPResponse:
+        return await self.adapter.search_local_grid_point(
+            keyword=keyword,
+            credentials=self.credentials,
+            lat=lat,
+            lng=lng,
+            location_name=location_name,
+            zoom=zoom
+        )
+
+
 async def get_organization_serp_provider(
-    db: AsyncSession,
-    organization_id: int
+    db: Any,
+    organization_id: Any
 ) -> SERPProvider:
     """
-    Retrieves the SERP Provider configured specifically for an organization.
-    1. Checks OrganizationSERPConfig in DB. Decrypts organization SerpApi key if present.
-    2. Fallback to global settings.SERPAPI_KEY if organization config missing.
-    3. If provider is openserp and base_url is specified, uses OpenSERPProvider.
-    4. Otherwise returns NotConfiguredSERPProvider (Never attempts Docker or localhost:7000).
+    Retrieves the SERP Provider configured specifically for an organization via the SERPProviderRegistry.
     """
-    stmt = select(OrganizationSERPConfig).where(OrganizationSERPConfig.organization_id == organization_id)
-    res = await db.execute(stmt)
-    serp_config = res.scalars().first()
+    # Defensive handling if callers pass (organization_id, db)
+    if isinstance(db, int) and not isinstance(organization_id, int):
+        db, organization_id = organization_id, db
 
-    if serp_config and serp_config.enabled:
-        provider_name = (serp_config.provider or "serpapi").lower()
-        if provider_name == "serpapi":
-            raw_key = decrypt_token(serp_config.api_key) if serp_config.api_key else ""
-            if raw_key:
-                logger.info(f"[SERP] provider=serpapi configured=true organization_id={organization_id}")
-                return SerpApiProvider(api_key=raw_key)
-        elif provider_name == "openserp":
-            base_url = (serp_config.base_url or "").strip() or getattr(settings, "OPENSERP_BASE_URL", "")
-            if base_url:
-                logger.info(f"[SERP] provider=openserp organization_id={organization_id} base_url={base_url}")
-                return OpenSERPProvider(base_url=base_url)
+    adapter, credentials, config = await SERPProviderRegistry.resolve_for_org(db, organization_id)
+    if adapter.provider_id == "not_configured" or not credentials:
+        logger.debug(f"[SERP] provider=not_configured organization_id={organization_id}")
+        return NotConfiguredSERPProvider()
 
-    global_serpapi_key = getattr(settings, "SERPAPI_KEY", "")
-    if global_serpapi_key:
-        logger.info(f"[SERP] provider=serpapi_global_fallback organization_id={organization_id}")
-        return SerpApiProvider(api_key=global_serpapi_key)
-
-    logger.debug(f"[SERP] provider=not_configured organization_id={organization_id}")
-    return NotConfiguredSERPProvider()
+    logger.info(f"[SERP] provider={adapter.provider_id} configured=true organization_id={organization_id}")
+    return AdapterSERPProviderWrapper(adapter, credentials)
 
 
 def get_serp_provider(
@@ -182,8 +223,6 @@ def get_serp_provider(
 ) -> SERPProvider:
     """
     Synchronous/static factory function for backwards compatibility & unit tests.
-    Default is SerpApiProvider if key provided, else NotConfiguredSERPProvider.
-    Mock provider is ONLY returned when explicitly requested via provider_type='mock'.
     """
     env = getattr(settings, "ENVIRONMENT", "production").lower()
     if provider_type == "mock":
@@ -192,17 +231,16 @@ def get_serp_provider(
         return MockSERPProvider()
 
     selected = (provider_type or getattr(settings, "SERP_PROVIDER", "serpapi")).lower()
+    adapter = SERPProviderRegistry.get_adapter(selected)
 
-    if selected == "serpapi":
-        key = api_key or getattr(settings, "SERPAPI_KEY", "")
-        if key:
-            return SerpApiProvider(api_key=key)
-        return NotConfiguredSERPProvider()
-
-    if selected == "openserp":
+    if selected == "serpapi" and api_key:
+        return SerpApiProvider(api_key=api_key)
+    elif selected == "openserp":
         base_url = getattr(settings, "OPENSERP_BASE_URL", "")
         if base_url:
             return OpenSERPProvider(base_url=base_url)
-        return NotConfiguredSERPProvider()
+
+    if api_key:
+        return AdapterSERPProviderWrapper(adapter, {"api_key": api_key})
 
     return NotConfiguredSERPProvider()

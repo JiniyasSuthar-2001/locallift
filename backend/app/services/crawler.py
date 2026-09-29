@@ -19,9 +19,9 @@ logger = logging.getLogger("locallift.crawler")
 # Optional Playwright dependency detection
 PLAYWRIGHT_AVAILABLE = False
 try:
-    from playwright.async_api import async_playwright
+    from playwright.async_api import async_playwright  # type: ignore[import-not-found, import-untyped]
     PLAYWRIGHT_AVAILABLE = True
-except ImportError:
+except (ImportError, ModuleNotFoundError):
     PLAYWRIGHT_AVAILABLE = False
 
 
@@ -430,27 +430,51 @@ class RobotsSitemapService:
                 if resp.status_code != 200:
                     continue
 
-                # Stream XML parsing via ElementTree safely
+                # Stream XML parsing via ElementTree safely with namespace-aware fallback
+                root = None
                 try:
                     root = ElementTree.fromstring(resp.content)
-                except ElementTree.ParseError:
-                    continue
+                except (ElementTree.ParseError, Exception):
+                    # Clean namespaces and XML prefixes if standard parsing fails
+                    try:
+                        clean_xml = re.sub(r'\sxmlns(:\w+)?="[^"]+"', '', resp.text)
+                        root = ElementTree.fromstring(clean_xml.encode("utf-8"))
+                    except Exception:
+                        root = None
 
-                tag_root = root.tag.split("}")[-1] if "}" in root.tag else root.tag
+                if root is not None:
+                    tag_root = root.tag.split("}")[-1] if "}" in root.tag else root.tag
 
-                if tag_root == "sitemapindex":
-                    for elem in root.iter():
-                        tag_name = elem.tag.split("}")[-1] if "}" in elem.tag else elem.tag
-                        if tag_name == "loc" and elem.text:
-                            loc_url = URLNormalizer.normalize(elem.text.strip(), origin_url)
+                    if tag_root == "sitemapindex":
+                        for elem in root.iter():
+                            tag_name = elem.tag.split("}")[-1] if "}" in elem.tag else elem.tag
+                            if tag_name == "loc" and elem.text:
+                                loc_url = URLNormalizer.normalize(elem.text.strip(), origin_url)
+                                if loc_url and loc_url not in visited_sitemaps:
+                                    queue.append(loc_url)
+                                    depth_map[loc_url] = depth + 1
+                    elif tag_root == "urlset":
+                        for elem in root.iter():
+                            tag_name = elem.tag.split("}")[-1] if "}" in elem.tag else elem.tag
+                            if tag_name == "loc" and elem.text:
+                                loc_url = URLNormalizer.normalize(elem.text.strip(), origin_url)
+                                if loc_url and URLNormalizer.is_same_domain(origin_url, loc_url):
+                                    source_type = "robots_sitemap" if sm_url in self.sitemap_urls else "sitemap"
+                                    discovered.append({"url": loc_url, "source": source_type})
+                                    if len(discovered) >= max_urls:
+                                        break
+                else:
+                    # Regex fallback for non-standard, malformed, or nested namespaced XML sitemaps
+                    loc_matches = re.findall(r'<(?:\w+:)?loc>([^<]+)</(?:\w+:)?loc>', resp.text, re.IGNORECASE)
+                    for raw_match in loc_matches:
+                        clean_loc = raw_match.strip()
+                        if clean_loc.endswith(".xml") or "sitemap" in clean_loc:
+                            loc_url = URLNormalizer.normalize(clean_loc, origin_url)
                             if loc_url and loc_url not in visited_sitemaps:
                                 queue.append(loc_url)
                                 depth_map[loc_url] = depth + 1
-                elif tag_root == "urlset":
-                    for elem in root.iter():
-                        tag_name = elem.tag.split("}")[-1] if "}" in elem.tag else elem.tag
-                        if tag_name == "loc" and elem.text:
-                            loc_url = URLNormalizer.normalize(elem.text.strip(), origin_url)
+                        else:
+                            loc_url = URLNormalizer.normalize(clean_loc, origin_url)
                             if loc_url and URLNormalizer.is_same_domain(origin_url, loc_url):
                                 source_type = "robots_sitemap" if sm_url in self.sitemap_urls else "sitemap"
                                 discovered.append({"url": loc_url, "source": source_type})
@@ -593,6 +617,9 @@ class WebsiteCrawler:
             self.ssrf_blocked_count += 1
             raise ValueError(f"SSRF validation rejected start URL '{self.start_url}': {reason}")
 
+        if await self._check_cancelled():
+            return self.pages_data
+
         headers = {
             "User-Agent": "LocalLiftBot/1.0 (+https://locallift.io/bot; SEO Audit Engine)"
         }
@@ -602,9 +629,15 @@ class WebsiteCrawler:
         async with httpx.AsyncClient(transport=transport, headers=headers, timeout=12.0, follow_redirects=False) as client:
             # 2. Fetch Robots.txt & XML Sitemaps
             if self.respect_robots:
+                if await self._check_cancelled():
+                    return self.pages_data
+
                 await self._notify("fetching_robots", "Fetching & inspecting robots.txt", 3.0)
                 await self.robots_service.fetch_and_parse_robots(client, self.origin, allow_local_dev=self.allow_local_dev)
                 
+                if await self._check_cancelled():
+                    return self.pages_data
+
                 await self._notify("reading_sitemaps", "Discovering XML sitemaps", 7.0)
                 sitemap_links = await self.robots_service.discover_sitemap_urls(
                     client, self.origin, max_urls=self.effective_max_pages, allow_local_dev=self.allow_local_dev
@@ -613,6 +646,9 @@ class WebsiteCrawler:
                 for sm_item in sitemap_links:
                     self.discovered_urls.append(sm_item)
                     self.pages_discovered_count += 1
+
+            if await self._check_cancelled():
+                return self.pages_data
 
             # Seed Crawl Queue with (URL, source, depth)
             queue: List[Dict[str, Any]] = [
@@ -626,7 +662,7 @@ class WebsiteCrawler:
             last_request_time = 0.0
 
             while queue and len(self.pages_data) < self.effective_max_pages:
-                if self._check_cancelled():
+                if await self._check_cancelled():
                     break
 
                 # Enforce Runtime Ceiling
@@ -695,9 +731,13 @@ class WebsiteCrawler:
                             self.pages_crawled_count += 1
                             self.pages_processed_count += 1
                             
-                            # Queue newly discovered internal links
+                            # Queue newly discovered internal links ONLY (Domain Boundary Isolation)
                             for n_link in new_links:
-                                dest_url = n_link["destination_url"]
+                                if not n_link.get("is_internal"):
+                                    continue  # EXTERNAL LINKS STRICTLY NEVER ENTER CRAWL QUEUE
+                                dest_url = n_link.get("destination_url") or n_link.get("target_url")
+                                if not dest_url or not URLNormalizer.is_same_domain(self.origin, dest_url):
+                                    continue  # Secondary strict domain boundary check
                                 if dest_url not in self.visited_urls:
                                     parsed_path = urllib.parse.urlparse(dest_url).path.lower()
                                     if not re.search(r"\.(pdf|png|jpg|jpeg|gif|svg|css|js|webp|zip|mp4|mp3|woff|woff2)$", parsed_path):
@@ -794,6 +834,27 @@ class WebsiteCrawler:
                 if not next_url:
                     break
 
+                # SSRF validation on redirect destination
+                is_safe, msg, _ = SSRFValidator.validate_url(next_url, allow_local_dev=allow_local_dev)
+                if not is_safe:
+                    self.skipped_urls.append({"url": next_url, "reason": f"Redirect SSRF: {msg}"})
+                    self.ssrf_blocked_count += 1
+                    break
+
+                # Domain boundary validation: If redirect escapes target origin domain, record observation and STOP
+                if not URLNormalizer.is_same_domain(self.origin, next_url):
+                    logger.info(f"Redirect escaped origin domain ({self.origin}): {curr_url} -> {next_url}")
+                    self.redirect_chains.append({
+                        "initial_url": url,
+                        "final_url": next_url,
+                        "steps": redirect_chain + [next_url],
+                        "redirect_count": redirect_count + 1,
+                        "status": "external_redirect",
+                        "is_external": True
+                    })
+                    # External destination is NOT analyzed as a customer website page
+                    return None, []
+
                 # Check for redirect loop
                 if next_url in redirect_chain:
                     logger.warning(f"Redirect loop detected: {curr_url} -> {next_url}")
@@ -847,6 +908,10 @@ class WebsiteCrawler:
         load_time_ms = int((asyncio.get_event_loop().time() - start_time) * 1000)
         final_url = str(resp.url)
         norm_final_url = URLNormalizer.normalize(final_url) or final_url
+
+        if not URLNormalizer.is_same_domain(self.origin, norm_final_url):
+            logger.info(f"Final destination URL escaped domain ({self.origin}): {norm_final_url}")
+            return None, []
 
         if redirect_count > 0:
             self.redirect_chains.append({
@@ -1032,12 +1097,26 @@ class WebsiteCrawler:
 
             is_internal = URLNormalizer.is_same_domain(self.origin, target_norm)
             link_text = a_tag.get_text().strip()[:100]
+            rel_val = a_tag.get("rel", [])
+            rel_str = " ".join(rel_val).lower() if isinstance(rel_val, list) else str(rel_val).lower()
+            is_nofollow = "nofollow" in rel_str
+            is_ugc = "ugc" in rel_str
+            is_sponsored = "sponsored" in rel_str
+            target_domain = urllib.parse.urlparse(target_norm).netloc.lower()
 
             link_entry = {
                 "source_url": url,
+                "source_page": url,
                 "destination_url": target_norm,
+                "target_url": target_norm,
+                "target_domain": target_domain,
                 "link_text": link_text,
+                "anchor_text": link_text,
                 "is_internal": is_internal,
+                "link_type": "internal" if is_internal else "external",
+                "nofollow": is_nofollow,
+                "ugc": is_ugc,
+                "sponsored": is_sponsored,
             }
             extracted_links.append(link_entry)
             self.link_graph.append(link_entry)
@@ -1130,6 +1209,7 @@ class WebsiteCrawler:
                 start_t = asyncio.get_event_loop().time()
                 status_code = 0
                 verif_state = "not_checked"
+                category = None
                 error_code = None
                 error_msg = None
 
@@ -1149,64 +1229,98 @@ class WebsiteCrawler:
                             status_code = resp.status_code
                         except (httpx.TimeoutException, asyncio.TimeoutError):
                             verif_state = "timeout"
+                            category = "TIMEOUT"
                             error_code = "TIMEOUT"
                             error_msg = "Request timed out during link verification"
                         except httpx.ConnectError:
                             verif_state = "connection_error"
+                            category = "CONNECTION_ERROR"
                             error_code = "CONNECTION_ERROR"
                             error_msg = "Failed to establish TCP connection"
                         except Exception as get_err:
-                            verif_state = "connection_error"
-                            error_code = "FETCH_ERROR"
-                            error_msg = str(get_err)[:100]
+                            err_str = str(get_err)
+                            if "DNS" in err_str or "getaddrinfo" in err_str:
+                                verif_state = "dns_error"
+                                category = "DNS_ERROR"
+                                error_code = "DNS_ERROR"
+                            else:
+                                verif_state = "connection_error"
+                                category = "CONNECTION_ERROR"
+                                error_code = "FETCH_ERROR"
+                            error_msg = err_str[:100]
 
-                    except httpx.ConnectError as conn_err:
-                        verif_state = "connection_error"
-                        error_code = "CONNECTION_ERROR"
-                        error_msg = str(conn_err)[:100]
+                    except httpx.TooManyRedirects:
+                        verif_state = "redirect_error"
+                        category = "REDIRECT_ERROR"
+                        error_code = "REDIRECT_ERROR"
+                        error_msg = "Too many redirects during link verification"
                     except (httpx.TLSUpgradeError, httpx.ProxyError):
                         verif_state = "tls_error"
+                        category = "TLS_ERROR"
                         error_code = "TLS_ERROR"
                         error_msg = "TLS handshake or certificate failure"
+                    except httpx.ConnectError as conn_err:
+                        verif_state = "connection_error"
+                        category = "CONNECTION_ERROR"
+                        error_code = "CONNECTION_ERROR"
+                        error_msg = str(conn_err)[:100]
                     except httpx.RequestError as req_err:
-                        if "DNS" in str(req_err) or "getaddrinfo" in str(req_err):
+                        req_str = str(req_err)
+                        if "DNS" in req_str or "getaddrinfo" in req_str:
                             verif_state = "dns_error"
+                            category = "DNS_ERROR"
                             error_code = "DNS_ERROR"
+                        elif "redirect" in req_str.lower():
+                            verif_state = "redirect_error"
+                            category = "REDIRECT_ERROR"
+                            error_code = "REDIRECT_ERROR"
                         else:
                             verif_state = "connection_error"
+                            category = "CONNECTION_ERROR"
                             error_code = "REQUEST_ERROR"
-                        error_msg = str(req_err)[:100]
+                        error_msg = req_str[:100]
 
                     if status_code > 0:
-                        if status_code == 200:
+                        if 200 <= status_code < 300:
                             verif_state = "200"
                         elif 300 <= status_code < 400:
                             verif_state = "3xx"
                         elif status_code == 404:
                             verif_state = "404"
+                            category = "HTTP_ERROR"
                             error_code = "HTTP_404_NOT_FOUND"
                             error_msg = "Resource not found (404)"
                         elif status_code == 410:
                             verif_state = "410"
+                            category = "HTTP_ERROR"
                             error_code = "HTTP_410_GONE"
                             error_msg = "Resource permanently gone (410)"
+                        elif 400 <= status_code < 500:
+                            verif_state = f"http_{status_code}"
+                            category = "HTTP_ERROR"
+                            error_code = f"HTTP_{status_code}"
+                            error_msg = f"Client error response ({status_code})"
                         elif status_code >= 500:
                             verif_state = "5xx"
+                            category = "HTTP_ERROR"
                             error_code = f"HTTP_{status_code}"
                             error_msg = f"Server error response ({status_code})"
                         else:
                             verif_state = f"http_{status_code}"
+                            category = "HTTP_ERROR"
                             error_code = f"HTTP_{status_code}"
 
                 except Exception as e:
                     verif_state = "connection_error"
+                    category = "CONNECTION_ERROR"
                     error_code = "UNEXPECTED_ERROR"
                     error_msg = str(e)[:100]
 
                 elapsed_ms = int((asyncio.get_event_loop().time() - start_t) * 1000)
                 res = {
-                    "status_code": status_code,
+                    "status_code": status_code if status_code > 0 else None,
                     "verification_state": verif_state,
+                    "category": category,
                     "response_time_ms": elapsed_ms,
                     "error_code": error_code,
                     "error_message": error_msg
@@ -1232,6 +1346,7 @@ class WebsiteCrawler:
             res_obj = target_res_map.get(dest, {
                 "status_code": 200,
                 "verification_state": "200",
+                "category": None,
                 "response_time_ms": 0,
                 "error_code": None,
                 "error_message": None
@@ -1239,6 +1354,7 @@ class WebsiteCrawler:
 
             status = res_obj["status_code"]
             verif_state = res_obj["verification_state"]
+            cat = res_obj.get("category")
 
             # Record detailed link verification record
             self.link_records.append({
@@ -1246,6 +1362,7 @@ class WebsiteCrawler:
                 "destination_url": dest,
                 "link_type": "internal" if link["is_internal"] else "external",
                 "status_code": status,
+                "category": cat,
                 "verification_state": verif_state,
                 "response_time_ms": res_obj["response_time_ms"],
                 "redirect_chain": [],
@@ -1253,17 +1370,19 @@ class WebsiteCrawler:
                 "error_message": res_obj["error_message"]
             })
 
-            # URL is broken ONLY when status code is 404 or 410 (or explicit broken status)
-            if status in (404, 410):
+            # URL is broken if category is HTTP_ERROR, TIMEOUT, DNS_ERROR, TLS_ERROR, CONNECTION_ERROR, REDIRECT_ERROR
+            if cat in ("HTTP_ERROR", "TIMEOUT", "DNS_ERROR", "TLS_ERROR", "CONNECTION_ERROR", "REDIRECT_ERROR") or (status is not None and status >= 400):
                 if src not in page_broken_map:
                     page_broken_map[src] = []
-                if dest not in page_broken_map[src]:
-                    page_broken_map[src].append(f"Broken Link ({status}): {dest}")
+                broken_label = f"Broken Link ({cat or 'ERROR'}" + (f" - {status}" if status else "") + f"): {dest}"
+                if broken_label not in page_broken_map[src]:
+                    page_broken_map[src].append(broken_label)
                 
                 self.broken_links.append({
                     "source_url": src,
                     "destination_url": dest,
                     "status_code": status,
+                    "category": cat or "HTTP_ERROR",
                     "verification_state": verif_state,
                     "link_text": link.get("link_text"),
                     "error_code": res_obj["error_code"],
@@ -1290,11 +1409,15 @@ class WebsiteCrawler:
                 return False
         return True
 
-    def _check_cancelled(self) -> bool:
+    async def _check_cancelled(self) -> bool:
         if self.cancellation_check:
             try:
-                return self.cancellation_check()
-            except Exception:
+                res = self.cancellation_check()
+                if asyncio.iscoroutine(res):
+                    return await res
+                return bool(res)
+            except Exception as e:
+                logger.warning(f"Error checking crawler cancellation: {e}")
                 return False
         return False
 

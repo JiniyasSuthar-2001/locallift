@@ -53,7 +53,12 @@ class Project(Base):
     team_memberships = relationship("ProjectMembership", back_populates="project", cascade="all, delete-orphan")
     invitations = relationship("ProjectInvitation", back_populates="project", cascade="all, delete-orphan")
     business_profile = relationship("BusinessProfile", back_populates="project", uselist=False, cascade="all, delete-orphan")
+    gbp_profile = relationship("GoogleBusinessProfile", back_populates="project", uselist=False, cascade="all, delete-orphan")
     local_audit_runs = relationship("LocalAuditRun", back_populates="project", cascade="all, delete-orphan")
+    post_observations = relationship("GooglePostObservation", back_populates="project", cascade="all, delete-orphan")
+    observed_changes = relationship("GoogleObservedChange", back_populates="project", cascade="all, delete-orphan")
+    intelligence_scans = relationship("ProjectIntelligenceScan", back_populates="project", cascade="all, delete-orphan")
+    public_observation_snapshots = relationship("PublicObservationSnapshot", back_populates="project", cascade="all, delete-orphan")
 
 
 class Location(Base):

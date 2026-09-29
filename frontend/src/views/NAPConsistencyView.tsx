@@ -92,18 +92,33 @@ export const NAPConsistencyView: React.FC = () => {
   const totalEvaluated = data?.total_sources_evaluated ?? 0;
   const consistentCount = data?.consistent_sources_count ?? 0;
 
-  const renderFieldCell = (field: FieldComparison, icon: React.ReactNode) => {
+  const renderFieldCell = (field: FieldComparison | undefined, icon: React.ReactNode) => {
+    if (!field) {
+      return (
+        <div className="space-y-1">
+          <div className="flex items-center space-x-1.5">
+            {icon}
+            <span className="text-[10px] font-extrabold uppercase px-1.5 py-0.5 rounded border bg-slate-100 text-slate-700">
+              missing
+            </span>
+          </div>
+          <div className="text-xs text-slate-400 italic font-normal">Not detected</div>
+        </div>
+      );
+    }
+
     let badgeColor = 'bg-slate-100 text-slate-700';
-    if (field.status === 'match') badgeColor = 'bg-emerald-50 text-emerald-700 border-emerald-200';
-    else if (field.status === 'mismatch') badgeColor = 'bg-rose-50 text-rose-700 border-rose-200';
-    else if (field.status === 'missing') badgeColor = 'bg-amber-50 text-amber-700 border-amber-200';
+    const status = (field.status || 'missing').toLowerCase();
+    if (status === 'match' || status === 'consistent') badgeColor = 'bg-emerald-50 text-emerald-700 border-emerald-200';
+    else if (status === 'mismatch' || status === 'incorrect') badgeColor = 'bg-rose-50 text-rose-700 border-rose-200';
+    else if (status === 'missing' || status === 'unclaimed') badgeColor = 'bg-amber-50 text-amber-700 border-amber-200';
 
     return (
       <div className="space-y-1">
         <div className="flex items-center space-x-1.5">
           {icon}
           <span className={`text-[10px] font-extrabold uppercase px-1.5 py-0.5 rounded border ${badgeColor}`}>
-            {field.status}
+            {field.status || 'missing'}
           </span>
         </div>
         <div className="text-xs text-slate-800 font-medium">
@@ -175,7 +190,7 @@ export const NAPConsistencyView: React.FC = () => {
             <span className="font-black text-purple-700 text-sm">
               {consistencyPct !== null && consistencyPct !== undefined
                 ? `${consistencyPct}% Uniform`
-                : 'NOT_SCANNED'}
+                : 'Not enough verified data'}
             </span>
           </div>
         </div>
@@ -219,13 +234,13 @@ export const NAPConsistencyView: React.FC = () => {
                       </div>
                     </td>
                     <td className="p-3.5">
-                      {renderFieldCell(c.name, <Building className="w-3 h-3 text-slate-400" />)}
+                      {renderFieldCell(c.name || (c as any).fields?.business_name || (c as any).fields?.name, <Building className="w-3 h-3 text-slate-400" />)}
                     </td>
                     <td className="p-3.5">
-                      {renderFieldCell(c.address, <MapPin className="w-3 h-3 text-slate-400" />)}
+                      {renderFieldCell(c.address || (c as any).fields?.address, <MapPin className="w-3 h-3 text-slate-400" />)}
                     </td>
                     <td className="p-3.5">
-                      {renderFieldCell(c.phone, <Phone className="w-3 h-3 text-slate-400" />)}
+                      {renderFieldCell(c.phone || (c as any).fields?.phone, <Phone className="w-3 h-3 text-slate-400" />)}
                     </td>
                     <td className="p-3.5">
                       <StatusBadge

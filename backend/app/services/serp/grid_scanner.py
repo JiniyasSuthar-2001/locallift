@@ -5,6 +5,7 @@ from typing import List, Dict, Any, Optional, Tuple
 from datetime import datetime, timezone
 from app.services.serp.base import SERPProvider
 from app.services.serp.matcher import DomainMatcher
+from app.services.geocoding import GeocodingService
 
 logger = logging.getLogger("locallift.serp.grid_scanner")
 
@@ -14,6 +15,36 @@ class GeoGridScanner:
     @classmethod
     def clear_cache(cls):
         cls._CACHE.clear()
+
+    @staticmethod
+    def calculate_distance_and_direction(
+        center_lat: float,
+        center_lng: float,
+        target_lat: float,
+        target_lng: float
+    ) -> Tuple[float, str]:
+        """
+        Computes accurate Haversine distance in km and 8-cardinal compass direction from center to target.
+        """
+        dlat = math.radians(target_lat - center_lat)
+        dlng = math.radians(target_lng - center_lng)
+        lat1_rad = math.radians(center_lat)
+        lat2_rad = math.radians(target_lat)
+
+        a = math.sin(dlat / 2.0) ** 2 + math.cos(lat1_rad) * math.cos(lat2_rad) * math.sin(dlng / 2.0) ** 2
+        c = 2.0 * math.atan2(math.sqrt(a), math.sqrt(1.0 - a))
+        distance_km = round(6371.0 * c, 2)
+
+        if distance_km < 0.05:
+            return 0.0, "Center"
+
+        y = math.sin(dlng) * math.cos(lat2_rad)
+        x = math.cos(lat1_rad) * math.sin(lat2_rad) - math.sin(lat1_rad) * math.cos(lat2_rad) * math.cos(dlng)
+        bearing = (math.degrees(math.atan2(y, x)) + 360.0) % 360.0
+
+        directions = ["North", "North-East", "East", "South-East", "South", "South-West", "West", "North-West"]
+        idx = int((bearing + 22.5) / 45.0) % 8
+        return distance_km, directions[idx]
 
     @classmethod
     def calculate_grid_coordinates(
@@ -25,19 +56,23 @@ class GeoGridScanner:
     ) -> List[Dict[str, Any]]:
         """
         Generates an N x N matrix of geographic coordinates centered around (center_lat, center_lng).
+        Calculates step distance such that every point (including corner nodes) satisfies distance <= radius_km.
         Uses spherical geodesy for accurate lat/lng displacement.
         """
         points = []
         if grid_size <= 1:
             return [{
-                "point_number": 0,
+                "point_number": 1,
                 "row": 0,
                 "col": 0,
                 "lat": round(center_lat, 6),
-                "lng": round(center_lng, 6)
+                "lng": round(center_lng, 6),
+                "distance_km": 0.0,
+                "direction": "Center",
+                "is_center": True
             }]
 
-        step_km = (radius_km * 2) / (grid_size - 1)
+        step_km = (radius_km * math.sqrt(2)) / (grid_size - 1)
         half_grid = (grid_size - 1) / 2.0
 
         # Cosine factor for longitude displacement
@@ -46,23 +81,32 @@ class GeoGridScanner:
         if abs(cos_lat) < 0.001:
             cos_lat = 0.001
 
-        pt_num = 0
+        pt_num = 1
         for r in range(grid_size):
             for c in range(grid_size):
                 offset_y_km = (half_grid - r) * step_km  # North-South
                 offset_x_km = (c - half_grid) * step_km  # East-West
 
-                # 1 deg latitude ~ 110.574 km
-                lat_offset = offset_y_km / 110.574
-                # 1 deg longitude ~ 111.320 km * cos(latitude)
-                lng_offset = offset_x_km / (111.320 * cos_lat)
+                # Exact spherical earth radius (6371.0 km) matching calculate_distance_and_direction
+                km_per_deg_lat = (math.pi * 6371.0) / 180.0
+                km_per_deg_lng = km_per_deg_lat * cos_lat
+
+                lat_offset = offset_y_km / km_per_deg_lat
+                lng_offset = offset_x_km / km_per_deg_lng
+
+                p_lat = round(center_lat + lat_offset, 6)
+                p_lng = round(center_lng + lng_offset, 6)
+                dist_km, direction = cls.calculate_distance_and_direction(center_lat, center_lng, p_lat, p_lng)
 
                 points.append({
                     "point_number": pt_num,
                     "row": r,
                     "col": c,
-                    "lat": round(center_lat + lat_offset, 6),
-                    "lng": round(center_lng + lng_offset, 6)
+                    "lat": p_lat,
+                    "lng": p_lng,
+                    "distance_km": dist_km,
+                    "direction": direction,
+                    "is_center": (dist_km == 0.0 or direction == "Center")
                 })
                 pt_num += 1
 
@@ -82,7 +126,9 @@ class GeoGridScanner:
         target_place_id: Optional[str] = None,
         business_name: Optional[str] = None,
         phone: Optional[str] = None,
-        target_url: Optional[str] = None
+        target_url: Optional[str] = None,
+        is_cancelled_fn: Optional[Any] = None,
+        on_point_completed: Optional[Any] = None
     ) -> Dict[str, Any]:
         # 0. Check provider configuration and capabilities first
         if not getattr(provider, "is_configured", True):
@@ -96,6 +142,8 @@ class GeoGridScanner:
                     "col": pt["col"],
                     "lat": pt["lat"],
                     "lng": pt["lng"],
+                    "distance_km": pt.get("distance_km", 0.0),
+                    "direction": pt.get("direction", "Center"),
                     "keyword": keyword,
                     "provider": getattr(provider, "provider_name", type(provider).__name__),
                     "rank": None,
@@ -107,6 +155,7 @@ class GeoGridScanner:
                     "matched_place_id": None,
                     "matched_domain": None,
                     "competitor_ahead": None,
+                    "competitors": [],
                     "error": "SERP provider not configured."
                 }
                 for pt in coordinates
@@ -119,7 +168,7 @@ class GeoGridScanner:
                 "average_rank": None,
                 "local_visibility_pct": 0.0,
                 "total_points": total_pts,
-                "completed_points": 0,
+                "completed_points": total_pts,
                 "ranking_found_points": 0,
                 "not_found_points": 0,
                 "provider_error_points": total_pts,
@@ -127,13 +176,20 @@ class GeoGridScanner:
                 "successful_points": 0,
                 "failed_points": total_pts,
                 "scan_status": "failed",
-                "status_message": "SERP provider not configured. Add your SerpApi key in Settings to enable 5x5 Geo-Grid searches.",
+                "status_message": "SERP provider not configured. Connect your SerpApi account in Settings to enable Geo-Grid.",
                 "grid_points": unconfigured_points,
                 "scanned_at": datetime.now(timezone.utc)
             }
 
         caps = getattr(provider, "capabilities", None)
-        if caps and not caps.geo_grid:
+        has_geo_grid = True
+        if caps:
+            if isinstance(caps, dict):
+                has_geo_grid = caps.get("geo_grid", caps.get("local_grid", True))
+            else:
+                has_geo_grid = getattr(caps, "geo_grid", getattr(caps, "local_grid", True))
+
+        if not has_geo_grid:
             logger.warning(f"Geo-Grid scan requested for provider '{provider.__class__.__name__}' which does not support coordinate search.")
             return {
                 "center_lat": center_lat,
@@ -164,16 +220,27 @@ class GeoGridScanner:
             p_lat = point["lat"]
             p_lng = point["lng"]
             pt_num = point.get("point_number", 0)
+            p_dist = point.get("distance_km", 0.0)
+            p_dir = point.get("direction", "Center")
+
+            # Reverse geocode coordinate to human-readable area / locality
+            try:
+                area_name = await GeocodingService.reverse_geocode(p_lat, p_lng) or "Area name unavailable"
+            except Exception:
+                area_name = "Area name unavailable"
 
             async with semaphore:
                 try:
+                    # IMPORTANT: provider httpx timeout is 30s; outer wait_for must be > 30s
+                    # so the provider's own timeout fires first and returns a structured error,
+                    # rather than us getting a raw asyncio.TimeoutError mid-network.
                     serp_resp = await asyncio.wait_for(
                         provider.search_local_grid_point(
                             keyword=keyword,
                             lat=p_lat,
                             lng=p_lng
                         ),
-                        timeout=15.0
+                        timeout=35.0
                     )
                 except (asyncio.TimeoutError, TimeoutError):
                     return {
@@ -182,6 +249,9 @@ class GeoGridScanner:
                         "col": point["col"],
                         "lat": p_lat,
                         "lng": p_lng,
+                        "area_name": area_name,
+                        "distance_km": p_dist,
+                        "direction": p_dir,
                         "keyword": keyword,
                         "provider": provider_name,
                         "rank": None,
@@ -194,7 +264,8 @@ class GeoGridScanner:
                         "matched_place_id": None,
                         "matched_domain": None,
                         "ranking_url": None,
-                        "competitor_ahead": None
+                        "competitor_ahead": None,
+                        "competitors": []
                     }
                 except Exception as e:
                     logger.error(f"Geo-Grid point scan failed at ({p_lat}, {p_lng}): {e}")
@@ -204,6 +275,9 @@ class GeoGridScanner:
                         "col": point["col"],
                         "lat": p_lat,
                         "lng": p_lng,
+                        "area_name": area_name,
+                        "distance_km": p_dist,
+                        "direction": p_dir,
                         "keyword": keyword,
                         "provider": provider_name,
                         "rank": None,
@@ -216,7 +290,8 @@ class GeoGridScanner:
                         "matched_place_id": None,
                         "matched_domain": None,
                         "ranking_url": None,
-                        "competitor_ahead": None
+                        "competitor_ahead": None,
+                        "competitors": []
                     }
 
             # Handle provider-level error
@@ -230,6 +305,9 @@ class GeoGridScanner:
                     "col": point["col"],
                     "lat": p_lat,
                     "lng": p_lng,
+                    "area_name": area_name,
+                    "distance_km": p_dist,
+                    "direction": p_dir,
                     "keyword": keyword,
                     "provider": serp_resp.provider or provider_name,
                     "rank": None,
@@ -242,7 +320,8 @@ class GeoGridScanner:
                     "matched_place_id": None,
                     "matched_domain": None,
                     "ranking_url": None,
-                    "competitor_ahead": None
+                    "competitor_ahead": None,
+                    "competitors": []
                 }
 
             # Match target business in provider results
@@ -255,23 +334,48 @@ class GeoGridScanner:
                 phone=phone
             )
 
-            # Discover top competitor if our business is not #1
+            # Discover all competitors and top competitor
+            raw_items = serp_resp.local_pack_results or serp_resp.organic_results or []
+            competitors_list: List[Dict[str, Any]] = []
+            for item in raw_items:
+                is_target = bool(
+                    matched_item and (
+                        (matched_item.place_id and item.place_id and item.place_id == matched_item.place_id) or
+                        (matched_item.title and item.title and item.title.strip().lower() == matched_item.title.strip().lower()) or
+                        (matched_item.domain and item.domain and item.domain.strip().lower() == matched_item.domain.strip().lower()) or
+                        (item.position == rank)
+                    )
+                )
+                competitors_list.append({
+                    "position": item.position,
+                    "title": item.title,
+                    "link": item.link or "",
+                    "domain": item.domain or "",
+                    "rating": item.rating,
+                    "reviews_count": item.reviews_count,
+                    "category": getattr(item, "category", None) or getattr(item, "item_type", "Local Business"),
+                    "address": item.address,
+                    "phone": item.phone,
+                    "place_id": item.place_id,
+                    "snippet": item.snippet,
+                    "is_target": is_target
+                })
+
             top_competitor = None
-            if serp_resp.local_pack_results:
-                first_item = serp_resp.local_pack_results[0]
-                if matched_item is None or first_item.position != 1:
-                    top_competitor = first_item.title
-            elif serp_resp.organic_results:
-                first_item = serp_resp.organic_results[0]
-                if matched_item is None or first_item.position != 1:
-                    top_competitor = first_item.title
+            if competitors_list:
+                for c_entry in competitors_list:
+                    if not c_entry["is_target"]:
+                        top_competitor = c_entry["title"]
+                        break
 
             if rank is not None:
                 point_status = "SUCCESS"
                 pin_status = "found"
                 if rank <= 3:
                     color = "green"
-                elif rank <= 6:
+                elif rank <= 7:
+                    color = "blue"
+                elif rank <= 15:
                     color = "yellow"
                 else:
                     color = "red"
@@ -286,6 +390,9 @@ class GeoGridScanner:
                 "col": point["col"],
                 "lat": p_lat,
                 "lng": p_lng,
+                "area_name": area_name,
+                "distance_km": p_dist,
+                "direction": p_dir,
                 "keyword": keyword,
                 "provider": serp_resp.provider or provider_name,
                 "rank": rank,
@@ -296,44 +403,90 @@ class GeoGridScanner:
                 "matched_business": matched_item.title if matched_item else None,
                 "matched_place_id": matched_item.place_id if matched_item else None,
                 "matched_domain": matched_item.domain if matched_item else None,
+                "matched_by": getattr(matched_item, "matched_by", None) if matched_item else None,
                 "competitor_ahead": top_competitor if (rank is None or rank > 3) else None,
+                "competitors": competitors_list,
                 "error": None
             }
 
-        # Run all points concurrently within Semaphore limits
-        results = await asyncio.gather(*(scan_point(pt) for pt in coordinates))
+        # Run points in controlled batches with active cooperative cancellation check
+        results: List[Dict[str, Any]] = []
+        is_cancelled = False
+
+        batch_size = max(1, concurrency_limit)
+        for i in range(0, len(coordinates), batch_size):
+            if is_cancelled_fn:
+                try:
+                    c_res = is_cancelled_fn()
+                    if asyncio.iscoroutine(c_res):
+                        is_cancelled = await c_res
+                    else:
+                        is_cancelled = bool(c_res)
+                except Exception as ce:
+                    logger.warning(f"Error checking cancellation: {ce}")
+
+            if is_cancelled:
+                logger.info(f"Geo-Grid scan cancelled. Stopped before point batch starting at index {i}.")
+                break
+
+            batch = coordinates[i:i + batch_size]
+            batch_results = await asyncio.gather(*(scan_point(pt) for pt in batch))
+
+            for pt_res in batch_results:
+                results.append(pt_res)
+                if on_point_completed:
+                    try:
+                        cb_res = on_point_completed(pt_res)
+                        if asyncio.iscoroutine(cb_res):
+                            await cb_res
+                    except Exception as cbe:
+                        logger.warning(f"Error in on_point_completed callback: {cbe}")
 
         # Metrics calculation
-        total_points = len(results)
+        total_points = len(coordinates)
+        completed_results_count = len(results)
         found_points = [p for p in results if p.get("rank") is not None]
         not_found_points = [p for p in results if p.get("status") == "NOT_FOUND"]
         timeout_points = [p for p in results if p.get("error_type") == "TIMEOUT" or p.get("status") == "TIMEOUT"]
-        provider_error_points = [p for p in results if p.get("error_type") == "PROVIDER_ERROR" or p.get("status") == "PROVIDER_ERROR"]
+        provider_error_points = [p for p in results if (
+            p.get("error_type") == "PROVIDER_ERROR"
+            or p.get("status") == "PROVIDER_ERROR"
+            or (p.get("status") == "failed" and p.get("error_type") != "TIMEOUT")
+        )]
 
         ranking_found_count = len(found_points)
         not_found_count = len(not_found_points)
         timeout_count = len(timeout_points)
         provider_error_count = len(provider_error_points)
 
-        # Completed points: requests where provider successfully returned a result set (found + not_found)
-        completed_points = ranking_found_count + not_found_count
-        failed_points = len([p for p in results if p.get("status") == "failed"]) or (timeout_count + provider_error_count)
-        successful_points = completed_points  # Backwards compatibility
+        # Clear invariant: completed_points = successful_points + failed_points
+        successful_points = ranking_found_count + not_found_count
+        failed_points = provider_error_count + timeout_count
+        completed_points = successful_points + failed_points
 
         # Average rank: Strictly on points where the business was found. Never treat missing as 0 or default!
         found_ranks = [p["rank"] for p in found_points]
         avg_rank = round(sum(found_ranks) / len(found_ranks), 2) if found_ranks else None
 
-        # Visibility: Top 3 points divided by completed points (excluding failed provider queries from denominator)
+        # Visibility: Top 3 points divided by successful evaluated points
         top_3_count = len([r for r in found_ranks if r <= 3])
-        vis_pct = round((top_3_count / completed_points) * 100, 1) if completed_points > 0 else 0.0
+        vis_pct = round((top_3_count / successful_points) * 100, 1) if successful_points > 0 else 0.0
 
-        if total_points == 0 or completed_points == 0:
+        if is_cancelled:
+            scan_status = "cancelled"
+            status_message = f"Geo-Grid scan cancelled by user. {completed_points} of {total_points} points evaluated."
+        elif total_points == 0 or completed_points == 0:
             scan_status = "failed"
-        elif failed_points == 0:
+            status_message = "No grid points could be successfully evaluated."
+        elif failed_points == 0 and successful_points == total_points:
             scan_status = "completed"
+            status_message = f"Geo-Grid scan completed across all {total_points} points."
+        elif successful_points == 0:
+            scan_status = "failed"
+            status_message = f"Geo-Grid scan failed across all {total_points} points."
         else:
             scan_status = "completed_with_errors"
+            status_message = f"Geo-Grid scan completed with {failed_points} point errors."
 
         return {
             "center_lat": center_lat,
@@ -351,6 +504,8 @@ class GeoGridScanner:
             "successful_points": successful_points,
             "failed_points": failed_points,
             "scan_status": scan_status,
+            "status_message": status_message,
+            "is_cancelled": is_cancelled,
             "grid_points": results,
             "scanned_at": datetime.now(timezone.utc)
         }
@@ -431,10 +586,14 @@ class GeoGridScanner:
                 movement = "lost_rank"
                 dropped_count += 1
 
+            ref_pt = p_b or p_a
+            pt_lat = getattr(ref_pt, "latitude", None) or getattr(ref_pt, "lat", 0.0)
+            pt_lng = getattr(ref_pt, "longitude", None) or getattr(ref_pt, "lng", 0.0)
+
             point_comparisons.append({
                 "point_number": pt_num,
-                "lat": (p_b or p_a).latitude,
-                "lng": (p_b or p_a).longitude,
+                "lat": pt_lat,
+                "lng": pt_lng,
                 "rank_a": rank_a,
                 "rank_b": rank_b,
                 "rank_delta": delta,

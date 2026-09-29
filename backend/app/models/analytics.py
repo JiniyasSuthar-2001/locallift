@@ -62,3 +62,28 @@ class ScheduledJob(Base):
     last_run_at = Column(DateTime, nullable=True)
     next_run_at = Column(DateTime, nullable=True)
     last_result_summary = Column(String(500), nullable=True)
+
+
+class OrganizationScanAllowance(Base):
+    """
+    Tracks organization-level monthly LocalLift audit allowances and consumed usage.
+    Allows controlling expensive external scan consumption across monthly billing cycles.
+    """
+    __tablename__ = "organization_scan_allowances"
+    __table_args__ = (
+        {"sqlite_autoincrement": True}
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    organization_id = Column(Integer, ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False, index=True)
+    year_month = Column(String(7), nullable=False, index=True)  # e.g. "2026-09"
+    
+    used_scans = Column(Integer, default=0, nullable=False)
+    allowed_scans = Column(Integer, default=3, nullable=False)
+    
+    last_scan_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+
+    organization = relationship("Organization")
+

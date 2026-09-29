@@ -33,7 +33,9 @@ from app.schemas.connections import (
     PublicBusinessListingOut,
     DiscoveredGBPLocation,
     MapGSCPropertyRequest,
-    MapGA4PropertyRequest
+    MapGA4PropertyRequest,
+    BindGBPLocationRequest,
+    CreateProjectsFromGBPRequest
 )
 from app.services.google import GoogleOAuthCore, GoogleOAuthService
 from app.services.google.connections_service import GoogleConnectionsService
@@ -449,6 +451,78 @@ async def discover_and_sync_google_resources(
         "ga4_properties": discovered_ga4,
         "message": "Google resources synchronized successfully." if any_synced else "No active Google connections found to sync."
     }
+
+
+@router.get("/google/gbp/locations")
+async def get_accessible_gbp_locations(
+    project_id: Optional[int] = None,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Discovers all accessible Google Business Profile locations across all accounts and pages.
+    Annotates linkage to existing LocalLift projects and provides NAP matching analysis when project_id is provided.
+    """
+    org_id = await get_active_org_id(current_user, db, project_id)
+    res = await GoogleConnectionsService.discover_gbp_locations_with_linkage(
+        organization_id=org_id,
+        db=db,
+        project_id=project_id
+    )
+    return res
+
+
+@router.post("/google/gbp/bind")
+async def bind_gbp_location_to_project(
+    req: BindGBPLocationRequest,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Workflow A: Binds an existing LocalLift project directly to a specific discovered GBP location.
+    Enforces project isolation, 1:1 binding, and duplicate protection.
+    """
+    proj = await verify_project_access(req.project_id, current_user, db)
+    try:
+        result = await GoogleConnectionsService.bind_gbp_location_to_project(
+            project_id=proj.id,
+            organization_id=proj.organization_id,
+            location_payload=req.location,
+            db=db,
+            force_relink=req.force_relink
+        )
+        return result
+    except ValueError as ve:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(ve)
+        )
+
+
+@router.post("/google/gbp/create-projects")
+async def create_projects_from_gbp_locations(
+    req: CreateProjectsFromGBPRequest,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Workflow B: Creates 1 LocalLift project per selected GBP location without requiring existing NAP match.
+    Populates full business details, hours, categories, coordinates, and creates explicit project -> GBP bindings.
+    """
+    org_id = await get_active_org_id(current_user, db)
+    try:
+        result = await GoogleConnectionsService.create_projects_from_gbp_locations(
+            organization_id=org_id,
+            user_id=current_user.id,
+            locations_payload=req.locations,
+            db=db
+        )
+        return result
+    except ValueError as ve:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(ve)
+        )
 
 
 @router.post("/google/import-resources", response_model=ImportResourcesResponse)
